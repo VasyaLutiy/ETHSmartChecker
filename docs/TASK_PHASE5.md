@@ -158,7 +158,7 @@ ALERT\t<address>\t<seed_address>\t<label>\t<score:.4f>
       отдаёт очередь ответов и пишет `(url, body)` в `.calls`;
    4. `pytest tests -q --tb=short` через обёртку (164 теста, `tests/helpers.py` не
       добавляет и не ломает ни одного).
-2. **Кодовая карта `command-line`** (`ethsc/cli.py`, `ethsc/__main__.py`,
+2. **Кодовая карта `cli`** (`ethsc/cli.py`, `ethsc/__main__.py`,
    `tests/test_cli.py`):
    1. `ast.parse` по трём файлам;
    2. стражи по `ast`: `ethsc/cli.py` и `ethsc/__main__.py` не импортируют `urllib`,
@@ -218,7 +218,7 @@ ALERT\t<address>\t<seed_address>\t<label>\t<score:.4f>
    `pytest tests/test_cli_examples.py -q --tb=short`, затем `pytest tests -q --tb=short`,
    оба через обёртку, страж Secret Hygiene как в 2.6.
 4. Итог фазы: полный `pytest -q --tb=short` зелёный, в нём 164 теста фаз 1–4 плюс собственные
-   тесты `test-helpers`/`command-line` (≤ 5) плюс не меньше 8 тестов судьи.
+   тесты `test-helpers`/`cli` (≤ 5) плюс не меньше 8 тестов судьи.
 
 Каждая приёмка обёрнута в снимок `/tmp/morph/<card>/` с логом `acc-<время>-<pid>.log` и
 возвращает код своей цепочки. Эталонной реализации нет: приёмки прогнаны вручную и красны
@@ -239,7 +239,7 @@ ALERT\t<address>\t<seed_address>\t<label>\t<score:.4f>
 - Все цели — новые файлы: `ethsc/cli.py`, `ethsc/__main__.py`, `tests/helpers.py`,
   `tests/test_cli.py`, `tests/test_cli_examples.py`. Существующие файлы не правятся.
 - Один файл — одна карта-владелец: `tests/helpers.py` пишет только карта `test-helpers`;
-  `ethsc/cli.py`, `ethsc/__main__.py`, `tests/test_cli.py` — только карта `command-line`;
+  `ethsc/cli.py`, `ethsc/__main__.py`, `tests/test_cli.py` — только карта `cli`;
   `tests/test_cli_examples.py` — только карта-судья.
 - No Network In Core: `urllib`, `http`, `socket` — только `ethsc/rpc.py`; `ethsc/cli.py`
   использует `RpcClient`/`infura_url` (импорт модуля, не сети) и получает готовый `rpc` в
@@ -249,7 +249,7 @@ ALERT\t<address>\t<seed_address>\t<label>\t<score:.4f>
 - `ethsc/__main__.py` — тонкий вызов: импортирует `main` из `ethsc.cli` и передаёт ему
   управление под `if __name__ == "__main__":`; никакой логики разбора аргументов или работы
   со `Store` в нём.
-- `command-line` и `command-line-judge` читают, что пишет `test-helpers` (`tests/helpers.py`)
+- `cli` и `cli-judge` читают, что пишет `test-helpers` (`tests/helpers.py`)
   — это физическая зависимость по чтению, они идут позже него.
 - Во время рана дерево не трогается: правка файла из среза даёт `stale-context`.
 
@@ -293,14 +293,14 @@ set -a; source /home/john/Documents/Work2026/MorphProject/morph-lab/.env; set +a
 
 | величина | прогноз |
 |---|---|
-| карт в колоде | 3 (`test-helpers`, `command-line` — `variants: 2`, `command-line-judge`) |
-| поколений | 2–3 (`test-helpers` → `command-line` → возможно отдельно `command-line-judge`; проверить в выводе `mrph plan`) |
+| карт в колоде | 3 (`test-helpers`, `cli` — `variants: 2`, `cli-judge`) |
+| поколений | 2–3 (`test-helpers` → `cli` → возможно отдельно `cli-judge`; проверить в выводе `mrph plan`) |
 | счёт исполнителя | $0.03–0.20 |
 | карт с регенерацией | 0–2 |
 | конфликтов `write-write` на preflight | 0 |
 | тестов после | ≥ 164 + 8 (судья) + собственные тесты карт (≤ 10) |
 
-**Опровергаемое утверждение фазы (Контур/приёмка):** `command-line` проходит пробу
+**Опровергаемое утверждение фазы (Контур/приёмка):** `cli` проходит пробу
 оркестратора не позже `r1` по логике (не по стражу текста — все стражи по `ast`); если
 сгорит, разночтение сидит в месте, которое Контур не называет и это задание вводит впервые
 здесь (§2.2): код выхода при `RpcError`, поведение `listen` между проходами, тонкость
