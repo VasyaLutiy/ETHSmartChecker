@@ -1,0 +1,331 @@
+{
+  "deck_id": "20260928-214603-95d52ff1",
+  "completed_at": "2026-09-28T22:04:25.517",
+  "branch": "morph/20260928-214603-95d52ff1",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ingest",
+      "rpc"
+    ],
+    [
+      "ingest-judge",
+      "rpc-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-1327c55ca43b46619c7e7c79db114ddd",
+    "local-0bc1bd06c79c4796a1c16fdbabce1eba",
+    "local-002c839621724c5e8de096094ea07c2d",
+    "local-daa2a61c7cf1478f8a076ec457e5a22d"
+  ],
+  "outcomes": {
+    "ingest": {
+      "custom_id": "ingest",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard: ast imports OK\ningest probe: 9 examples + tolerance, order, alerts, budget, cap, resume OK\n.....F....................F                                              [100%]\n=================================== FAILURES ===================================\n____________________ TestIngestBlock.test_max_calls_defers _____________________\ntests/test_ingest.py:259: in test_max_calls_defers\n    self.assertEqual(calls,\nE   AssertionError: Lists differ: [('0x38baaaf4587d5e6ba7875c191a1d73554b937ecd'[2849 chars]729)] != [('0x0000000000000068f116a894984e2db1123eb395'[2849 chars]729)]\nE   \nE   First differing element 0:\nE   ('0x38baaaf4587d5e6ba7875c191a1d73554b937ecd', 26077729)\nE   ('0x0000000000000068f116a894984e2db1123eb395', 26077729)\nE   \nE   - [('0x38baaaf4587d5e6ba7875c191a1d73554b937ecd', 26077729),\nE   -  ('0x3a362a1966ff5aab35298e1565bda2c9fb124e41', 26077729),\nE   -  ('0x3ad80458d58fb3a779ba0779f83203a4cf4a49d8', 26077729),\nE   -  ('0x3b2fac8e18e9d354cf1f4770ad0e80b797095a2d', 26077729),\nE   -  ('0x3b38271016d18b262c5dc207a3e2508bcfcf3448', 26077729),\nE   -  ('0x3b4d794a66304f130a4db8f2551b0070dfcf5ca7', 26077729),\nE   -  ('0x3c0f5fc5bcba4acece9b84d87d154e461e8d307f', 26077729),\nE   -  ('0x3d90f66b534dd8482b181e24655a9e8265316be9', 26077729),\nE   -  ('0x3ffeea07a27fab7ad1df5297fa75e77a43cb5790', 26077729),\nE   -  ('0x40676634577a95739251af92ded22ef943b73813', 26077729),\nE   -  ('0x4072c95435da1118f6fd50ef31e10e8a11b6c898', 26077729),\nE   -  ('0x40ffe85a28dc9993541449464d7529a922142960', 26077729),\nE   -  ('0x42b0bb72883ad82c3a7dba431ca620844209f55e', 26077729),\nE   -  ('0x4313c378cc91ea583c91387b9216e2c03096b27f', 26077729),\nE   -  ('0x46bb98a5f86a02d171c6c247629ad0053bb830e6', 26077729),\nE   -  ('0x4a220e6096b25eadb88358cb44068a3248254675', 26077729),\nE   -  ('0x4cd00e387622c35bddb9b4c962c136462338bc31', 26077729),\nE   -  ('0x4d4a483646fac1a35d6833f9c80489dc6d6778a1', 26077729),\nE   -  ('0x4db7f3cd794a44aee59a63e1bd539909017d09f0', 26077729),\nE   -  ('0x4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b', 26077729),\nE   -  ('0x4e67db19044549ff420860834c91b45bad298722', 26077729),\nE   -  ('0x514910771af9ca656af840dff83e8264ecf986ca', 26077729),\nE   -  ('0x51c72848c68a965f66fa7a88855f9f7784502a7f', 26077729),\nE   -  ('0x5285024806d9d3802298f861f0535d81b824dda4', 26077729),\nE   -  ('0x56072c95faa701256059aa122697b133aded9279', 26077729),\nE   -  ('0x58d97b57bb95320f9a05dc918aef65434969c2b2', 26077729),\nE   -  ('0x5c7bcd6e7de5423a257d81b442095a1a6ced35c5', 26077729),\nE   -  ('0x5cb16a393b9b43c590953b51058edab1bde0f5fa', 26077729),\nE   -  ('0x6071e1908e2c2a2c0948a34091bf31e98093c1df', 26077729),\nE   -  ('0x6131b5fae19ea4f9d964eac0408e4408b66337b5', 26077729),\nE   -  ('0x623c319ecb7036ba5bf878643dbad396426d5721', 26077729),\nE   -  ('0x644192291cc835a93d6330b24ea5f5fedd0eef9e', 26077729),\nE   -  ('0x64529a59f44957d1200bf14864005fff6797a084', 26077729),\nE   -  ('0x663dc15d3c1ac63ff12e45ab68fea3f0a883c251', 26077729),\nE   -  ('0x666fedd4cdd4e890a5ad20e7b60975409435a64a', 26077729),\nE   -  ('0x6682aa7cbe8cd42c0a050315013738abaad28771', 26077729),\nE   -  ('0x6872b6630a3afcd3117191a8403c2002e13df7de', 26077729),\nE   -  ('0x691bd9fd56fdd24831b3c3068d4a10ec00341e40', 26077729),\nE   -  ('0x6982508145454ce325ddbe47a25d4ec3d2311933', 26077729),\nE   -  ('0x69829866acd486b93fe700455fe8a69e1d66614d', 26077729),\nE   -  ('0x6985884c4392d348587b19cb9eaaf157f13271cd', 26077729),\nE   -  ('0x6b3595068778dd592e39a122f4f5a5cf09c90fe2', 26077729),\nE   -  ('0x6c3ea9036406852006290770bedfcaba0e23a0e8', 26077729),\nE   -  ('0x6e0180176894a402f8ba9647e17a8f0dd119add6', 26077729),\nE   -  ('0x6e7422375dd5c16856f67b83b882622cc6736b6d', 26077729),\nE   -  ('0x6fed7f2d481c4ef92bcfe4a15f23fae6856cbe80', 26077729),\nE   -  ('0x70f648517003113de24ce8bf1b17241aae903dc9', 26077729),\nE   -  ('0x7387f08b39b6f611e541f3fd0c25898729886806', 26077729),\nE   -  ('0x73e0659bab4a8013c3c39193e8911abd7b688f6a', 26077729),\n... [3851 characters elided] ...\n2 failed, 25 passed in 16.56s\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "rpc": {
+      "custom_id": "rpc",
+      "status": "written",
+      "paths": [
+        "./ethsc/rpc.py",
+        "./ethsc/config.py",
+        "./tests/test_rpc.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "rpc.r2.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast imports OK\nconfig comment on the eth_blockNumber line: got False, want True\n",
+      "commit": "ff73db2ca128ad54cce77290886dd3623a8a9429",
+      "diffstat": [
+        {
+          "path": "ethsc/config.py",
+          "insertions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "ethsc/rpc.py",
+          "insertions": 131,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_rpc.py",
+          "insertions": 388,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/rpc.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/rpc.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_rpc.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "ingest-judge": {
+      "custom_id": "ingest-judge",
+      "status": "skipped",
+      "paths": [],
+      "reason": "ingest",
+      "finish_reason": null,
+      "attempts": 0,
+      "winning_variant": null,
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": null
+    },
+    "rpc-judge": {
+      "custom_id": "rpc-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_rpc_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "rpc-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "675dc8d09163cd51d13b627f8dcbc7599e8a4150",
+      "diffstat": [
+        {
+          "path": "tests/test_rpc_examples.py",
+          "insertions": 165,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_rpc_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "rpc.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628365-sohNjiw54iHbko1Jywqo",
+      "input_tokens": 20297,
+      "output_tokens": 10243,
+      "cost": 0.0048717665,
+      "finish_reason": "stop"
+    },
+    "rpc.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628364-m98u5OIoWyKFdaKgWKOU",
+      "input_tokens": 20297,
+      "output_tokens": 15226,
+      "cost": 0.0090589175,
+      "finish_reason": "stop"
+    },
+    "ingest.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628365-vBf2UhBOQLzxDWDbsfKF",
+      "input_tokens": 23643,
+      "output_tokens": 14165,
+      "cost": 0.0073634395,
+      "finish_reason": "stop"
+    },
+    "ingest.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628364-YqE04vkr2OygSI9drqga",
+      "input_tokens": 23643,
+      "output_tokens": 22918,
+      "cost": 0.0110834645,
+      "finish_reason": "stop"
+    },
+    "rpc.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628856-BjVJjPCoM8Vh1DzGTJ5h",
+      "input_tokens": 20385,
+      "output_tokens": 4634,
+      "cost": 0.0045685375,
+      "finish_reason": "stop"
+    },
+    "rpc.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628856-588E11r0kvuBL35e0QfE",
+      "input_tokens": 20385,
+      "output_tokens": 8352,
+      "cost": 0.0044775195,
+      "finish_reason": "stop"
+    },
+    "ingest.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628856-g0ZmETl1xrxIEAVJfANv",
+      "input_tokens": 31969,
+      "output_tokens": 11063,
+      "cost": 0.0071066545,
+      "finish_reason": "stop"
+    },
+    "ingest.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790628856-5VXkzRyXwFfvEko04vjP",
+      "input_tokens": 31969,
+      "output_tokens": 11115,
+      "cost": 0.0055424505,
+      "finish_reason": "stop"
+    },
+    "rpc.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629104-LOEYlCAfC4JfpARdNe4h",
+      "input_tokens": 27288,
+      "output_tokens": 5430,
+      "cost": 0.004063578,
+      "finish_reason": "stop"
+    },
+    "rpc.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629104-qdk2KF6DP1rJSiZIwWIO",
+      "input_tokens": 27288,
+      "output_tokens": 5819,
+      "cost": 0.004281127,
+      "finish_reason": "stop"
+    },
+    "ingest.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629104-M0bVAz8BN2HJFKbCXJgE",
+      "input_tokens": 32237,
+      "output_tokens": 10231,
+      "cost": 0.0059385845,
+      "finish_reason": "stop"
+    },
+    "ingest.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629104-kT93GtzZXC1UwnGSsaof",
+      "input_tokens": 32237,
+      "output_tokens": 13196,
+      "cost": 0.0097185175,
+      "finish_reason": "stop"
+    },
+    "rpc-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629405-rb0aVCk9zxQmLsR8vv7d",
+      "input_tokens": 20804,
+      "output_tokens": 1854,
+      "cost": 0.00344046,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 332442,
+    "output_tokens": 134246,
+    "cost": 0.081515017,
+    "requests": 13,
+    "requests_with_usage": 13
+  },
+  "orchestrator_usage": {}
+}
