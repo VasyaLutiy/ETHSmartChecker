@@ -1,0 +1,230 @@
+{
+  "deck_id": "20260928-233057-2acaad84",
+  "completed_at": "2026-09-28T23:36:28.342",
+  "branch": "morph/20260928-233057-2acaad84",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "test-helpers"
+    ],
+    [
+      "cli"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-1d863ffc634e4d54be9ef6e06a124e89",
+    "local-33a13ddefb36495e9a2b988b39a37afb",
+    "local-b444d60088f14b929893d16f40a8658b"
+  ],
+  "outcomes": {
+    "test-helpers": {
+      "custom_id": "test-helpers",
+      "status": "written",
+      "paths": [
+        "./tests/helpers.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "test-helpers",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "3c9f491c66e856ef4764b8df498bc5806ee159e3",
+      "diffstat": [
+        {
+          "path": "tests/helpers.py",
+          "insertions": 129,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/helpers.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./ethsc/__main__.py",
+        "./tests/test_cli.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "819ae95b4369ea06e4456d05689c4fa26647c4bc",
+      "diffstat": [
+        {
+          "path": "ethsc/__main__.py",
+          "insertions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 239,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_cli.py",
+          "insertions": 130,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "ethsc/__main__.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/__main__.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "531ef5643830f6b8e096e8f94cb497b6e30d253e",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 238,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "test-helpers": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790634658-rPdHQfiGPk6v0d7hYczH",
+      "input_tokens": 14711,
+      "output_tokens": 1264,
+      "cost": 0.0024128525,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790634723-UyLJK6zgYECfwE7Vsbrz",
+      "input_tokens": 29038,
+      "output_tokens": 5814,
+      "cost": 0.003216111,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790634723-OeGq5f9N9yKHEFCVylQO",
+      "input_tokens": 29038,
+      "output_tokens": 5955,
+      "cost": 0.00623322,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790634880-CYviKPNBzhVr2Y5TSyTH",
+      "input_tokens": 30618,
+      "output_tokens": 3213,
+      "cost": 0.003598152,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 103405,
+    "output_tokens": 16246,
+    "cost": 0.0154603355,
+    "requests": 4,
+    "requests_with_usage": 4
+  },
+  "orchestrator_usage": {}
+}
