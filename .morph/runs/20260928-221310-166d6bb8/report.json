@@ -1,0 +1,177 @@
+{
+  "deck_id": "20260928-221310-166d6bb8",
+  "completed_at": "2026-09-28T22:22:27.147",
+  "branch": "morph/20260928-221310-166d6bb8",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ingest"
+    ],
+    [
+      "ingest-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-b7ef9d958bae49248402d008ee10238a",
+    "local-b5e4ff39be7f42688729cfeef81dc9da",
+    "local-008a0176a36e4baf92d9d8aed1c1114f",
+    "local-21201c8164604c75bfb97309465f7fd5"
+  ],
+  "outcomes": {
+    "ingest": {
+      "custom_id": "ingest",
+      "status": "written",
+      "paths": [
+        "./ethsc/ingest.py",
+        "./tests/test_ingest.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "bf73b7a85261699084582845178862fb6dca0485",
+      "diffstat": [
+        {
+          "path": "ethsc/ingest.py",
+          "insertions": 230,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_ingest.py",
+          "insertions": 137,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "ingest-judge": {
+      "custom_id": "ingest-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_ingest_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "ingest-judge.r2",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast imports OK\n........F                                                                [100%]\n=================================== FAILURES ===================================\n_______________ FollowChainExamples.test_follow_chain_example_3 ________________\ntests/test_ingest_examples.py:256: in test_follow_chain_example_3\n    self.assertEqual(store.spent(\"2026-09-29\"), 1000 + 95 * 80,\nE   AssertionError: 8680 != 8600 : new day pays receipts and the remaining codes\n=========================== short test summary info ============================\nFAILED tests/test_ingest_examples.py::FollowChainExamples::test_follow_chain_example_3\n1 failed, 8 passed in 8.75s\n",
+      "commit": "8a8a22d118b2f597157f53a010abbb2ad4962448",
+      "diffstat": [
+        {
+          "path": "tests/test_ingest_examples.py",
+          "insertions": 266,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_ingest_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "ingest.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629992-FbAEkCk3EpP0kffxAptU",
+      "input_tokens": 23867,
+      "output_tokens": 6607,
+      "cost": 0.0058510175,
+      "finish_reason": "stop"
+    },
+    "ingest.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790629992-1SYqzpGYH9hfUaIEq9sp",
+      "input_tokens": 23867,
+      "output_tokens": 8820,
+      "cost": 0.0043631265,
+      "finish_reason": "stop"
+    },
+    "ingest-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790630248-ZSMm7AmgKoev68INgf9Q",
+      "input_tokens": 24668,
+      "output_tokens": 4208,
+      "cost": 0.00493357,
+      "finish_reason": "stop"
+    },
+    "ingest-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790630356-XC9WkKZG76Kl7Pu2U4WG",
+      "input_tokens": 27643,
+      "output_tokens": 2857,
+      "cost": 0.0031850435,
+      "finish_reason": "stop"
+    },
+    "ingest-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790630429-DKaH5TDISxboT1riJXDQ",
+      "input_tokens": 27600,
+      "output_tokens": 2979,
+      "cost": 0.004785075,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 127645,
+    "output_tokens": 25471,
+    "cost": 0.023117832499999998,
+    "requests": 5,
+    "requests_with_usage": 5
+  },
+  "orchestrator_usage": {}
+}
