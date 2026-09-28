@@ -1,0 +1,157 @@
+{
+  "deck_id": "20260928-201933-a4c3242f",
+  "completed_at": "2026-09-28T20:23:00.823",
+  "branch": "morph/20260928-201933-a4c3242f",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "evm"
+    ],
+    [
+      "evm-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-9cdbed281f7246cca099e172a334da18",
+    "local-732dcbc6fb984f748bc1cdc07799db93"
+  ],
+  "outcomes": {
+    "evm": {
+      "custom_id": "evm",
+      "status": "written",
+      "paths": [
+        "./ethsc/evm.py",
+        "./tests/test_evm.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "evm.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "b041103c593915aaf19e373b0c149640ae2fb5b5",
+      "diffstat": [
+        {
+          "path": "ethsc/evm.py",
+          "insertions": 120,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_evm.py",
+          "insertions": 256,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/evm.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/evm.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_evm.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_evm.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "evm-judge": {
+      "custom_id": "evm-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_evm_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "evm-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "b035d8408d1c95995e0cd08d3fd7feda1fecf58d",
+      "diffstat": [
+        {
+          "path": "tests/test_evm_examples.py",
+          "insertions": 295,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_evm_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_evm_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "evm.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790623173-3D6PJP6X1MeBpjvUlaU7",
+      "input_tokens": 18506,
+      "output_tokens": 4999,
+      "cost": 0.00448409,
+      "finish_reason": "stop"
+    },
+    "evm.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790623173-2QJyF1lGn40bANrZR8Lt",
+      "input_tokens": 18506,
+      "output_tokens": 5923,
+      "cost": 0.002990198,
+      "finish_reason": "stop"
+    },
+    "evm-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790623302-YToEOrsCKiRzV7iyQvcQ",
+      "input_tokens": 7594,
+      "output_tokens": 4137,
+      "cost": 0.00272646,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 44606,
+    "output_tokens": 15059,
+    "cost": 0.010200747999999999,
+    "requests": 3,
+    "requests_with_usage": 3
+  },
+  "orchestrator_usage": {}
+}
