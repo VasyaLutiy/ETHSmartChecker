@@ -1,0 +1,707 @@
+version: 1
+System:
+  name: ethsc
+  description: >
+    ETHSmartChecker proof: indexes the runtime bytecode of Ethereum mainnet
+    contracts seen in new blocks (Infura free tier, HTTPS polling), stores it
+    in SQLite by content hash, and clusters it by code on three levels (L0
+    identical code, L1 identical skeleton or proxy target, L2 selector or
+    opcode similarity). Security aim: from one known scam or vulnerable
+    contract, find its copies and near-copies, and alert when a new one
+    appears. Package ethsc/, CLI python -m ethsc.
+  requirements: [Stdlib Only, Offline Tests, Real Fixtures]
+  guardrails: [Deterministic Output]
+  groups:
+    - name: evm
+      description: >
+        Pure bytecode analysis over runtime code given as bytes: disassembly,
+        compiler-metadata stripping, dispatcher selectors, proxy detection,
+        and the masked skeleton used for L1 clustering. No I/O.
+      functions:
+        - name: Disassemble
+          description: >
+            disassemble(code: bytes) -> list of (pc, op, arg) tuples, one per
+            instruction, in code order: pc is the byte offset, op the opcode
+            byte (int), arg the immediate bytes of PUSH1..PUSH32 (0x60..0x7f,
+            n = op - 0x5f bytes) and b"" for every other opcode.
+          behavior: >
+            Every byte that is not a PUSH immediate is an instruction, including
+            undefined opcodes (no name table, no validation). A PUSH whose
+            immediate runs past the end of the code takes the bytes that are
+            there (a shorter arg) and ends the list; nothing raises. Empty code
+            gives []. PUSH0 (0x5f) has no immediate.
+          guardrails: [Tolerant Parser]
+          steps:
+            - reads: Runtime Code
+            - produces: Instruction
+          examples:
+            - given: 'the bytes of tests/fixtures/code_weth9.hex (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, 3124 bytes)'
+              when: 'disassemble is called'
+              then: 'the first three instructions are (0, 0x60, b"\x60"), (2, 0x60, b"\x40"), (4, 0x52, b"")'
+              ref: 'fixture bytes 0x6060604052; WETH9 is solc 0.4.19 (Sourcify)'
+            - given: 'the 3081-byte body of code_weth9.hex (the code without its last 43 bytes)'
+              when: 'disassemble is called'
+              then: 'the list has 1555 instructions'
+              ref: 'counted over the fixture'
+            - given: 'the 4 bytes 0x600161ff (PUSH1 0x01, then PUSH2 with only one byte left)'
+              when: 'disassemble is called'
+              then: '[(0, 0x60, b"\x01"), (2, 0x61, b"\xff")] and no exception'
+              ref: 'Tolerant Parser'
+            - given: 'empty code b""'
+              when: 'disassemble is called'
+              then: 'the result is []'
+              ref: 'Tolerant Parser'
+        - name: Strip Metadata
+          description: >
+            strip_metadata(code: bytes) -> (body, trailer): splits off the
+            solc CBOR metadata appended at the end of runtime code.
+          behavior: >
+            Let n be the big-endian value of the last 2 bytes. When
+            len(code) >= 2, 0 < n <= len(code) - 2 and the byte at
+            len(code) - 2 - n is a CBOR map header 0xa1..0xa5, the trailer is
+            the last n + 2 bytes and the body is everything before it.
+            Otherwise body is the whole code and trailer is b"". No CBOR
+            decoding. Never raises.
+          guardrails: [Tolerant Parser]
+          steps:
+            - reads: Runtime Code
+          examples:
+            - given: 'code_weth9.hex (3124 bytes, ends 0x0029)'
+              when: 'strip_metadata is called'
+              then: 'body is 3081 bytes; trailer is 43 bytes and starts with a165627a7a72305820 (bzzr0)'
+              ref: 'fixture bytes'
+            - given: 'code_univ2_usdc_weth.hex (0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc, 11293 bytes, solc 0.5.16)'
+              when: 'strip_metadata is called'
+              then: 'body is 11241 bytes; trailer is 52 bytes, starts with a265627a7a72315820 and contains 64736f6c6343000510 (solc 0.5.16)'
+              ref: 'fixture bytes; compiler version from Sourcify'
+            - given: 'code_univ3_usdc_weth_005.hex (0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640, 22142 bytes, solc 0.7.6, bytecodeHash none)'
+              when: 'strip_metadata is called'
+              then: 'body is 22130 bytes and trailer is exactly a164736f6c6343000706000a (12 bytes)'
+              ref: 'fixture bytes'
+            - given: 'the 45-byte EIP-1167 clone code_clone_270df012.hex (last 2 bytes 0x5bf3) and empty code b""'
+              when: 'strip_metadata is called on each'
+              then: 'the clone comes back whole with trailer b""; empty code gives (b"", b"")'
+              ref: 'Tolerant Parser'
+        - name: Extract Selectors
+          description: >
+            extract_selectors(code: bytes) -> sorted list of distinct 4-byte
+            function selectors of the dispatcher, each as "0x" + 8 lowercase
+            hex digits.
+          behavior: >
+            Disassemble the body from strip_metadata. A selector is the arg of
+            a PUSH4 (0x63) instruction with a 4-byte arg when one of the next
+            two instructions is EQ (0x14); this covers both the
+            DUP1 PUSH4 s EQ and the PUSH4 s DUP2 EQ dispatcher shapes and
+            skips the PUSH4 used by GT/LT binary-search splits and by masks.
+            Code with no dispatcher gives [].
+          guardrails: [Tolerant Parser]
+          steps:
+            - calls: Disassemble
+            - calls: Strip Metadata
+          examples:
+            - given: 'code_weth9.hex'
+              when: 'extract_selectors is called'
+              then: >
+                exactly the 11 published WETH9 selectors: 0x06fdde03,
+                0x095ea7b3, 0x18160ddd, 0x23b872dd, 0x2e1a7d4d, 0x313ce567,
+                0x70a08231, 0x95d89b41, 0xa9059cbb, 0xd0e30db0, 0xdd62ed3e
+              ref: 'WETH9 ABI (Sourcify exact match, tests/fixtures/abi_weth9.sourcify.json, 11 functions)'
+            - given: 'code_usdt.hex (0xdAC17F958D2ee523a2206206994597C13D831ec7)'
+              when: 'extract_selectors is called'
+              then: >
+                exactly 32 selectors: 0x06fdde03, 0x0753c30c, 0x095ea7b3,
+                0x0e136b19, 0x0ecb93c0, 0x18160ddd, 0x23b872dd, 0x26976e3f,
+                0x27e235e3, 0x313ce567, 0x35390714, 0x3eaaf86b, 0x3f4ba83a,
+                0x59bf1abe, 0x5c658165, 0x5c975abb, 0x70a08231, 0x8456cb59,
+                0x893d20e8, 0x8da5cb5b, 0x95d89b41, 0xa9059cbb, 0xc0324c77,
+                0xcc872b66, 0xdb006a75, 0xdd62ed3e, 0xdd644f72, 0xe47d6060,
+                0xe4997dc5, 0xe5b5019a, 0xf2fde38b, 0xf3bdc228
+              ref: 'TetherToken ABI (Sourcify match, tests/fixtures/abi_usdt.sourcify.json, 32 functions)'
+            - given: 'code_univ2_usdc_weth.hex (solc 0.5.16, dispatcher with GT splits)'
+              when: 'extract_selectors is called'
+              then: '27 selectors, including 0x022c0d9f (swap) and 0x0902f1ac (getReserves)'
+              ref: 'UniswapV2Pair ABI (Sourcify match, tests/fixtures/abi_univ2_pair.sourcify.json, 27 functions)'
+            - given: 'code_belle.hex (the BELLE honeypot token)'
+              when: 'extract_selectors is called'
+              then: '14 selectors, including 0xf7e58a63 (Blacklist(address,bool)) and 0x78051f4d (RenounceOwnership(address))'
+              ref: 'BELLE ABI (Sourcify exact match, tests/fixtures/abi_belle.sourcify.json, 14 functions)'
+            - given: 'the EIP-1167 clone code_clone_270df012.hex, then empty code b""'
+              when: 'extract_selectors is called on each'
+              then: 'both give []'
+              ref: 'Tolerant Parser'
+        - name: Detect Proxy
+          description: >
+            detect_proxy(code: bytes) -> {"kind": "eip1167" | "eip7702",
+            "target": "0x" + 40 lowercase hex} or None: recognizes the exact
+            EIP-1167 minimal proxy runtime and the EIP-7702 delegation
+            designator, and returns the implementation (or delegate) address.
+          behavior: >
+            eip1167: exactly 45 bytes, 363d3d373d3d3d363d73 + 20 address bytes
+            + 5af43d82803e903d91602b57fd5bf3. eip7702: exactly 23 bytes,
+            ef0100 + 20 address bytes. Anything else, including a truncated
+            clone and the shortened vanity-address variants of EIP-1167,
+            gives None.
+          guardrails: [Tolerant Parser]
+          steps:
+            - reads: Runtime Code
+            - produces: Proxy Info
+          examples:
+            - given: 'code_clone_270df012.hex and code_clone_3b2fac8e.hex (two clones seen in block 26077729)'
+              when: 'detect_proxy is called on each'
+              then: 'both give {"kind": "eip1167", "target": "0x4181f37093e3a21a4e0d5ef355c5b1938cba5bfb"}'
+              ref: 'target read from the clone bytes 10..30; the target is HolderDistributor, Sourcify exact match'
+            - given: 'code_clone_2ca7b61b.hex'
+              when: 'detect_proxy is called'
+              then: 'target is "0x8b72b9b8e544f944cdcdf0cdb6194f917ac1eba5" (kind eip1167), a different implementation'
+              ref: 'clone bytes; target is LaunchToken, Sourcify exact match'
+            - given: 'code_7702_04cfab85.hex (23 bytes, the code of the delegated EOA 0x04cfab854b82159745eead5ed4ad148645e1173b)'
+              when: 'detect_proxy is called'
+              then: '{"kind": "eip7702", "target": "0x0000fb7702036ff9f76044a501ac1aa74cbab16b"}'
+              ref: 'fixture bytes ef0100 + target; EIP-7702 designator format'
+            - given: 'the first 44 bytes of code_clone_270df012.hex, code_weth9.hex, and empty code b""'
+              when: 'detect_proxy is called on each'
+              then: 'all three give None'
+              ref: 'Tolerant Parser'
+        - name: Build Skeleton
+          description: >
+            build_skeleton(code: bytes) -> bytes: the body from strip_metadata
+            re-serialized instruction by instruction with the immediates of
+            PUSH20 (0x73) and PUSH32 (0x7f) replaced by zero bytes of the same
+            length; every other byte kept.
+          behavior: >
+            Masks what differs between deployments of one source: constructor
+            immutables (always PUSH32 in solc) and hardcoded addresses
+            (PUSH20). The length equals the body length. A truncated PUSH20 or
+            PUSH32 masks only the bytes present. Same compiler output with a
+            different metadata trailer gives the same skeleton.
+          guardrails: [Tolerant Parser]
+          steps:
+            - calls: Disassemble
+            - calls: Strip Metadata
+          examples:
+            - given: >
+                code_univ3_usdc_weth_005.hex (0x88e6A0c2...) and
+                code_univ3_pool_e0554a47.hex (0xe0554a476a092703abdb3ef35c80e0d76d32939f),
+                two UniswapV3Pool deployments (Sourcify match) of 22142 bytes each
+              when: 'build_skeleton is called on each'
+              then: 'the raw codes differ in 74 bytes, all inside PUSH32 immediates, and the two skeletons are equal'
+              ref: 'byte diff of the two fixtures'
+            - given: >
+                code_launchtoken_4e67db19.hex and code_launchtoken_40676634.hex,
+                two LaunchToken deployments (Sourcify exact match for 0x4e67db19...) of 2383 bytes each
+              when: 'build_skeleton is called on each'
+              then: 'the raw codes differ in 58 bytes inside 3 PUSH32 immediates, and the two skeletons are equal'
+              ref: 'byte diff of the two fixtures'
+            - given: 'code_weth9.hex, and a copy of it with one byte of the metadata trailer flipped (byte -5 xor 0xff)'
+              when: 'build_skeleton is called on each'
+              then: 'both skeletons are equal and each is 3081 bytes long'
+              ref: 'fixture bytes'
+            - given: 'code_weth9.hex and code_usdt.hex'
+              when: 'build_skeleton is called on each'
+              then: 'the skeletons differ'
+      dataObjects:
+        - name: Runtime Code
+          description: >
+            Deployed runtime bytecode as bytes, decoded from the hex string of
+            eth_getCode ("0x" + hex). Fixtures tests/fixtures/code_*.hex hold
+            that string verbatim, no trailing newline; decode with
+            bytes.fromhex(text.strip()[2:]). "0x" is an account with no code.
+          schema: bytes
+        - name: Instruction
+          description: One disassembled instruction.
+          schema:
+            pc: int, byte offset in the code
+            op: int, opcode byte 0..255
+            arg: bytes, PUSH immediate (possibly short at the end), else b""
+        - name: Proxy Info
+          description: What a proxy or delegation points to.
+          schema:
+            kind: '"eip1167" or "eip7702"'
+            target: '"0x" + 40 lowercase hex'
+    - name: fingerprint
+      description: >
+        One fingerprint per distinct code, and the L2 similarity between two
+        codes. Pure functions over bytes; calls evm.
+      functions:
+        - name: Fingerprint Code
+          description: >
+            fingerprint(code: bytes) -> Fingerprint dict or None for empty
+            code: code_id (sha256 hex of the raw code), size, skeleton_hash
+            (sha256 hex of build_skeleton), selectors (extract_selectors),
+            proxy (detect_proxy).
+          behavior: >
+            code_id is sha256, not keccak: stdlib has no keccak and the
+            clustering does not need the chain's codeHash. Never raises on
+            garbage bytes.
+          guardrails: [Tolerant Parser]
+          steps:
+            - uses: evm
+            - produces: Fingerprint
+          examples:
+            - given: 'code_univ2_usdc_weth.hex and code_univ2_weth_usdt.hex (0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852)'
+              when: 'fingerprint is called on each'
+              then: 'both code_id are 8b5db55fa9ab3b9527508d4abe0b39eb588bf310270c8e04b3f38214e8ba63b4, size 11293, 27 selectors'
+              ref: 'the two fixtures are byte-identical (cmp); sha256sum of the decoded bytes'
+            - given: 'code_weth9.hex'
+              when: 'fingerprint is called'
+              then: 'code_id is 5566bf50796faf93c9b6f6adacd3b32c70bfe16b48ffc59db6cd144cbdc89739, size 3124, proxy None'
+              ref: 'sha256 of the decoded fixture bytes'
+            - given: 'code_univ3_usdc_weth_005.hex and code_univ3_pool_e0554a47.hex'
+              when: 'fingerprint is called on each'
+              then: 'code_id differ, skeleton_hash are equal'
+              ref: 'Build Skeleton example 1'
+            - given: 'empty code b""'
+              when: 'fingerprint is called'
+              then: 'the result is None'
+              ref: 'Tolerant Parser'
+        - name: Similarity Score
+          description: >
+            similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: the
+            Jaccard index of the selector sets when both are non-empty,
+            otherwise the Jaccard index of the sets of opcode 3-grams (op
+            bytes only, args dropped) of the two stripped bodies.
+          behavior: >
+            Jaccard = |A & B| / |A | B|, and 0.0 when both sets are empty.
+            Symmetric. Identical code gives 1.0.
+          steps:
+            - uses: evm
+          examples:
+            - given: 'code_weth9.hex (11 selectors) and code_usdt.hex (32 selectors)'
+              when: 'similarity is called'
+              then: '9/34 (0.2647 to 4 places); the 9 shared are the ERC-20 core name..allowance'
+              ref: 'selector lists above, hand count'
+            - given: 'code_univ2_usdc_weth.hex (27) and code_weth9.hex (11)'
+              when: 'similarity is called'
+              then: '9/29 (0.3103 to 4 places)'
+              ref: 'hand count'
+            - given: 'code_belle.hex and code_belle_copy_1807090d.hex (ALPHA, same deployer, Sourcify exact match)'
+              when: 'similarity is called'
+              then: '13/15 (0.8667 to 4 places); the copy has 0x8f5db675 BotBlacklist(address,bool) instead of 0xf7e58a63 Blacklist(address,bool)'
+              ref: 'selector diff of the fixtures; keccak of the two signatures'
+            - given: 'code_clone_270df012.hex and code_clone_2ca7b61b.hex (no selectors, different targets)'
+              when: 'similarity is called'
+              then: '1.0 (the same 22 opcode 3-grams)'
+              ref: 'hand count over the 45-byte clone'
+      dataObjects:
+        - name: Fingerprint
+          description: The analysed identity of one distinct code.
+          schema:
+            code_id: sha256 hex of the raw code (64 chars)
+            size: int, bytes
+            skeleton_hash: sha256 hex of build_skeleton(code)
+            selectors: sorted list of "0x…" 8-hex strings
+            proxy: Proxy Info or None
+    - name: store
+      description: >
+        SQLite persistence: distinct codes with their fingerprints, addresses
+        pointing at codes, the follow progress, the security watchlist, and
+        the daily credit ledger. One file, stdlib sqlite3.
+      functions:
+        - name: Store Codes And Contracts
+          description: >
+            Store(path) opens or creates the database (CREATE TABLE IF NOT
+            EXISTS). put_code(code) -> code_id stores the code and its
+            Fingerprint once per code_id; put_address(address, code_id, block)
+            records an address (code_id None for an account without code);
+            has_address(address) -> bool; code_of(address) -> bytes or None;
+            addresses_of(code_id) -> sorted list.
+          behavior: >
+            Addresses are stored lowercase. put_code on a known code_id and
+            put_address on a known address change nothing and do not raise.
+            Every list the store returns is sorted.
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - uses: fingerprint
+            - modifies: Code Database
+          examples:
+            - given: >
+                a fresh temp db and the four addresses of block 26077729 whose
+                code in tests/fixtures/codes_26077729.json has code_id 8b5db55f…
+                (0x22052a1a…, 0x2621cc0b…, 0x3041cbd3…, 0xb4e16d01…, all UniswapV2Pair)
+              when: 'put_code and put_address are called for each'
+              then: 'the codes table has 1 row, the addresses table 4 rows, addresses_of returns the 4 addresses sorted'
+              ref: 'counted over codes_26077729.json'
+            - given: 'an address stored with code_id None (an EOA, eth_getCode "0x")'
+              when: 'has_address and code_of are called'
+              then: 'has_address is True and code_of is None'
+            - given: 'the db file closed and reopened'
+              when: 'addresses_of is called'
+              then: 'the same 4 addresses come back'
+        - name: Track Progress
+          description: >
+            get_progress() -> int or None, the last fully ingested block;
+            set_progress(block) stores it.
+          steps:
+            - modifies: Code Database
+          examples:
+            - given: 'a fresh temp db'
+              when: 'get_progress is called, then set_progress(26077729) and get_progress, then the db is reopened'
+              then: 'None, then 26077729, and 26077729 after the reopen'
+        - name: Manage Watchlist
+          description: >
+            add_seed(address, label) marks the stored code of address as a
+            known-bad seed; seeds() -> list of {address, label, code_id}
+            sorted by address.
+          behavior: >
+            add_seed on an address with no stored code raises
+            KeyError(address). Adding the same address twice keeps one seed
+            with the latest label.
+          steps:
+            - modifies: Code Database
+          examples:
+            - given: >
+                a db holding code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6
+                (Etherscan: "This token is reported to be a honeypot token")
+              when: 'add_seed(address, "BELLE honeypot") is called twice'
+              then: 'seeds() has exactly 1 entry, label "BELLE honeypot", code_id = fingerprint(code_belle).code_id'
+              ref: 'Etherscan warning on the address, checked 2026-09-28'
+            - given: 'an address that is not in the db'
+              when: 'add_seed is called'
+              then: 'KeyError'
+        - name: Budget Ledger
+          description: >
+            spend(day, method, credits) adds credits to the ledger of a UTC
+            day ("YYYY-MM-DD"); spent(day) -> int is the day's total.
+          steps:
+            - modifies: Code Database
+          examples:
+            - given: 'a fresh db'
+              when: 'spend("2026-09-28", "eth_getBlockReceipts", 1000) once and spend("2026-09-28", "eth_getCode", 80) 206 times'
+              then: 'spent("2026-09-28") is 17480 and spent("2026-09-29") is 0'
+              ref: '206 candidates of block 26077729; prices 1000 and 80 from Infura''s credit table'
+      dataObjects:
+        - name: Code Database
+          description: One SQLite file.
+          schema: >
+            codes(code_id TEXT PRIMARY KEY, size INTEGER, skeleton_hash TEXT,
+            selectors TEXT (JSON list), proxy_kind TEXT, proxy_target TEXT,
+            code BLOB); addresses(address TEXT PRIMARY KEY, code_id TEXT NULL,
+            block INTEGER); progress(key TEXT PRIMARY KEY, block INTEGER);
+            seeds(address TEXT PRIMARY KEY, code_id TEXT, label TEXT);
+            ledger(day TEXT, method TEXT, credits INTEGER)
+    - name: cluster
+      description: >
+        Clusters and similarity search over the store: L0 identical code, L1
+        identical skeleton, proxy by target, L2 similarity by full scan, and
+        the watchlist check for a new code.
+      functions:
+        - name: Build Clusters
+          description: >
+            build_clusters(store) -> list of Cluster: L0 per code_id with >= 2
+            addresses; L1 per skeleton_hash with >= 2 distinct code_id; proxy
+            per (kind, target) with >= 2 addresses. Proxy codes (eip1167,
+            eip7702) enter only proxy clusters.
+          behavior: >
+            Cluster = {level: "L0" | "L1" | "proxy", key, members: sorted
+            addresses}; key is the code_id, the skeleton_hash, or
+            "<kind>:<target>". The list is sorted by member count descending,
+            then level (L0, L1, proxy), then key.
+          guardrails: [Deterministic Output]
+          steps:
+            - uses: store
+            - produces: Cluster
+          examples:
+            - given: 'a store filled from codes_26077729.json (206 candidates: 59 without code, 147 with code, 130 distinct code_id)'
+              when: 'build_clusters is called'
+              then: >
+                7 L0 clusters (sizes 4, 2, 2, 2, 2, 2, 2), 2 L1 clusters (8
+                UniswapV3Pool deployments, 5 LaunchToken deployments) and 6
+                proxy clusters (eip1167 0x4181f370… with 3, eip1167 0x8b72b9b8…
+                with 2, eip7702 0xd2e28229… with 3, and three eip7702 with 2)
+              ref: 'counted over codes_26077729.json'
+            - given: 'the same store'
+              when: 'build_clusters is called'
+              then: 'the first cluster is L1 with 8 members including 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640; the first L0 cluster has key 8b5db55f… and 4 members'
+            - given: 'the same codes inserted in reverse order'
+              when: 'build_clusters is called'
+              then: 'the result is equal'
+              ref: 'Deterministic Output'
+        - name: Find Similar
+          description: >
+            find_similar(store, address, min_score=0.8) -> list of (address,
+            score) for every other stored address with code whose similarity
+            to address's code is >= min_score; sorted by score descending,
+            then address.
+          behavior: >
+            Full scan: one similarity per distinct code_id, fanned out to its
+            addresses. Unknown address or one without code gives [].
+          guardrails: [Deterministic Output]
+          steps:
+            - uses: fingerprint
+            - uses: store
+          examples:
+            - given: 'the store from codes_26077729.json'
+              when: 'find_similar(store, "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc")'
+              then: >
+                0x22052a1a0f5a3d2839d71c458f177e68b0e73963,
+                0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c,
+                0x3041cbd36888becc7bbcbc0045e3b1f144466f5f with 1.0, then
+                0xcf6daab95c476106eca715d48de4b13287ffdeaa with 26/32 (0.8125)
+              ref: '0xcf6daab9… is a UniswapV2Pair built with solc 0.6.12 (Sourcify match); selector diff counted'
+            - given: 'a store with code_belle.hex and its four copies code_belle_copy_*.hex at their addresses'
+              when: 'find_similar(store, "0x34c6211621f2763c60eb007dc2ae91090a2d22f6")'
+              then: 'the 4 copies, each 13/15, in address order 0x1807…, 0x2141…, 0x46ca…, 0x6411…'
+              ref: 'deployer 0xf80f6fa4… nonces 0, 1, 5, 13 (CREATE addresses); selector diff'
+        - name: Match Watchlist
+          description: >
+            match_watchlist(store, code, min_score=0.8) -> list of Alert
+            {seed_address, label, score} for every seed whose code has
+            similarity >= min_score with code; sorted by score descending,
+            then seed_address.
+          guardrails: [Deterministic Output, Tolerant Parser]
+          steps:
+            - uses: store
+            - produces: Alert
+          examples:
+            - given: 'a store with seed BELLE (0x34c6…, "BELLE honeypot")'
+              when: 'match_watchlist(store, bytes of code_belle_copy_1807090d.hex)'
+              then: 'one alert, label "BELLE honeypot", score 13/15'
+            - given: 'the same store'
+              when: 'match_watchlist(store, bytes of code_weth9.hex)'
+              then: '[] (WETH9 vs BELLE is 9/16 = 0.5625)'
+            - given: 'a store with no seeds, and then empty code b"" against the BELLE seed'
+              when: 'match_watchlist is called'
+              then: '[] both times'
+              ref: 'Tolerant Parser'
+      dataObjects:
+        - name: Cluster
+          description: One group of addresses.
+          schema:
+            level: '"L0" | "L1" | "proxy"'
+            key: code_id, skeleton_hash, or "<kind>:<target>"
+            members: sorted lowercase addresses
+        - name: Alert
+          description: A new code matching a seed.
+          schema:
+            seed_address: str
+            label: str
+            score: float
+    - name: rpc
+      description: >
+        The only network module: a minimal JSON-RPC client over an injected
+        transport, with retry and backoff and credit accounting.
+      functions:
+        - name: RPC Client
+          description: >
+            RpcClient(url, transport=None, sleep=time.sleep, prices=None,
+            on_spend=None, max_retries=3).call(method, params) -> result.
+            transport(url, body: bytes) -> (status: int, body: bytes); the
+            default is a urllib POST. infura_url() builds
+            https://mainnet.infura.io/v3/<key> from INFURA_API_KEY in the
+            environment or ./.env.
+          behavior: >
+            HTTP 429 and 5xx are retried after sleep(1), sleep(2), sleep(4)
+            (doubling from 1, at most max_retries), then RpcError. A JSON-RPC
+            error object raises RpcError(code, message) at once, no retry.
+            After a successful call on_spend(method, prices[method]) is called
+            once; prices come from configuration (ethsc/config.py), not from
+            code in the client. ethsc/config.py holds PRICES =
+            {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000,
+            "eth_getCode": 80}; the eth_blockNumber entry carries the comment
+            "не подтверждено, сверить с дашбордом" (the other two are from the
+            Infura method pages). RpcError text and repr never contain the URL
+            or the key.
+          requirements: [Offline Tests]
+          guardrails: [No Network In Core, Secret Hygiene, Budget Respected]
+          steps:
+            - produces: RPC Response
+          examples:
+            - given: >
+                a fake transport answering first with tests/fixtures/rpc_429.json
+                (status 429, body {"code":-32005,"message":"Too Many Requests",...})
+                and then status 200 with {"jsonrpc":"2.0","id":1,"result":<text of code_weth9.hex>}
+              when: 'call("eth_getCode", ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "latest"])'
+              then: 'the result equals the text of code_weth9.hex; 2 transport calls; sleep called once, with 1'
+              ref: 'rpc_429.json recorded from Infura 2026-09-28'
+            - given: 'a fake transport that always answers rpc_429.json'
+              when: 'call is made with max_retries=3'
+              then: 'RpcError after 4 transport calls; sleeps [1, 2, 4]'
+            - given: 'a fake transport answering 200 with {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"block not found: 0x18deac1"}}'
+              when: 'call is made'
+              then: 'RpcError with code -32001 after 1 transport call and no sleep'
+              ref: 'the error object Infura returned 2026-09-28 for a future block'
+            - given: 'url https://mainnet.infura.io/v3/TESTKEY-0000 and a transport raising OSError("boom " + url)'
+              when: 'call is made'
+              then: 'RpcError whose str and repr do not contain "TESTKEY-0000"'
+              ref: 'Secret Hygiene'
+            - given: 'prices {"eth_getBlockReceipts": 1000, "eth_getCode": 80} and an on_spend collector'
+              when: 'one successful eth_getBlockReceipts and two eth_getCode'
+              then: 'the collector sums to 1160'
+              ref: 'Infura credit table (eth_getBlockReceipts 1000, eth_getCode 80)'
+      dataObjects:
+        - name: RPC Response
+          description: >
+            A verbatim Infura JSON-RPC response body. Recorded samples:
+            tests/fixtures/receipts_26077729.json (eth_getBlockReceipts),
+            code_*.hex (eth_getCode result strings), rpc_429.json (status,
+            headers, body of a rate-limited request).
+          schema: see tests/fixtures/rpc_429.json and receipts_26077729.json
+    - name: ingest
+      description: >
+        From a block to stored codes: candidate discovery from receipts,
+        per-block ingest with an injected code fetcher, and chain following
+        with resume and budgets.
+      functions:
+        - name: Discover Candidates
+          description: >
+            discover_candidates(receipts: list) -> sorted list of distinct
+            lowercase addresses: every contractAddress, every to, and every
+            logs[].address of the block's receipts.
+          behavior: >
+            null to and null contractAddress are skipped; from is not a
+            candidate. Contracts created by factories are caught only when
+            they emit a log (no trace_* on the free tier).
+          guardrails: [Deterministic Output, Tolerant Parser]
+          steps:
+            - reads: RPC Response
+          examples:
+            - given: 'the "result" list of tests/fixtures/receipts_26077729.json (218 receipts, 626 logs)'
+              when: 'discover_candidates is called'
+              then: '206 addresses; 135 distinct to, 119 distinct log addresses, one contractAddress 0xb53c071bdb35d21aa1216b084f79c372d71053d5'
+              ref: 'jq count over the fixture'
+            - given: 'an empty list'
+              when: 'discover_candidates is called'
+              then: '[]'
+        - name: Ingest Block
+          description: >
+            ingest_block(block, receipts, get_code, store, max_calls=None,
+            watch=None) -> stats dict {candidates, known, fetched, contracts,
+            eoas, failed, deferred, complete, alerts}. get_code(address,
+            block) -> hex string is injected.
+          behavior: >
+            Candidates already in the store are skipped (known). Each other
+            one costs one get_code call until max_calls is reached; the rest
+            are deferred and complete is False. "0x" stores the address with
+            code_id None (eoas); other code goes through put_code. A get_code
+            that raises, or returns text that is not 0x-hex, counts as failed
+            and does not stop the block. Each newly stored code is checked by
+            match_watchlist; alerts are returned, not printed.
+          guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
+          steps:
+            - calls: Discover Candidates
+            - uses: store
+            - uses: cluster
+          examples:
+            - given: 'receipts_26077729.json, a fresh store, and a fake get_code serving codes_26077729.json'
+              when: 'ingest_block(26077729, …) is called'
+              then: 'candidates 206, fetched 206, contracts 147, eoas 59, failed 0, complete True; the store has 130 codes'
+              ref: 'counted over codes_26077729.json'
+            - given: 'the same store after that call'
+              when: 'ingest_block is called again for the same block'
+              then: 'known 206, fetched 0, complete True'
+            - given: 'a fresh store and max_calls=50'
+              when: 'ingest_block is called five times'
+              then: 'fetched 50, 50, 50, 50, 6; complete False four times, then True'
+            - given: 'a fake get_code raising OSError for 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc only'
+              when: 'ingest_block is called'
+              then: 'failed 1, fetched 206, contracts 146; the other three UniswapV2Pair addresses are stored'
+              ref: 'Tolerant Parser'
+        - name: Follow Chain
+          description: >
+            follow_chain(rpc, store, start=None, stop=None, max_calls_per_block,
+            daily_budget, day, prices) -> summary {blocks, stopped, progress}.
+            Polls eth_blockNumber, then for each block after progress
+            (or from start) up to the head (or stop): eth_getBlockReceipts,
+            ingest_block with get_code over eth_getCode.
+          behavior: >
+            Before every RPC call it checks spent(day) + price <= daily_budget
+            and, if not, stops cleanly with stopped "budget" and progress at the
+            last complete block. set_progress runs only for a complete block;
+            a rerun resumes the unfinished block, skipping known addresses.
+          guardrails: [Budget Respected, No Network In Core]
+          steps:
+            - calls: Ingest Block
+            - uses: rpc
+            - uses: store
+          examples:
+            - given: >
+                a fake rpc answering eth_blockNumber "0x18dea21",
+                eth_getBlockReceipts from receipts_26077729.json and eth_getCode
+                from codes_26077729.json; progress 26077728; prices blockNumber
+                80, receipts 1000, getCode 80; daily_budget 3000000
+              when: 'follow_chain is called'
+              then: 'blocks 1, progress 26077729, spent 17560 (80 + 1000 + 206 × 80)'
+              ref: 'prices from Infura''s credit table; counts from the fixtures'
+            - given: 'the same, with daily_budget 10000'
+              when: 'follow_chain is called'
+              then: 'stopped "budget" after 111 eth_getCode calls, spent 9960, progress still 26077728'
+              ref: '80 + 1000 + 111 × 80 = 9960 <= 10000 < 10040'
+            - given: 'that store and a new day with daily_budget 3000000'
+              when: 'follow_chain is called again'
+              then: '95 eth_getCode calls, progress 26077729'
+    - name: cli
+      description: python -m ethsc with subcommands over one SQLite db.
+      functions:
+        - name: Command Line
+          description: >
+            main(argv=None, rpc=None) -> exit code. Subcommands: listen,
+            backfill --from N --to M, clusters top [--n K], cluster <addr>,
+            similar <addr> [--min 0.8], seed add <addr> --label L, seed list.
+            Global --db PATH (default ethsc.sqlite). Without rpc, builds
+            RpcClient(infura_url()).
+          behavior: >
+            Output is plain text, one record per line, tab-separated, fully
+            ordered. Alerts from ingest print as lines starting "ALERT". Exit
+            0 on success, 2 on usage error, 3 when a budget stop left work
+            undone. No traceback on a network or budget stop.
+          requirements: [Offline Tests]
+          guardrails: [Secret Hygiene, Deterministic Output]
+          steps:
+            - uses: ingest
+            - uses: cluster
+            - uses: store
+          examples:
+            - given: 'a fake rpc over receipts_26077729.json and codes_26077729.json'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake)'
+              then: 'exit 0 and the db holds 206 addresses and 130 codes'
+            - given: 'that db'
+              when: 'main(["--db", db, "similar", "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", "--min", "0.8"])'
+              then: '4 lines, the three UniswapV2Pair addresses with 1.0000 first, 0xcf6daab9… with 0.8125 last'
+            - given: 'a db holding code_belle.hex, seeded with seed add 0x34c6… --label "BELLE honeypot"'
+              when: 'a backfill over a fake block whose only candidate is 0x1807090dd15a6f58e00fd769e32ebf20ee610385 serving code_belle_copy_1807090d.hex'
+              then: 'one stdout line starts "ALERT" and names 0x1807090dd15a6f58e00fd769e32ebf20ee610385, "BELLE honeypot" and 0.8667'
+            - given: 'an environment with INFURA_API_KEY=TESTKEY-0000 and an rpc that raises RpcError'
+              when: 'main(["--db", db, "listen"]) is run'
+              then: 'nonzero exit, no traceback, and "TESTKEY-0000" nowhere in stdout or stderr'
+              ref: 'Secret Hygiene'
+Requirement:
+  - name: Stdlib Only
+    description: >
+      Python 3.12 runtime, standard library only (urllib, sqlite3, hashlib,
+      json, unittest; pytest is the test runner). Syntax stays 3.9-compatible
+      because the card acceptance checks it. No third-party runtime
+      dependency.
+  - name: Offline Tests
+    description: >
+      No test opens a network connection. All chain data comes from
+      tests/fixtures/*, verbatim Infura responses fetched 2026-09-28 (block
+      26077729 and named addresses); see tests/fixtures/README.md.
+  - name: Real Fixtures
+    description: >
+      Every number in the examples is read from a fixture or an independent
+      source (Sourcify-verified ABI, Etherscan label, published selector,
+      Infura credit table, byte diff of fixtures); none is invented.
+Guardrail:
+  - name: No Network In Core
+    description: >
+      Only ethsc/rpc.py imports urllib, http or socket. Every other module
+      gets a transport, a fetcher or an rpc object injected.
+  - name: Secret Hygiene
+    description: >
+      The Infura key is read only from the environment or .env and never
+      appears in logs, exceptions, printed URLs, fixtures, specs, decks or
+      commits. .env is in .gitignore.
+  - name: Budget Respected
+    description: >
+      The per-block call cap and the daily credit budget are never exceeded:
+      the check happens before the call. Method prices in credits live in
+      configuration, not in code.
+  - name: Tolerant Parser
+    description: >
+      Truncated or garbage bytecode, empty code and the failure of one
+      address give None, [] or a skip, never an exception that kills the
+      block.
+  - name: Deterministic Output
+    description: >
+      Every report and list is totally ordered; the output does not depend
+      on insertion order.

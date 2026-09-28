@@ -1,0 +1,9 @@
+{
+ "status": 429,
+ "headers": {
+  "content-type": "application/json",
+  "content-length": "90"
+ },
+ "body": "{\"code\":-32005,\"message\":\"Too Many Requests\",\"data\":{\"see\":\"https://infura.io/dashboard\"}}",
+ "captured": "2026-09-28T18:57:58Z, eth_getCode burst of 25 parallel requests on the Infura free tier"
+}
