@@ -1,5 +1,5 @@
-Phase 2 of ETHSmartChecker adds two contour components on top of the merged evm module: fingerprint and store.
-fingerprint (new module ethsc/fingerprint.py) gives fingerprint(code) -> dict with code_id (sha256 hex), size, skeleton_hash, selectors, proxy, and similarity(code_a, code_b) -> Jaccard over selectors or opcode 3-grams, both built on ethsc/evm.py.
-store (new module ethsc/store.py) is a stdlib sqlite3 Store(path) with tables codes, addresses, progress, seeds, ledger: put_code, put_address, has_address, code_of, addresses_of, get_progress/set_progress, add_seed/seeds, spend/spent.
-All examples are in contour.yaml under groups fingerprint and store and are proven offline on tests/fixtures (code_*.hex, codes_26077729.json), with tests in tests/test_fingerprint.py and tests/test_store.py.
-No network, no third-party dependency, deterministic sorted output, and nothing in ethsc/evm.py changes.
+Phase 3 of ETHSmartChecker adds the contour component cluster on top of the merged evm, fingerprint and store modules.
+cluster (new module ethsc/cluster.py) gives build_clusters(store) -> L0/L1/proxy Cluster dicts, find_similar(store, address, min_score=0.8) -> [(address, score)] by full scan, and match_watchlist(store, code, min_score=0.8) -> Alert dicts against the seeds.
+The public Store API in ethsc/store.py cannot enumerate stored codes or fetch a code by code_id, so the store needs a small read-in-bulk addition (all fingerprints, code by code_id) without changing any existing method.
+All examples are in contour.yaml under group cluster and are proven offline on tests/fixtures (codes_26077729.json, code_belle*.hex, code_weth9.hex), with tests in tests/test_cluster.py.
+No network, no third-party dependency, deterministic sorted output, and ethsc/evm.py and ethsc/fingerprint.py stay unchanged.
