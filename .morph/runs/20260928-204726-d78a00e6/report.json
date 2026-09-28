@@ -1,0 +1,289 @@
+{
+  "deck_id": "20260928-204726-d78a00e6",
+  "completed_at": "2026-09-28T20:51:43.343",
+  "branch": "morph/20260928-204726-d78a00e6",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "fingerprint"
+    ],
+    [
+      "fingerprint-judge",
+      "store"
+    ],
+    [
+      "store-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-5b988ab86e2d41868da61fa85fb6de7f",
+    "local-0a60ba4e4b894e20b29c1d37713d9ebd",
+    "local-3eeba3ed0d274138b65054166840aa3a"
+  ],
+  "outcomes": {
+    "fingerprint": {
+      "custom_id": "fingerprint",
+      "status": "written",
+      "paths": [
+        "./ethsc/fingerprint.py",
+        "./tests/test_fingerprint.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "fingerprint.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "ddf5020aa05682ba46b2c61521cd2ff5c25985ea",
+      "diffstat": [
+        {
+          "path": "ethsc/fingerprint.py",
+          "insertions": 72,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_fingerprint.py",
+          "insertions": 197,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_fingerprint.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_fingerprint.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "fingerprint-judge": {
+      "custom_id": "fingerprint-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_fingerprint_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "fingerprint-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "99aa4f98d3e9f759c42033f749dfbcc2e5bd84c1",
+      "diffstat": [
+        {
+          "path": "tests/test_fingerprint_examples.py",
+          "insertions": 129,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_fingerprint_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_fingerprint_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "store": {
+      "custom_id": "store",
+      "status": "written",
+      "paths": [
+        "./ethsc/store.py",
+        "./tests/test_store.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "bababf0a9dde40b4a062afdbaaa3a6b938694ec6",
+      "diffstat": [
+        {
+          "path": "ethsc/store.py",
+          "insertions": 196,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_store.py",
+          "insertions": 398,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/store.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/store.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_store.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "store-judge": {
+      "custom_id": "store-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_store_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "fed688675693ce5eea97fb7d83f77740ea4018ba",
+      "diffstat": [
+        {
+          "path": "tests/test_store_examples.py",
+          "insertions": 260,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_store_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "fingerprint.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790624847-L4fjhP6beU9nNphDyWQu",
+      "input_tokens": 19185,
+      "output_tokens": 2941,
+      "cost": 0.0017441405,
+      "finish_reason": "stop"
+    },
+    "fingerprint.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790624847-SXGGRnIE5wXFU3laHoKk",
+      "input_tokens": 19185,
+      "output_tokens": 3223,
+      "cost": 0.0038158625,
+      "finish_reason": "stop"
+    },
+    "fingerprint-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790624920-qYiTNN4xUOIHm6O5eDxw",
+      "input_tokens": 7153,
+      "output_tokens": 1612,
+      "cost": 0.0015971075,
+      "finish_reason": "stop"
+    },
+    "store.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790624920-lf4Vmxv84HTZ2NLnM1vI",
+      "input_tokens": 18752,
+      "output_tokens": 5047,
+      "cost": 0.003014831,
+      "finish_reason": "stop"
+    },
+    "store.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790624920-Jq0FdvU0pEUzmv7Eu5Sa",
+      "input_tokens": 18752,
+      "output_tokens": 4975,
+      "cost": 0.004505255,
+      "finish_reason": "stop"
+    },
+    "store-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790625030-ARzEbF7aqTIeMiQK1LcG",
+      "input_tokens": 7912,
+      "output_tokens": 3300,
+      "cost": 0.00241128,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 90939,
+    "output_tokens": 21098,
+    "cost": 0.017088476499999998,
+    "requests": 6,
+    "requests_with_usage": 6
+  },
+  "orchestrator_usage": {}
+}

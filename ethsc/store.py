@@ -1,0 +1,196 @@
+"""SQLite persistence for ETHSmartChecker.
+
+Store(path) opens or creates the Code Database (CREATE TABLE IF NOT
+EXISTS): distinct codes with their fingerprints, addresses pointing at
+codes, the follow progress, the security watchlist and the daily credit
+ledger. One file, stdlib sqlite3. Every write commits before returning;
+every list the store returns is sorted; addresses are stored lowercase.
+"""
+
+import json
+import sqlite3
+from typing import List, Optional
+
+from ethsc.fingerprint import fingerprint
+
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS codes (
+    code_id TEXT PRIMARY KEY,
+    size INTEGER,
+    skeleton_hash TEXT,
+    selectors TEXT,
+    proxy_kind TEXT,
+    proxy_target TEXT,
+    code BLOB
+);
+CREATE TABLE IF NOT EXISTS addresses (
+    address TEXT PRIMARY KEY,
+    code_id TEXT,
+    block INTEGER
+);
+CREATE TABLE IF NOT EXISTS progress (
+    key TEXT PRIMARY KEY,
+    block INTEGER
+);
+CREATE TABLE IF NOT EXISTS seeds (
+    address TEXT PRIMARY KEY,
+    code_id TEXT,
+    label TEXT
+);
+CREATE TABLE IF NOT EXISTS ledger (
+    day TEXT,
+    method TEXT,
+    credits INTEGER
+);
+"""
+
+
+class Store(object):
+    """One SQLite file holding the Code Database."""
+
+    def __init__(self, path: str) -> None:
+        self._conn = sqlite3.connect(path)
+        self._conn.executescript(_SCHEMA)
+        self._conn.commit()
+
+    def close(self) -> None:
+        """Close the connection; a reopened Store(path) sees everything."""
+        self._conn.close()
+
+    # -- Store Codes And Contracts ----------------------------------------
+
+    def put_code(self, code: bytes) -> str:
+        """Store a code and its Fingerprint once per code_id.
+
+        Repeated calls with the same code return the same code_id, add
+        no rows and do not raise.
+        """
+        fp = fingerprint(code)
+        code_id = fp["code_id"]
+        self._conn.execute(
+            "INSERT OR IGNORE INTO codes (code_id, size, skeleton_hash,"
+            " selectors, proxy_kind, proxy_target, code)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                code_id,
+                fp["size"],
+                fp["skeleton_hash"],
+                json.dumps(fp["selectors"]),
+                fp["proxy"]["kind"] if fp["proxy"] else None,
+                fp["proxy"]["target"] if fp["proxy"] else None,
+                sqlite3.Binary(code),
+            ),
+        )
+        self._conn.commit()
+        return code_id
+
+    def put_address(self, address: str, code_id: Optional[str],
+                    block: int) -> None:
+        """Record an address (code_id None for an account without code).
+
+        Known addresses are not changed (the first record wins) and do
+        not raise.
+        """
+        self._conn.execute(
+            "INSERT OR IGNORE INTO addresses (address, code_id, block)"
+            " VALUES (?, ?, ?)",
+            (address.lower(), code_id, block),
+        )
+        self._conn.commit()
+
+    def has_address(self, address: str) -> bool:
+        """True iff the address (case-insensitive) is stored."""
+        row = self._conn.execute(
+            "SELECT 1 FROM addresses WHERE address = ?",
+            (address.lower(),),
+        ).fetchone()
+        return row is not None
+
+    def code_of(self, address: str) -> Optional[bytes]:
+        """The stored code of the address, or None (no code / unknown)."""
+        row = self._conn.execute(
+            "SELECT code FROM codes c JOIN addresses a"
+            " ON a.code_id = c.code_id WHERE a.address = ?",
+            (address.lower(),),
+        ).fetchone()
+        if row is None:
+            return None
+        return bytes(row[0])
+
+    def addresses_of(self, code_id: str) -> List[str]:
+        """Sorted lowercase addresses pointing at code_id; [] if unknown."""
+        rows = self._conn.execute(
+            "SELECT address FROM addresses WHERE code_id = ? ORDER BY address",
+            (code_id,),
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    # -- Track Progress ----------------------------------------------------
+
+    def get_progress(self) -> Optional[int]:
+        """The last fully ingested block, or None on a fresh db."""
+        row = self._conn.execute(
+            "SELECT block FROM progress WHERE key = ?", ("progress",)
+        ).fetchone()
+        if row is None:
+            return None
+        return row[0]
+
+    def set_progress(self, block: int) -> None:
+        """Store (overwrite) the last fully ingested block."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO progress (key, block) VALUES (?, ?)",
+            ("progress", block),
+        )
+        self._conn.commit()
+
+    # -- Manage Watchlist ---------------------------------------------------
+
+    def add_seed(self, address: str, label: str) -> None:
+        """Mark the stored code of address as a known-bad seed.
+
+        Raises KeyError(address) when the address has no stored code
+        (unknown, or an EOA). Adding twice keeps one seed with the
+        latest label.
+        """
+        address = address.lower()
+        row = self._conn.execute(
+            "SELECT code_id FROM addresses WHERE address = ?", (address,)
+        ).fetchone()
+        if row is None or row[0] is None:
+            raise KeyError(address)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO seeds (address, code_id, label)"
+            " VALUES (?, ?, ?)",
+            (address, row[0], label),
+        )
+        self._conn.commit()
+
+    def seeds(self) -> List[dict]:
+        """List of {address, label, code_id}, sorted by address."""
+        rows = self._conn.execute(
+            "SELECT address, label, code_id FROM seeds ORDER BY address"
+        ).fetchall()
+        return [
+            {"address": row[0], "label": row[1], "code_id": row[2]}
+            for row in rows
+        ]
+
+    # -- Budget Ledger ------------------------------------------------------
+
+    def spend(self, day: str, method: str, credits: int) -> None:
+        """Add credits to the ledger of a UTC day ("YYYY-MM-DD")."""
+        self._conn.execute(
+            "INSERT INTO ledger (day, method, credits) VALUES (?, ?, ?)",
+            (day, method, credits),
+        )
+        self._conn.commit()
+
+    def spent(self, day: str) -> int:
+        """The day's total credits; 0 for a day with no entries."""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(credits), 0) FROM ledger WHERE day = ?",
+            (day,),
+        ).fetchone()
+        return int(row[0])
