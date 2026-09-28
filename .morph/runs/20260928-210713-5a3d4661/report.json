@@ -1,0 +1,269 @@
+{
+  "deck_id": "20260928-210713-5a3d4661",
+  "completed_at": "2026-09-28T21:18:46.629",
+  "branch": "morph/20260928-210713-5a3d4661",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "store-read"
+    ],
+    [
+      "cluster"
+    ],
+    [
+      "cluster-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-c577159b515540168faa02ac14f195c6",
+    "local-64fac8deacb94a0a98004652e754fde2",
+    "local-057057cc1520423fb2f1eff01f7d81ae",
+    "local-afe5ba05e4a246138e78d89d80532ec6",
+    "local-bdf8b8dcbdff49b8beec2f185f5b68a0",
+    "local-e9637d3c8ff04fe7984739544fa0f52d"
+  ],
+  "outcomes": {
+    "store-read": {
+      "custom_id": "store-read",
+      "status": "written",
+      "paths": [
+        "./ethsc/store.py",
+        "./tests/test_store_read.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "store-read.r1",
+      "acceptance_output": null,
+      "earlier_failures": "store-read probe: fingerprints, code_by_id, reopen, block 26077729 OK\n.....F........................                                           [100%]\n=================================== FAILURES ===================================\n_________________ TestStoreRead.test_survives_close_and_reopen _________________\ntests/test_store_read.py:135: in test_survives_close_and_reopen\n    self.assertEqual(\nE   AssertionError: b'`\\x80`@R4\\x80\\x15a\\x00\\x10W`\\x00\\x80\\xfd[18712 chars]x003' != b\"```@R`\\x046\\x10a\\x00\\xafW`\\x005|\\x01\\x00[9405 chars]x00)\" : code survives reopen\n=========================== short test summary info ============================\nFAILED tests/test_store_read.py::TestStoreRead::test_survives_close_and_reopen\n1 failed, 29 passed in 3.31s\n",
+      "commit": "3e51d07f00726db5fa7993bd0bf3ec77aade4b9e",
+      "diffstat": [
+        {
+          "path": "ethsc/store.py",
+          "insertions": 38,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_store_read.py",
+          "insertions": 164,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/store.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/store.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_store_read.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_read.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster": {
+      "custom_id": "cluster",
+      "status": "written",
+      "paths": [
+        "./ethsc/cluster.py",
+        "./tests/test_cluster.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cluster.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "7:addresses_of, code_of, seeds), never touches store._conn and never\nguard: ethsc/cluster.py must use only the public Store API (fingerprints, code_by_id, addresses_of, code_of, seeds), never store._conn\n",
+      "commit": "b72aafec4928a08e91d783edb3b4e2759f764287",
+      "diffstat": [
+        {
+          "path": "ethsc/cluster.py",
+          "insertions": 163,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_cluster.py",
+          "insertions": 562,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster-judge": {
+      "custom_id": "cluster-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cluster_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cluster-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": "F.......                                                                 [100%]\n=================================== FAILURES ===================================\n________ TestBuildClustersExamples.test_build_clusters_example_1_counts ________\ntests/test_cluster_examples.py:107: in test_build_clusters_example_1_counts\n    self.assertIn(\nE   TypeError: argument of type 'NoneType' is not iterable\n=========================== short test summary info ============================\nFAILED tests/test_cluster_examples.py::TestBuildClustersExamples::test_build_clusters_example_1_counts\n1 failed, 7 passed in 6.85s\n",
+      "commit": "30b1413b0aa194ffb19774b5a1a5efd81a5ae8c8",
+      "diffstat": [
+        {
+          "path": "tests/test_cluster_examples.py",
+          "insertions": 247,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "store-read": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626034-pJa8wGAgEJl8QuHi6TZ6",
+      "input_tokens": 8805,
+      "output_tokens": 3049,
+      "cost": 0.0024184625,
+      "finish_reason": "stop"
+    },
+    "store-read.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626094-zkEb2o9B5FtiBXRAUJSO",
+      "input_tokens": 12215,
+      "output_tokens": 3064,
+      "cost": 0.0028596125,
+      "finish_reason": "stop"
+    },
+    "cluster.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626157-riehKKEj9pcKzEb0LF29",
+      "input_tokens": 21258,
+      "output_tokens": 7770,
+      "cost": 0.006012645,
+      "finish_reason": "stop"
+    },
+    "cluster.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626157-9DFb8PTNNIFC3LhnM0ZG",
+      "input_tokens": 21258,
+      "output_tokens": 7084,
+      "cost": 0.004049927,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626330-KhTbI2b7C6Cy1Ymxofbc",
+      "input_tokens": 28160,
+      "output_tokens": 6332,
+      "cost": 0.004610332,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626330-Ml9H256aBmND5s147vqf",
+      "input_tokens": 28160,
+      "output_tokens": 7135,
+      "cost": 0.006622775,
+      "finish_reason": "stop"
+    },
+    "cluster-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626535-TDtodXuWrZdQMpBDaWrV",
+      "input_tokens": 10271,
+      "output_tokens": 3076,
+      "cost": 0.0026168525,
+      "finish_reason": "stop"
+    },
+    "cluster-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "StreamLake",
+      "generation_id": "gen-1790626616-u6ryDuBHlQ5QI2JwJDLM",
+      "input_tokens": 12439,
+      "output_tokens": 3355,
+      "cost": 0.0030118475,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 142566,
+    "output_tokens": 40865,
+    "cost": 0.032202454,
+    "requests": 8,
+    "requests_with_usage": 8
+  },
+  "orchestrator_usage": {}
+}

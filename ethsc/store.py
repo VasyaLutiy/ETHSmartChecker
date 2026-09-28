@@ -126,6 +126,44 @@ class Store(object):
         ).fetchall()
         return [row[0] for row in rows]
 
+    # -- Read Codes In Bulk --------------------------------------------------
+
+    def fingerprints(self) -> List[dict]:
+        """One Fingerprint dict per row of codes, sorted by code_id.
+
+        Each dict has exactly the keys code_id, size, skeleton_hash,
+        selectors (a list) and proxy ({"kind", "target"} or None); it
+        equals fingerprint(code) of the stored code. Empty db gives [].
+        """
+        rows = self._conn.execute(
+            "SELECT code_id, size, skeleton_hash, selectors,"
+            " proxy_kind, proxy_target FROM codes ORDER BY code_id"
+        ).fetchall()
+        result = []
+        for code_id, size, skeleton_hash, selectors, kind, target in rows:
+            proxy = None
+            if kind is not None:
+                proxy = {"kind": kind, "target": target}
+            result.append(
+                {
+                    "code_id": code_id,
+                    "size": size,
+                    "skeleton_hash": skeleton_hash,
+                    "selectors": json.loads(selectors),
+                    "proxy": proxy,
+                }
+            )
+        return result
+
+    def code_by_id(self, code_id: str) -> Optional[bytes]:
+        """The stored code as bytes, or None for an unknown code_id."""
+        row = self._conn.execute(
+            "SELECT code FROM codes WHERE code_id = ?", (code_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return bytes(row[0])
+
     # -- Track Progress ----------------------------------------------------
 
     def get_progress(self) -> Optional[int]:
