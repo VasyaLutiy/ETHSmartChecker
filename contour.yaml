@@ -261,8 +261,11 @@ System:
             otherwise the Jaccard index of the sets of opcode 3-grams (op
             bytes only, args dropped) of the two stripped bodies.
           behavior: >
-            Jaccard = |A & B| / |A | B|, and 0.0 when both sets are empty.
-            Symmetric. Identical code gives 1.0.
+            Jaccard = |A & B| / |A | B|, and 0.0 when both sets are empty:
+            similarity(b"", b"") == 0.0, no exception on empty or garbage
+            bytes. Symmetric. Identical code gives 1.0. The score is the float
+            of the division, never rounded: 13/15, 26/32, 9/16 compare exactly
+            downstream.
           steps:
             - uses: evm
           examples:
@@ -304,11 +307,22 @@ System:
             Fingerprint once per code_id; put_address(address, code_id, block)
             records an address (code_id None for an account without code);
             has_address(address) -> bool; code_of(address) -> bytes or None;
-            addresses_of(code_id) -> sorted list.
+            addresses_of(code_id) -> sorted list. Bulk reads for cluster:
+            fingerprints() -> list of Fingerprint dicts, one per row of codes,
+            sorted by code_id; code_by_id(code_id) -> bytes or None for an
+            unknown code_id. close() closes the connection.
           behavior: >
-            Addresses are stored lowercase. put_code on a known code_id and
-            put_address on a known address change nothing and do not raise.
-            Every list the store returns is sorted.
+            Addresses are lowercased on the way in: every method accepts an
+            address in any case and stores or looks it up lowercase. Every
+            write is committed before the method returns. put_code on a known
+            code_id and put_address on a known address change nothing and do
+            not raise. Every list the store returns is sorted. Each element of
+            fingerprints() equals fingerprint(code) of that code, with exactly
+            the keys code_id, size, skeleton_hash, selectors (a list, from
+            json.loads of the stored text) and proxy ({kind, target} or None
+            when proxy_kind is NULL); an empty database gives []. Other
+            modules read the store only through these methods, never through
+            its SQLite connection.
           guardrails: [No Network In Core, Deterministic Output]
           steps:
             - uses: fingerprint
@@ -327,6 +341,14 @@ System:
             - given: 'the db file closed and reopened'
               when: 'addresses_of is called'
               then: 'the same 4 addresses come back'
+            - given: 'a fresh temp db, then code_weth9.hex, code_clone_270df012.hex and code_belle.hex put in that order'
+              when: 'fingerprints() is called before and after, then code_by_id for each code_id and for an unknown id'
+              then: '[] before; after, the three fingerprint(code) dicts sorted by code_id; code_by_id gives back the exact bytes, and None for the unknown id'
+              ref: 'store-read acceptance of phase 3'
+            - given: 'a store filled from codes_26077729.json'
+              when: 'fingerprints() is called'
+              then: '130 fingerprints, 12 of them with proxy not None'
+              ref: 'counted over codes_26077729.json (store-read acceptance of phase 3)'
         - name: Track Progress
           description: >
             get_progress() -> int or None, the last fully ingested block;
@@ -344,7 +366,9 @@ System:
             sorted by address.
           behavior: >
             add_seed on an address with no stored code raises
-            KeyError(address). Adding the same address twice keeps one seed
+            KeyError(address): both an address the db does not know and a
+            known address stored with code_id None (an EOA). The address may
+            come in any case. Adding the same address twice keeps one seed
             with the latest label.
           steps:
             - modifies: Code Database
@@ -393,9 +417,16 @@ System:
             eip7702) enter only proxy clusters.
           behavior: >
             Cluster = {level: "L0" | "L1" | "proxy", key, members: sorted
-            addresses}; key is the code_id, the skeleton_hash, or
-            "<kind>:<target>". The list is sorted by member count descending,
-            then level (L0, L1, proxy), then key.
+            lowercase addresses}; key is the code_id, the skeleton_hash, or
+            "<kind>:<target>". L0 and L1 are built from non-proxy codes only;
+            a proxy code never enters L0 or L1, however many addresses it
+            has. L1 members are the addresses of all the codes sharing the
+            skeleton_hash; a proxy cluster counts the addresses of every code
+            with that (kind, target) pair. Addresses without code are never
+            members. The list is sorted by member count descending, then
+            level (L0, L1, proxy), then key; insertion order does not matter.
+            Reads the store through fingerprints(), code_by_id() and
+            addresses_of() only.
           guardrails: [Deterministic Output]
           steps:
             - uses: store
@@ -424,7 +455,11 @@ System:
             then address.
           behavior: >
             Full scan: one similarity per distinct code_id, fanned out to its
-            addresses. Unknown address or one without code gives [].
+            addresses. Returns tuples (address, score) with score the float
+            from similarity, unrounded. The queried address itself is
+            excluded; the other addresses of the same code come back with
+            1.0. The query address may be in any case. Unknown address or one
+            without code gives [].
           guardrails: [Deterministic Output]
           steps:
             - uses: fingerprint
@@ -448,6 +483,10 @@ System:
             {seed_address, label, score} for every seed whose code has
             similarity >= min_score with code; sorted by score descending,
             then seed_address.
+          behavior: >
+            One similarity per seed from store.seeds(); score is the float
+            from similarity, unrounded. With no seeds, on b"" and on garbage
+            bytes it returns [] or a list, never an exception.
           guardrails: [Deterministic Output, Tolerant Parser]
           steps:
             - uses: store
@@ -471,7 +510,10 @@ System:
             key: code_id, skeleton_hash, or "<kind>:<target>"
             members: sorted lowercase addresses
         - name: Alert
-          description: A new code matching a seed.
+          description: >
+            A new code matching a seed, as match_watchlist returns it. Ingest
+            Block adds the key address (the new address whose code matched)
+            to every alert it passes on.
           schema:
             seed_address: str
             label: str
@@ -486,15 +528,22 @@ System:
             RpcClient(url, transport=None, sleep=time.sleep, prices=None,
             on_spend=None, max_retries=3).call(method, params) -> result.
             transport(url, body: bytes) -> (status: int, body: bytes); the
-            default is a urllib POST. infura_url() builds
-            https://mainnet.infura.io/v3/<key> from INFURA_API_KEY in the
-            environment or ./.env.
+            default is a urllib POST. infura_url(env_path=".env") builds
+            https://mainnet.infura.io/v3/<key> from INFURA_API_KEY: the
+            environment variable wins over the file; no key anywhere raises
+            RpcError(None, "INFURA_API_KEY is not set").
           behavior: >
-            HTTP 429 and 5xx are retried after sleep(1), sleep(2), sleep(4)
-            (doubling from 1, at most max_retries), then RpcError. A JSON-RPC
-            error object raises RpcError(code, message) at once, no retry.
-            After a successful call on_spend(method, prices[method]) is called
-            once; prices come from configuration (ethsc/config.py), not from
+            HTTP 429 and 5xx, and an OSError raised by the transport, are
+            retried after sleep(1), sleep(2), sleep(4) (doubling from 1, at
+            most max_retries), then RpcError. A JSON-RPC error object raises
+            RpcError(code, message) at once, no retry. RpcError.code is the
+            JSON-RPC error code, the HTTP status once retries are exhausted,
+            or None; the exception chain is suppressed (raise ... from None)
+            so the transport's message never travels with it. After a
+            successful call on_spend(method, prices[method]) is called once;
+            on_spend is a plain hook for the caller and is NOT wired to the
+            store ledger (Follow Chain writes the ledger itself, wiring both
+            would count twice); prices come from configuration (ethsc/config.py), not from
             code in the client. ethsc/config.py holds PRICES =
             {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000,
             "eth_getCode": 80}; the eth_blockNumber entry carries the comment
@@ -567,15 +616,21 @@ System:
             ingest_block(block, receipts, get_code, store, max_calls=None,
             watch=None) -> stats dict {candidates, known, fetched, contracts,
             eoas, failed, deferred, complete, alerts}. get_code(address,
-            block) -> hex string is injected.
+            block) -> hex string is injected. watch is the min_score passed
+            to match_watchlist; None means 0.8.
           behavior: >
             Candidates already in the store are skipped (known). Each other
             one costs one get_code call until max_calls is reached; the rest
-            are deferred and complete is False. "0x" stores the address with
-            code_id None (eoas); other code goes through put_code. A get_code
-            that raises, or returns text that is not 0x-hex, counts as failed
-            and does not stop the block. Each newly stored code is checked by
-            match_watchlist; alerts are returned, not printed.
+            are deferred. complete = (deferred == 0). "0x" stores the address
+            with code_id None (eoas); other code goes through put_code. A
+            get_code that raises, or returns text that is not 0x-hex, counts
+            as failed: the address is not stored, and it neither stops nor
+            holds the block. Invariants of the stats: candidates = known +
+            fetched + deferred and fetched = contracts + eoas + failed. Every
+            newly stored address with code (not only a new code_id) is
+            checked by match_watchlist; each alert is extended with the key
+            address, so alerts is a list of {address, seed_address, label,
+            score} ordered by address; alerts are returned, not printed.
           guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
           steps:
             - calls: Discover Candidates
@@ -598,16 +653,25 @@ System:
               ref: 'Tolerant Parser'
         - name: Follow Chain
           description: >
-            follow_chain(rpc, store, start=None, stop=None, max_calls_per_block,
-            daily_budget, day, prices) -> summary {blocks, stopped, progress}.
-            Polls eth_blockNumber, then for each block after progress
-            (or from start) up to the head (or stop): eth_getBlockReceipts,
+            follow_chain(rpc, store, start=None, stop=None,
+            max_calls_per_block=None, daily_budget=None, day=None,
+            prices=None) -> summary {blocks, stopped, progress, alerts}.
+            day=None means today's UTC date, prices=None means {}. Polls
+            eth_blockNumber, then for each block after progress (or from
+            start) up to the head (or stop): eth_getBlockReceipts,
             ingest_block with get_code over eth_getCode.
           behavior: >
             Before every RPC call it checks spent(day) + price <= daily_budget
             and, if not, stops cleanly with stopped "budget" and progress at the
-            last complete block. set_progress runs only for a complete block;
-            a rerun resumes the unfinished block, skipping known addresses.
+            last complete block. stopped is None when the range was walked to
+            its end, "budget" when the daily budget cut it, "cap" when
+            max_calls_per_block left a block incomplete. alerts is the
+            concatenation of the alerts of every ingest_block call, in block
+            order. Follow Chain is the only writer of the credit ledger:
+            after each successful rpc call it does store.spend(day, method,
+            prices.get(method, 0)); RpcClient.on_spend is left unconnected.
+            set_progress runs only for a complete block; a rerun resumes the
+            unfinished block, skipping known addresses.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
