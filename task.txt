@@ -1,0 +1,5 @@
+Phase 2 of ETHSmartChecker adds two contour components on top of the merged evm module: fingerprint and store.
+fingerprint (new module ethsc/fingerprint.py) gives fingerprint(code) -> dict with code_id (sha256 hex), size, skeleton_hash, selectors, proxy, and similarity(code_a, code_b) -> Jaccard over selectors or opcode 3-grams, both built on ethsc/evm.py.
+store (new module ethsc/store.py) is a stdlib sqlite3 Store(path) with tables codes, addresses, progress, seeds, ledger: put_code, put_address, has_address, code_of, addresses_of, get_progress/set_progress, add_seed/seeds, spend/spent.
+All examples are in contour.yaml under groups fingerprint and store and are proven offline on tests/fixtures (code_*.hex, codes_26077729.json), with tests in tests/test_fingerprint.py and tests/test_store.py.
+No network, no third-party dependency, deterministic sorted output, and nothing in ethsc/evm.py changes.
