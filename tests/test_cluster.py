@@ -10,7 +10,12 @@ import os
 import tempfile
 import unittest
 
-from ethsc.cluster import build_clusters, find_similar, match_watchlist
+from ethsc.cluster import (
+    build_clusters,
+    find_similar,
+    match_watchlist,
+    recheck_watchlist,
+)
 from ethsc.fingerprint import fingerprint, similarity
 from ethsc.store import Store
 
@@ -554,6 +559,90 @@ class MatchWatchlistTest(unittest.TestCase):
                 self.assertIsInstance(
                     alerts, list, "junk gives a list"
                 )
+        finally:
+            store.close()
+
+
+class RecheckWatchlistTest(unittest.TestCase):
+    """Recheck Watchlist: the copies already in the database."""
+
+    def test_belle_copies_already_in_store(self):
+        """Four BELLE copies already in the db alert at 13/15, the seed
+        address itself does not appear; WETH9 stays below threshold."""
+        store = make_belle_store(with_weth9=True)
+        try:
+            store.add_seed(BELLE_SEED, "BELLE honeypot")
+            alerts = recheck_watchlist(store)
+            self.assertEqual(len(alerts), 4, "four copy alerts")
+            self.assertEqual(
+                [a["address"] for a in alerts][:1],
+                [BELLE_COPY_1807],
+                "first alert address ascending",
+            )
+            self.assertNotIn(
+                BELLE_SEED,
+                [a["address"] for a in alerts],
+                "the seed never alerts on itself",
+            )
+            self.assertEqual(
+                alerts[0]["score"], 13.0 / 15.0, "score 13/15 unrounded"
+            )
+            self.assertEqual(
+                sorted(alerts[0]),
+                ["address", "label", "score", "seed_address"],
+                "exactly the four Alert keys",
+            )
+        finally:
+            store.close()
+
+    def test_univ2_seed_same_code_alerts_at_1_0(self):
+        """Seeding one UniswapV2Pair address gives 1.0 alerts on the
+        other three same-code addresses; min_score=1.0 keeps three."""
+        store = make_block_store()
+        try:
+            store.add_seed(
+                "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc",
+                "UniV2 pair seed",
+            )
+            alerts = recheck_watchlist(store, min_score=1.0)
+            self.assertEqual(len(alerts), 3, "three 1.0 alerts")
+            self.assertEqual(
+                alerts[0]["address"], UNIV2_ADDRESSES[0],
+                "first is the smallest pair address",
+            )
+            self.assertEqual(alerts[0]["score"], 1.0, "same-code 1.0")
+        finally:
+            store.close()
+
+    def test_empty_cases_and_seed_addresses_filter(self):
+        """No seeds, an empty store and an unknown seed_addresses entry
+        give []; a mixed-case seed_addresses filters to that seed."""
+        empty = Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+        try:
+            self.assertEqual(recheck_watchlist(empty), [], "empty store")
+        finally:
+            empty.close()
+        store = make_belle_store()
+        try:
+            self.assertEqual(
+                recheck_watchlist(store), [], "no seeds"
+            )
+            store.add_seed(BELLE_SEED, "BELLE honeypot")
+            self.assertEqual(
+                recheck_watchlist(
+                    store, seed_addresses=["0x" + "11" * 20]
+                ),
+                [],
+                "unknown seed address matches nothing",
+            )
+            upper = recheck_watchlist(
+                store, seed_addresses=[BELLE_SEED.upper()]
+            )
+            self.assertEqual(
+                len(upper), 4, "mixed-case seed filter still finds the 4"
+            )
+            again = recheck_watchlist(store)
+            self.assertEqual(upper, again, "deterministic on repeat calls")
         finally:
             store.close()
 
