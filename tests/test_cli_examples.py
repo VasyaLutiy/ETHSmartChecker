@@ -1,6 +1,6 @@
 """Judge tests for the cli card: one test per contour.yaml example of
-Command Line, plus the exit-code and ALERT-line contract of
-docs/TASK_PHASE5.md section 2.2.
+Command Line, plus the exit-code, stop-line and ALERT-line contracts of
+docs/TASK_PHASE5.md section 2.2 as amended by docs/TASK_PHASE6.md 2.2.
 
 Offline: every rpc is a tests.helpers.FakeRpc; no fixture loaders or
 fakes are written here. INFURA_API_KEY is set to TESTKEY-0000 and the
@@ -33,33 +33,45 @@ _EXPECTED_ALERT = (
 )
 
 
-class _Capture(object):
-    """Run main() with captured stdout/stderr; record both as text."""
+class _KIMap(dict):
+    """A codes map whose __getitem__ raises KeyboardInterrupt.
 
-    def __init__(self):
+    FakeRpc(codes=...) answers eth_getCode with codes[params[0]], so a
+    dict subclass raising from __getitem__ puts the interrupt inside
+    the pass, at the first code fetch.
+    """
+
+    def __getitem__(self, key):
+        raise KeyboardInterrupt()
+
+
+class _Capture(object):
+    """Run main() with captured stdout/stderr and an injectable sleep."""
+
+    def __init__(self, sleep=None):
         self.out = io.StringIO()
         self.err = io.StringIO()
+        self._sleep = sleep
 
     def run(self, argv, rpc):
-        out, err = sys_out_err()
-        try:
-            with contextlib.redirect_stdout(self.out):
-                with contextlib.redirect_stderr(self.err):
-                    code = main(argv, rpc=rpc)
-        finally:
-            restore_out_err(out, err)
+        with contextlib.redirect_stdout(self.out):
+            with contextlib.redirect_stderr(self.err):
+                code = main(argv, rpc=rpc, sleep=self._sleep)
         return code
 
 
-def sys_out_err():
-    import sys
-    return sys.stdout, sys.stderr
+class _SleepSpy(object):
+    """A sleep stand-in: records the seconds, optionally interrupts."""
 
+    def __init__(self, raise_after=None):
+        self.calls = []
+        self._raise_after = raise_after
 
-def restore_out_err(out, err):
-    import sys
-    sys.stdout = out
-    sys.stderr = err
+    def __call__(self, seconds):
+        self.calls.append(seconds)
+        if self._raise_after is not None and \
+                len(self.calls) > self._raise_after:
+            raise KeyboardInterrupt()
 
 
 class CliExamplesTest(unittest.TestCase):
@@ -77,10 +89,24 @@ class CliExamplesTest(unittest.TestCase):
         else:
             os.environ["INFURA_API_KEY"] = self._saved_env
 
-    def run_main(self, argv, rpc):
-        cap = _Capture()
+    def run_main(self, argv, rpc, sleep=None):
+        cap = _Capture(sleep=sleep)
         code = cap.run(argv, rpc)
         return code, cap.out.getvalue(), cap.err.getvalue()
+
+    def _set_progress(self, block):
+        store = Store(self.db)
+        try:
+            store.set_progress(block)
+        finally:
+            store.close()
+
+    def _progress(self):
+        store = Store(self.db)
+        try:
+            return store.get_progress()
+        finally:
+            store.close()
 
     def test_backfill_block_stores_206_addresses_130_codes(self):
         """contour example: backfill 26077729..26077729 with a fake rpc.
@@ -144,18 +170,14 @@ class CliExamplesTest(unittest.TestCase):
         One stdout line, exactly ALERT\t0x1807090d...\t0x34c6...\tBELLE
         honeypot\t0.8667.
         """
-        store = temp_store()
-        store.close()
-        db = os.path.join(os.path.dirname(store._conn.database
-                                          if False else self.db), self.db)
-        # Build the seeded store on a known path: re-open on self.db.
         store = Store(self.db)
-        code_belle = load_hex("code_belle.hex")
-        store.put_code(code_belle)
-        store.put_address(_BELLE_SEED, store.put_code(code_belle),
-                          26077728)
-        store.add_seed(_BELLE_SEED, "BELLE honeypot")
-        store.close()
+        try:
+            code_belle = load_hex("code_belle.hex")
+            code_id = store.put_code(code_belle)
+            store.put_address(_BELLE_SEED, code_id, 26077728)
+            store.add_seed(_BELLE_SEED, "BELLE honeypot")
+        finally:
+            store.close()
 
         receipts = [{
             "to": _BELLE_COPY,
@@ -181,13 +203,14 @@ class CliExamplesTest(unittest.TestCase):
     def test_listen_with_failing_rpc_no_secret_no_traceback(self):
         """contour example: listen with an RpcError-ing rpc.
 
-        Nonzero exit, no traceback, and TESTKEY-0000 nowhere in stdout
-        or stderr.
+        Exit 1, no traceback, and TESTKEY-0000 nowhere in stdout or
+        stderr.
         """
         rpc = FakeRpc(fail=RpcError(None, "transport failed"))
         code, out, err = self.run_main(["--db", self.db, "listen"], rpc)
-        self.assertNotEqual(0, code,
-                            msg="listen exit code: got 0, want nonzero")
+        self.assertEqual(1, code,
+                         msg="listen exit code on RpcError: got %r, want 1"
+                             % (code,))
         self.assertNotIn("Traceback", out + err,
                          msg="traceback leaked: stdout=%r stderr=%r"
                              % (out, err))
@@ -196,11 +219,13 @@ class CliExamplesTest(unittest.TestCase):
         self.assertNotIn("TESTKEY-0000", err,
                          msg="secret in stderr: %r" % (err,))
 
-    def test_backfill_budget_stop_exit_code_3_empty_stdout(self):
-        """section 2.2 contract: budget stop after no work -> exit 3.
+    def test_backfill_budget_stop_exit_code_3_stop_line(self):
+        """phase 6 contract: budget stop before any work -> exit 3 with
+        the stop line.
 
         --daily-budget 79 (< the 80-credit eth_blockNumber price) stops
-        follow_chain before the first call: exit 3, stdout empty.
+        follow_chain before the first call: exit 3, stdout empty, stderr
+        exactly the one stop line with progress none.
         """
         rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
         code, out, err = self.run_main(
@@ -210,7 +235,90 @@ class CliExamplesTest(unittest.TestCase):
                          msg="budget-stop exit code: got %r, want 3" % (code,))
         self.assertEqual("", out,
                          msg="budget-stop stdout: got %r, want empty" % (out,))
-        self.assertEqual("", err, msg="unexpected stderr: %r" % (err,))
+        self.assertEqual("stopped: budget, spent 0 credits, progress none\n",
+                         err,
+                         msg="budget-stop stderr: got %r, want %r"
+                             % (err,
+                                "stopped: budget, spent 0 credits,"
+                                " progress none\n"))
+
+    def test_backfill_budget_stop_reports_spent_and_progress(self):
+        """phase 6 table row: budget cut mid-block reports the real count.
+
+        Progress 26077728, --daily-budget 10000: 80 + 1000 + 111 x 80 =
+        9960 credits spent, the block left incomplete, so progress stays
+        26077728.
+        """
+        self._set_progress(26077728)
+        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
+        code, out, err = self.run_main(
+            ["--db", self.db, "backfill", "--from", "26077729",
+             "--to", "26077729", "--daily-budget", "10000"], rpc)
+        self.assertEqual(3, code,
+                         msg="budget-stop exit code: got %r, want 3" % (code,))
+        self.assertEqual("stopped: budget, spent 9960 credits,"
+                         " progress 26077728\n",
+                         err,
+                         msg="stop line: got %r, want %r"
+                             % (err,
+                                "stopped: budget, spent 9960 credits,"
+                                " progress 26077728\n"))
+        self.assertEqual("", out,
+                         msg="stop-line stdout: got %r, want empty" % (out,))
+
+    def test_listen_interrupt_inside_pass_at_first_code_fetch(self):
+        """contour example: Ctrl-C inside the pass, at the first
+        eth_getCode.
+
+        Progress 26077728, a codes map raising KeyboardInterrupt from
+        __getitem__: exit 0, empty stdout and stderr, progress still
+        26077728, sleep never called.
+        """
+        self._set_progress(26077728)
+        sleep = _SleepSpy()
+        rpc = FakeRpc(codes=_KIMap(), head="0x18dea21")
+        code, out, err = self.run_main(["--db", self.db, "listen"], rpc,
+                                       sleep=sleep)
+        self.assertEqual(0, code,
+                         msg="interrupted listen exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual("", out,
+                         msg="interrupted listen stdout: got %r, want empty"
+                             % (out,))
+        self.assertEqual("", err,
+                         msg="interrupted listen stderr: got %r, want empty"
+                             % (err,))
+        self.assertEqual(26077728, self._progress(),
+                         msg="progress after interrupt: got %r, want 26077728"
+                             % (self._progress(),))
+        self.assertEqual([], sleep.calls,
+                         msg="sleep calls after interrupt: got %r, want []"
+                             % (sleep.calls,))
+
+    def test_listen_interrupt_in_sleep_after_full_pass(self):
+        """contour example: Ctrl-C in the sleep between passes.
+
+        Progress 26077728, block 26077729 completes, then the sleep
+        raises KeyboardInterrupt: exit 0, sleep called once with 12,
+        progress 26077729.
+        """
+        self._set_progress(26077728)
+        sleep = _SleepSpy(raise_after=0)
+        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
+        code, out, err = self.run_main(["--db", self.db, "listen"], rpc,
+                                       sleep=sleep)
+        self.assertEqual(0, code,
+                         msg="interrupted listen exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual("", err,
+                         msg="interrupted listen stderr: got %r, want empty"
+                             % (err,))
+        self.assertEqual([12], sleep.calls,
+                         msg="sleep calls: got %r, want [12]"
+                             % (sleep.calls,))
+        self.assertEqual(26077729, self._progress(),
+                         msg="progress after interrupt: got %r, want 26077729"
+                             % (self._progress(),))
 
     def test_usage_error_no_subcommand_exit_code_2(self):
         """section 2.2 contract: argparse usage error -> exit code 2."""
