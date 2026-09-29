@@ -12,6 +12,7 @@ import unittest
 
 from ethsc.ingest import discover_candidates, ingest_block, follow_chain
 from ethsc.store import Store
+from tests.helpers import load_hex
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -29,6 +30,10 @@ PRICES = {
     "eth_getCode": 80,
 }
 
+BELLE_SEED = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
+BELLE_COPY = "0x1807090dd15a6f58e00fd769e32ebf20ee610385"
+BELLE_RECEIPTS = [{"to": BELLE_COPY}, {"to": UNIV2_PAIR}]
+
 
 def _load(name):
     with open(os.path.join(FIXTURES, name), "r", encoding="utf-8") as handle:
@@ -45,6 +50,15 @@ def _codes():
 
 def _fresh_store():
     return Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+
+
+def _belle_store():
+    """A fresh store seeded with code_belle.hex as "BELLE honeypot"."""
+    store = _fresh_store()
+    code_id = store.put_code(load_hex("code_belle.hex"))
+    store.put_address(BELLE_SEED, code_id, BLOCK)
+    store.add_seed(BELLE_SEED, "BELLE honeypot")
+    return store
 
 
 class FakeRpc(object):
@@ -196,6 +210,53 @@ class IngestBlockExamples(unittest.TestCase):
         self.assertFalse(store.has_address(UNIV2_PAIR),
                          msg="the failed address is not stored")
 
+    def test_ingest_block_alerts_sink_keyboard_interrupt(self):
+        """Ingest Block, new example: a get_code raising
+        KeyboardInterrupt on the second address lets the exception leave
+        ingest_block, and the on_alerts sink was called exactly once
+        before it, with the single alert for 0x1807090d… at 0.8667."""
+        store = _belle_store()
+        copy_hex = "0x" + load_hex("code_belle_copy_1807090d.hex").hex()
+        sink_calls = []
+
+        def get_code(address, block):
+            if address == BELLE_COPY:
+                return copy_hex
+            raise KeyboardInterrupt("boom")
+
+        with self.assertRaises(KeyboardInterrupt, msg="the interrupt leaves"):
+            ingest_block(BLOCK, BELLE_RECEIPTS, get_code, store,
+                         on_alerts=sink_calls.append)
+        self.assertEqual(len(sink_calls), 1,
+                         msg="the sink was called exactly once")
+        alerts = sink_calls[0]
+        self.assertEqual(len(alerts), 1,
+                         msg="exactly one alert before the interrupt")
+        alert = alerts[0]
+        self.assertEqual(alert["address"], BELLE_COPY,
+                         msg="the alert names 0x1807090d…")
+        self.assertEqual(alert["seed_address"], BELLE_SEED,
+                         msg="the seed is the BELLE address")
+        self.assertEqual(alert["label"], "BELLE honeypot",
+                         msg='the label is "BELLE honeypot"')
+        self.assertAlmostEqual(alert["score"], 13 / 15, places=12,
+                               msg="the score is 13/15 (0.8667)")
+
+    def test_ingest_block_alerts_sink_no_alerts(self):
+        """Ingest Block, new example: an on_alerts sink is called exactly
+        once even on a block that produces no alerts at all."""
+        store = _belle_store()
+        codes = _codes()
+        sink_calls = []
+        stats = ingest_block(BLOCK, _receipts(), lambda a, b: codes[a],
+                             store, on_alerts=sink_calls.append)
+        self.assertEqual(stats["alerts"], [],
+                         msg="the block produces no alerts")
+        self.assertEqual(len(sink_calls), 1,
+                         msg="the sink was called exactly once")
+        self.assertEqual(sink_calls[0], [],
+                         msg="the sink got an empty list")
+
 
 class FollowChainExamples(unittest.TestCase):
     maxDiff = None
@@ -260,6 +321,78 @@ class FollowChainExamples(unittest.TestCase):
         self.assertEqual(store.spent("2026-09-29"), 80 + 1000 + 95 * 80,
                          msg="the new day pays blockNumber, receipts and "
                              "the 95 remaining codes: 80 + 1000 + 7600 = 8680")
+
+    def test_follow_chain_day_per_block(self):
+        """Follow Chain, new example: day a callable yielding
+        "2026-09-28", "2026-09-28", "2026-09-29" over two blocks gives
+        blocks 2, progress 26077730, spent("2026-09-28") 17560,
+        spent("2026-09-29") 1000 (the second block finds every address
+        known and pays only the 1000 of eth_getBlockReceipts), summary
+        day "2026-09-29"."""
+        store = _fresh_store()
+        store.set_progress(BLOCK - 1)
+        days = iter(["2026-09-28", "2026-09-28", "2026-09-29"])
+        rpc = FakeRpc(_receipts(), _codes(), "0x18dea22")
+        summary = follow_chain(rpc, store, daily_budget=3000000,
+                               day=lambda: next(days), prices=PRICES)
+        self.assertEqual(summary["blocks"], 2, msg="both blocks completed")
+        self.assertEqual(summary["progress"], BLOCK + 1,
+                         msg="progress 26077730")
+        self.assertIsNone(summary["stopped"], msg="no stop")
+        self.assertEqual(store.spent("2026-09-28"), 17560,
+                         msg="the first block pays 17560 on 2026-09-28")
+        self.assertEqual(store.spent("2026-09-29"), 1000,
+                         msg="the second block pays only 1000 on 2026-09-29")
+        self.assertEqual(summary["day"], "2026-09-29",
+                         msg='summary day is the last resolved day "2026-09-29"')
+
+    def test_follow_chain_pinned_day(self):
+        """Follow Chain, new example: the same two-block pass with an
+        explicit day="2026-09-28" string charges both blocks to that
+        day: spent 18560 on 2026-09-28, 0 on 2026-09-29, summary day
+        "2026-09-28"."""
+        store = _fresh_store()
+        store.set_progress(BLOCK - 1)
+        rpc = FakeRpc(_receipts(), _codes(), "0x18dea22")
+        summary = follow_chain(rpc, store, daily_budget=3000000,
+                               day="2026-09-28", prices=PRICES)
+        self.assertEqual(summary["blocks"], 2, msg="both blocks completed")
+        self.assertEqual(store.spent("2026-09-28"), 18560,
+                         msg="the pinned day pays 17560 + 1000 = 18560")
+        self.assertEqual(store.spent("2026-09-29"), 0,
+                         msg="the second day pays nothing")
+        self.assertEqual(summary["day"], "2026-09-28",
+                         msg='summary day is the pinned "2026-09-28"')
+
+    def test_follow_chain_capped_block_keeps_alerts(self):
+        """Follow Chain, new example: a BELLE-copy block with
+        max_calls_per_block 1 stops with "cap", progress unchanged, and
+        the single alert for 0x1807090d… at 0.8667 reaches both the
+        on_alerts sink and summary["alerts"]."""
+        store = _belle_store()
+        store.set_progress(BLOCK - 1)
+        codes = dict(_codes())
+        codes[BELLE_COPY] = "0x" + load_hex("code_belle_copy_1807090d.hex").hex()
+        rpc = FakeRpc(BELLE_RECEIPTS, codes, "0x18dea21")
+        sink_calls = []
+        summary = follow_chain(rpc, store, max_calls_per_block=1,
+                               day="2026-09-28", prices=PRICES,
+                               on_alerts=sink_calls.append)
+        self.assertEqual(summary["stopped"], "cap", msg='stopped "cap"')
+        self.assertEqual(summary["progress"], BLOCK - 1,
+                         msg="progress still 26077728")
+        self.assertEqual(len(sink_calls), 1,
+                         msg="the sink was called exactly once")
+        self.assertEqual(len(sink_calls[0]), 1,
+                         msg="the sink got the single alert")
+        self.assertEqual(sink_calls[0][0]["address"], BELLE_COPY,
+                         msg="the alert names 0x1807090d…")
+        self.assertAlmostEqual(sink_calls[0][0]["score"], 13 / 15, places=12,
+                               msg="the score is 13/15 (0.8667)")
+        self.assertEqual(len(summary["alerts"]), 1,
+                         msg="summary alerts holds that same one")
+        self.assertEqual(summary["alerts"], sink_calls[0],
+                         msg="summary alerts and the sink got the same alert")
 
 
 if __name__ == "__main__":

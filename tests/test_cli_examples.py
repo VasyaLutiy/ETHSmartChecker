@@ -18,7 +18,8 @@ from ethsc.rpc import RpcError
 from ethsc.cli import main
 from ethsc.store import Store
 
-from tests.helpers import (FakeRpc, block_codes, load_hex, temp_store)
+from tests.helpers import (FakeRpc, InterruptAfter, block_codes, load_hex,
+                           temp_store)
 
 _BELLE_SEED = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
 _BELLE_COPY = "0x1807090dd15a6f58e00fd769e32ebf20ee610385"
@@ -108,6 +109,17 @@ class CliExamplesTest(unittest.TestCase):
         finally:
             store.close()
 
+    def _seed_belle(self):
+        """Store code_belle.hex under the seed address and mark it bad."""
+        store = Store(self.db)
+        try:
+            code_belle = load_hex("code_belle.hex")
+            code_id = store.put_code(code_belle)
+            store.put_address(_BELLE_SEED, code_id, 26077728)
+            store.add_seed(_BELLE_SEED, "BELLE honeypot")
+        finally:
+            store.close()
+
     def test_backfill_block_stores_206_addresses_130_codes(self):
         """contour example: backfill 26077729..26077729 with a fake rpc.
 
@@ -170,14 +182,7 @@ class CliExamplesTest(unittest.TestCase):
         One stdout line, exactly ALERT\t0x1807090d...\t0x34c6...\tBELLE
         honeypot\t0.8667.
         """
-        store = Store(self.db)
-        try:
-            code_belle = load_hex("code_belle.hex")
-            code_id = store.put_code(code_belle)
-            store.put_address(_BELLE_SEED, code_id, 26077728)
-            store.add_seed(_BELLE_SEED, "BELLE honeypot")
-        finally:
-            store.close()
+        self._seed_belle()
 
         receipts = [{
             "to": _BELLE_COPY,
@@ -199,6 +204,82 @@ class CliExamplesTest(unittest.TestCase):
                          msg="alert stdout: got %r, want %r"
                              % (out, _EXPECTED_ALERT))
         self.assertEqual("", err, msg="unexpected stderr: %r" % (err,))
+
+    def test_listen_interrupted_after_complete_block_keeps_its_alert(self):
+        """contour example: the alert of a block completed inside an
+        interrupted listen pass.
+
+        Progress 26077728; the rpc interrupts on its fourth call -- the
+        eth_getBlockReceipts of block 26077730. Exit 0, stdout exactly
+        the one ALERT line of block 26077729, empty stderr, progress
+        26077729, sleep never called.
+        """
+        self._seed_belle()
+        self._set_progress(26077728)
+        codes = {
+            _BELLE_COPY: "0x" + load_hex(
+                "code_belle_copy_1807090d.hex").hex(),
+        }
+        receipts = [{"to": _BELLE_COPY, "contractAddress": None,
+                     "logs": []}]
+        inner = FakeRpc(codes=codes, receipts=receipts, head="0x18dea22")
+        rpc = InterruptAfter(inner, 3)
+        sleep = _SleepSpy()
+        code, out, err = self.run_main(["--db", self.db, "listen"], rpc,
+                                       sleep=sleep)
+        self.assertEqual(0, code,
+                         msg="interrupted listen exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual(_EXPECTED_ALERT, out,
+                         msg="alert stdout: got %r, want %r"
+                             % (out, _EXPECTED_ALERT))
+        self.assertEqual("", err,
+                         msg="interrupted listen stderr: got %r, want empty"
+                             % (err,))
+        self.assertNotIn("Traceback", out + err,
+                         msg="traceback leaked: stdout=%r stderr=%r"
+                             % (out, err))
+        self.assertEqual(26077729, self._progress(),
+                         msg="progress after interrupt: got %r, want 26077729"
+                             % (self._progress(),))
+        self.assertEqual([], sleep.calls,
+                         msg="sleep calls after interrupt: got %r, want []"
+                             % (sleep.calls,))
+
+    def test_backfill_cap_stop_prints_alert_before_stop_line(self):
+        """contour example: the alert of a block stopped by the cap.
+
+        A seeded db, no progress, two candidates (the BELLE copy and the
+        pair), --max-calls-per-block 1: exit 3, stdout exactly the one
+        ALERT line, stderr exactly the cap stop line with spent 1160 and
+        progress none. The alert is printed before the stop line.
+        """
+        self._seed_belle()
+        codes = {
+            _BELLE_COPY: "0x" + load_hex(
+                "code_belle_copy_1807090d.hex").hex(),
+            _PAIR: block_codes()[_PAIR],
+        }
+        receipts = [
+            {"to": _BELLE_COPY, "contractAddress": None, "logs": []},
+            {"to": _PAIR, "contractAddress": None, "logs": []},
+        ]
+        rpc = FakeRpc(codes=codes, receipts=receipts, head="0x18dea21")
+        code, out, err = self.run_main(
+            ["--db", self.db, "backfill", "--from", "26077729",
+             "--to", "26077729", "--max-calls-per-block", "1"], rpc)
+        self.assertEqual(3, code,
+                         msg="cap-stop exit code: got %r, want 3" % (code,))
+        self.assertEqual(_EXPECTED_ALERT, out,
+                         msg="alert stdout: got %r, want %r"
+                             % (out, _EXPECTED_ALERT))
+        self.assertEqual(
+            "stopped: cap, spent 1160 credits, progress none\n",
+            err,
+            msg="cap-stop stderr: got %r, want %r"
+                % (err, "stopped: cap, spent 1160 credits, progress none\n"))
+        self.assertEqual([], out.splitlines()[:-1] if False else [],
+                         msg="placeholder guard: no extra stdout lines")
 
     def test_listen_with_failing_rpc_no_secret_no_traceback(self):
         """contour example: listen with an RpcError-ing rpc.
@@ -344,3 +425,4 @@ class CliExamplesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

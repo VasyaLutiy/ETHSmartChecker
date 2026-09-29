@@ -1,0 +1,347 @@
+{
+  "deck_id": "20260929-164033-aedbef1c",
+  "completed_at": "2026-09-29T16:52:47.579",
+  "branch": "morph/20260929-164033-aedbef1c",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ingest"
+    ],
+    [
+      "cli",
+      "ingest-judge"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-b54f71ce1ba74074ad388dcf3133c25b",
+    "local-9cf40f67a4f04a06bb26b0c4a40829e3",
+    "local-966bee0ff45a47359741a5f14203584e",
+    "local-bc48a0b3aaff44c48e8c6b5343a842b8",
+    "local-991c97573fa9418b8c2b31e5e6650f31"
+  ],
+  "outcomes": {
+    "ingest": {
+      "custom_id": "ingest",
+      "status": "written",
+      "paths": [
+        "./ethsc/ingest.py",
+        "./tests/test_ingest.py",
+        "./tests/helpers.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "19620051b5851799373a87efa7d8161079e0f98d",
+      "diffstat": [
+        {
+          "path": "ethsc/ingest.py",
+          "insertions": 108,
+          "deletions": 62
+        },
+        {
+          "path": "tests/helpers.py",
+          "insertions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_ingest.py",
+          "insertions": 40,
+          "deletions": 1
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "ingest-judge": {
+      "custom_id": "ingest-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_ingest_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "f0432132ccbe369f335229e6be1ba95acb3ec70a",
+      "diffstat": [
+        {
+          "path": "tests/test_ingest_examples.py",
+          "insertions": 133,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_ingest_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "cli.r2.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\nc3 cap stop prints the alert of the incomplete block: got (3, 'ALERT\\t0x1807090dd15a6f58e00fd769e32ebf20ee610385\\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\\tBELLE honeypot\\t0.8667\\n', 'stopped: cap, spent 0 credits, progress none\\n'), want (3, 'ALERT\\t0x1807090dd15a6f58e00fd769e32ebf20ee610385\\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\\tBELLE honeypot\\t0.8667\\n', 'stopped: cap, spent 1160 credits, progress none\\n')\nc6 budget 79 fresh: got (0, '', ''), want (3, '', 'stopped: budget, spent 0 credits, progress none\\n')\nc6 budget 10000: got (0, '', ''), want (3, '', 'stopped: budget, spent 9960 credits, progress 26077728\\n')\nc6 cap 5 fresh: got (3, '', 'stopped: cap, spent 0 credits, progress none\\n'), want (3, '', 'stopped: cap, spent 1480 credits, progress none\\n')\nc6 listen budget 10000: got (0, '', ''), want (3, '', 'stopped: budget, spent 9960 credits, progress 26077728\\n')\nc6 listen budget 10000 sleep calls: got [12], want []\n",
+      "commit": "1324c02497f224b4f0502500929c71d501fc799a",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 63,
+          "deletions": 48
+        },
+        {
+          "path": "tests/test_cli.py",
+          "insertions": 71,
+          "deletions": 3
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "e217c6979f7c7e750adaa6606fd360bcd7f34c85",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 91,
+          "deletions": 9
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "ingest.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696434-Yae8UUrCKmGdW0fbpRl0",
+      "input_tokens": 31674,
+      "output_tokens": 8544,
+      "cost": 0.00541386,
+      "finish_reason": "stop"
+    },
+    "ingest.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696434-6e2xca8ggk1CBpkaIytO",
+      "input_tokens": 31674,
+      "output_tokens": 8207,
+      "cost": 0.003036408,
+      "finish_reason": "stop"
+    },
+    "ingest-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696645-IA5iJqMiw3FJLhLyy1iC",
+      "input_tokens": 32605,
+      "output_tokens": 4673,
+      "cost": 0.00433635,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696645-7xvWRtNmwrmO5NuDM3TJ",
+      "input_tokens": 33128,
+      "output_tokens": 5198,
+      "cost": 0.003361272,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696645-YCs15pT9TPtlGvk3Uelx",
+      "input_tokens": 33128,
+      "output_tokens": 5759,
+      "cost": 0.002824548,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696825-a77tApXAQVZYjd6q0aQ8",
+      "input_tokens": 39566,
+      "output_tokens": 4351,
+      "cost": 0.002981568,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696825-EGyXHdaIJJj7FEYACF2X",
+      "input_tokens": 39566,
+      "output_tokens": 4464,
+      "cost": 0.002531628,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696893-HCLZCZorbUtlK2SMWaO3",
+      "input_tokens": 39940,
+      "output_tokens": 4731,
+      "cost": 0.002645388,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790696893-vFABnW8EGrlBM0LbAX3A",
+      "input_tokens": 39940,
+      "output_tokens": 5345,
+      "cost": 0.002539284,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790697024-pgeDMkmG64QD4j2KHVlD",
+      "input_tokens": 34122,
+      "output_tokens": 4648,
+      "cost": 0.00446538,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 355343,
+    "output_tokens": 55920,
+    "cost": 0.034135686,
+    "requests": 10,
+    "requests_with_usage": 10
+  },
+  "orchestrator_usage": {}
+}
