@@ -232,3 +232,43 @@ class Store(object):
             (day,),
         ).fetchone()
         return int(row[0])
+
+    # -- Base Counts ---------------------------------------------------------
+
+    def counts(self) -> dict:
+        """Read-only aggregates: exactly five int keys.
+
+        addresses is the row count of the addresses table, split into
+        addresses_with_code (code_id not NULL) and addresses_without_code
+        (code_id NULL); codes is the row count of codes; blocks is the
+        number of DISTINCT block values in addresses. Pure read: no
+        write, no commit. Empty db: all five keys are 0.
+        """
+        addresses, with_code = self._conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(code_id IS NOT NULL), 0)"
+            " FROM addresses"
+        ).fetchone()
+        codes = self._conn.execute(
+            "SELECT COUNT(*) FROM codes"
+        ).fetchone()[0]
+        blocks = self._conn.execute(
+            "SELECT COUNT(DISTINCT block) FROM addresses"
+        ).fetchone()[0]
+        return {
+            "addresses": int(addresses),
+            "addresses_with_code": int(with_code),
+            "addresses_without_code": int(addresses) - int(with_code),
+            "codes": int(codes),
+            "blocks": int(blocks),
+        }
+
+    def ledger_days(self) -> List[dict]:
+        """[{day, credits}] summing every method of one day, by day asc.
+
+        Pure read: no write, no commit. Empty ledger gives [].
+        """
+        rows = self._conn.execute(
+            "SELECT day, COALESCE(SUM(credits), 0) FROM ledger"
+            " GROUP BY day ORDER BY day ASC"
+        ).fetchall()
+        return [{"day": row[0], "credits": int(row[1])} for row in rows]
