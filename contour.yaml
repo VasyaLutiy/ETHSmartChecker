@@ -614,10 +614,12 @@ System:
         - name: Ingest Block
           description: >
             ingest_block(block, receipts, get_code, store, max_calls=None,
-            watch=None) -> stats dict {candidates, known, fetched, contracts,
-            eoas, failed, deferred, complete, alerts}. get_code(address,
-            block) -> hex string is injected. watch is the min_score passed
-            to match_watchlist; None means 0.8.
+            watch=None, on_alerts=None) -> stats dict {candidates, known,
+            fetched, contracts, eoas, failed, deferred, complete, alerts}.
+            get_code(address, block) -> hex string is injected. watch is the
+            min_score passed to match_watchlist; None means 0.8. on_alerts is
+            an optional sink for the alerts of this block, called before the
+            call returns or raises.
           behavior: >
             Candidates already in the store are skipped (known). Each other
             one costs one get_code call until max_calls is reached; the rest
@@ -631,6 +633,12 @@ System:
             checked by match_watchlist; each alert is extended with the key
             address, so alerts is a list of {address, seed_address, label,
             score} ordered by address; alerts are returned, not printed.
+            on_alerts, when given, is called exactly once per ingest_block
+            call with that list, and it is called even when get_code raises
+            KeyboardInterrupt: the alerts found before the interruption are
+            handed over, sorted by address, before the exception leaves. An
+            alert reaches on_alerts exactly once, so a caller that prints
+            from on_alerts must not print the returned list as well.
           guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
           steps:
             - calls: Discover Candidates
@@ -651,12 +659,25 @@ System:
               when: 'ingest_block is called'
               then: 'failed 1, fetched 206, contracts 146; the other three UniswapV2Pair addresses are stored'
               ref: 'Tolerant Parser'
+            - given: >
+                a store seeded with code_belle.hex as "BELLE honeypot", a block whose
+                candidates are 0x1807090dd15a6f58e00fd769e32ebf20ee610385 (served
+                code_belle_copy_1807090d.hex) and
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc, and a get_code that
+                raises KeyboardInterrupt on the second address
+              when: 'ingest_block is called with an on_alerts collecting into a list'
+              then: 'KeyboardInterrupt propagates, and on_alerts was called once before it with the single alert for 0x1807090d… at 0.8667'
+              ref: 'live smoke 2026-09-29: a Ctrl-C inside a block lost the alerts already found (TASK_PHASE5 §13)'
         - name: Follow Chain
           description: >
             follow_chain(rpc, store, start=None, stop=None,
             max_calls_per_block=None, daily_budget=None, day=None,
-            prices=None) -> summary {blocks, stopped, progress, alerts}.
-            day=None means today's UTC date, prices=None means {}. Polls
+            prices=None, on_alerts=None) -> summary {blocks, stopped,
+            progress, alerts, day}. day is a "%Y-%m-%d" string pinning every
+            block of the pass, or a callable of no arguments returning one;
+            day=None means today's UTC date, resolved afresh before each
+            block. prices=None means {}. on_alerts is the per-block alert
+            sink passed down to ingest_block. Polls
             eth_blockNumber, then for each block after progress (or from
             start) up to the head (or stop): eth_getBlockReceipts,
             ingest_block with get_code over eth_getCode.
@@ -667,14 +688,24 @@ System:
             its end, "budget" when the daily budget cut it, "cap" when
             max_calls_per_block left a block incomplete. alerts is the
             concatenation of the alerts of every ingest_block call, in block
-            order. Follow Chain is the only writer of the credit ledger:
+            order, the incomplete block included: an alert found before a
+            budget or cap stop is never dropped with the block that carried
+            it. on_alerts is handed to every ingest_block call, so a caller
+            learns a block's alerts as that block ends, not when the pass
+            does; a pass cut short by KeyboardInterrupt has already delivered
+            the alerts of every block it walked, the interrupted one
+            included, and the exception then propagates.
+            Follow Chain is the only writer of the credit ledger:
             after each successful rpc call it does store.spend(day, method,
             prices.get(method, 0)); RpcClient.on_spend is left unconnected.
             set_progress runs only for a complete block; a rerun resumes the
-            unfinished block, skipping known addresses. day is fixed once per
-            follow_chain call (listen refreshes it on every pass); a single
-            pass that runs across midnight UTC keeps charging the day it
-            started with.
+            unfinished block, skipping known addresses. The ledger day is
+            resolved once before the eth_blockNumber charge and again before
+            each block, so a pass that runs across midnight UTC charges each
+            block to the day it was actually walked on; an explicit day
+            string pins every block of the pass, as the examples below do.
+            summary day is the last day resolved, the one a caller reports
+            spent() for.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
@@ -696,6 +727,23 @@ System:
             - given: 'that store and a new day with daily_budget 3000000'
               when: 'follow_chain is called again'
               then: '95 eth_getCode calls, progress 26077729'
+            - given: >
+                a fake rpc with head 0x18dea22 answering receipts_26077729.json for
+                both blocks and codes_26077729.json; progress 26077728; the Infura
+                prices; daily_budget 3000000; day a callable yielding "2026-09-28",
+                "2026-09-28", "2026-09-29"
+              when: 'follow_chain is called'
+              then: 'blocks 2, progress 26077730, spent("2026-09-28") 17560, spent("2026-09-29") 1000, summary day "2026-09-29"'
+              ref: 'the day is resolved before eth_blockNumber and again before each block; the second block finds all 206 addresses known, so it pays only the 1000 of eth_getBlockReceipts'
+            - given: >
+                a store seeded with code_belle.hex as "BELLE honeypot"; a fake rpc
+                over one block whose candidates are
+                0x1807090dd15a6f58e00fd769e32ebf20ee610385 (served
+                code_belle_copy_1807090d.hex) and
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc; max_calls_per_block 1
+              when: 'follow_chain is called with an on_alerts collecting into a list'
+              then: 'stopped "cap", progress unchanged, on_alerts called once with the single alert for 0x1807090d… at 0.8667, and summary alerts holds that same one'
+              ref: 'discover_candidates sorts, so 0x1807… is fetched first; before phase 6 its alert was dropped together with the incomplete block'
     - name: cli
       description: python -m ethsc with subcommands over one SQLite db.
       functions:
@@ -726,14 +774,24 @@ System:
             address without code) and main returns argparse's code instead
             of raising SystemExit; 3 when a budget or cap stop left work
             undone, and then one line goes to stderr: "stopped: <budget|cap>,
-            spent <credits> credits, progress <block>". listen is a loop of
-            follow_chain passes with sleep(interval) between them (interval
-            default 12); a code 3 stop ends the loop. KeyboardInterrupt
-            anywhere in listen or backfill, in the sleep as well as inside a
-            pass (a transport call, a retry backoff), is a clean stop: exit
-            0, no traceback, progress of the last complete block kept, the
-            unfinished block resumed on the next start. Nothing printed ever
-            contains the key.
+            spent <credits> credits, progress <block>", where <block> is
+            "none" when no block has ever completed and <credits> is the
+            ledger of the day the pass last charged (summary day), not of
+            the day it started on. The ALERT lines of a block are written
+            and flushed as that block ends, through the on_alerts sink of
+            follow_chain, not gathered until the pass returns: under nohup
+            an alert must reach the log before the next block is fetched,
+            and it must survive a pass that never returns. The returned
+            summary alerts are therefore not printed a second time. listen
+            is a loop of follow_chain passes with sleep(interval) between
+            them (interval default 12); a code 3 stop ends the loop.
+            KeyboardInterrupt anywhere in listen or backfill is a clean
+            stop -- exit 0, no traceback, progress of the last complete
+            block kept, the unfinished block resumed on the next start --
+            and anywhere means the sleep, inside a pass (a transport call, a
+            retry backoff), while the ALERT lines are being written, while
+            the stop line is being written, and between a pass and the
+            pause. Nothing printed ever contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -765,6 +823,15 @@ System:
             - given: 'the same fake rpc over block 26077729, progress 26077728, and a sleep that raises KeyboardInterrupt'
               when: 'main(["--db", db, "listen"], rpc=fake, sleep=that_sleep)'
               then: 'exit 0, sleep called once with 12, progress 26077729'
+            - given: >
+                a db holding code_belle.hex seeded as "BELLE honeypot", progress
+                26077728, and a fake rpc with head 0x18dea22 whose only candidate
+                in block 26077729 is 0x1807090dd15a6f58e00fd769e32ebf20ee610385
+                with code_belle_copy_1807090d.hex, raising KeyboardInterrupt on
+                its fourth call -- the eth_getBlockReceipts of block 26077730
+              when: 'main(["--db", db, "listen"], rpc=fake, sleep=fake_sleep)'
+              then: 'exit 0, no traceback, stdout holds the one ALERT line of block 26077729, progress 26077729, sleep never called'
+              ref: 'the alert of a block completed inside an interrupted pass must reach stdout; before phase 6 it was lost forever, since the address is known on the resume'
 Requirement:
   - name: Stdlib Only
     description: >
