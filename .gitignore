@@ -9,3 +9,8 @@ contour-reference/
 .claude/settings.local.json
 *.sqlite
 *.db
+
+# mrph run side output and live smoke artifacts
+docs/contour.svg
+docs/contour-detailed.svg
+smoke/
