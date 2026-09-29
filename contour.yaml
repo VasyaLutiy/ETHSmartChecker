@@ -1023,7 +1023,10 @@ System:
             min, median, max and a histogram over fixed edges: [0, 256,
             1024, 4096, 8192, 16384, 24576] bytes and [0, 1, 2, 4, 8, 16,
             32, 64] selectors. The edges are fixed, never derived from the
-            data, so two bases are comparable. ledger is
+            data, so two bases are comparable. median is the true median and
+            always a float: the mean of the two middle values when the count
+            is even, the middle value itself when it is odd, 0.0 on an empty
+            base. min and max stay ints. ledger is
             store.ledger_days() plus their total. alerts is
             recheck_watchlist(store) folded per seed into {address, label,
             count}, sorted by address, plus the total. The whole structure
@@ -1055,10 +1058,10 @@ System:
             - given: 'the same store'
               when: 'collect(store)["codes"] is read'
               then: >
-                bytecode size min 20, median 4516, max 24313, histogram
-                [22, 5, 36, 19, 23, 25, 0]; selector count min 0, median 13,
-                max 72, histogram [28, 2, 3, 16, 27, 35, 17, 2]
-              ref: 'counted over codes_26077729.json against the fixed edges'
+                bytecode size min 20, median 4442.5, max 24313, histogram
+                [22, 5, 36, 19, 23, 25, 0]; selector count min 0, median
+                12.5, max 72, histogram [28, 2, 3, 16, 27, 35, 17, 2]
+              ref: '130 codes, so both medians average the two middle values: 4369 and 4516, 12 and 13'
             - given: 'the same store, plus seed 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc labelled "UniV2 pair seed"'
               when: 'collect(store)["alerts"] is read'
               then: 'total 4 and one seed entry, that address, label "UniV2 pair seed", count 4'
@@ -1138,7 +1141,8 @@ System:
             summary, the level and skeleton shares, the top clusters, the
             ledger, the alerts per seed and the Spearman coefficients as a
             table beside the heat map, every float printed "%.4f" and every
-            null cell printed as an empty cell. Two runs on the same store
+            null cell printed as the literal "n/a" -- never as an empty
+            cell, which would read as a coefficient of zero. Two runs on the same store
             in the same environment give byte-identical html and json. The
             charts mapping has exactly the keys cluster_sizes, top_clusters,
             code_sizes, selector_counts and spearman; an absent or extra key
@@ -1171,11 +1175,18 @@ System:
             clusters by address count, labelled "<level> <key[:10]>";
             code_sizes and selector_counts are the two histograms of the
             codes section; spearman is the heat map of the matrix on a
-            diverging scale from -1 to 1, with the null cells left blank.
-            Determinism is bought with three settings and nothing else:
+            diverging scale from -1 to 1. A null cell is drawn visibly
+            undefined -- hatched or flat grey, carrying the text "n/a", and
+            named in the legend -- never left blank: on a diverging scale
+            zero is nearly white, so a blank cell would read as "no
+            correlation" where it means "undefined".
+            Determinism is bought with four settings and nothing else:
             matplotlib.use("Agg") before pyplot, rcParams["svg.hashsalt"]
-            fixed to a constant string, and savefig(format="svg",
-            metadata={"Date": None}); every figure is closed. Byte-identical
+            fixed to a constant string, rcParams["svg.fonttype"] = "none",
+            and savefig(format="svg", metadata={"Date": None}); every figure
+            is closed. fonttype "none" keeps every label a real <text>
+            element instead of glyph paths, which is what lets the "n/a"
+            marks be read back out of the SVG, and it embeds no font file. Byte-identical
             output is promised within one environment and one matplotlib
             version, not across versions.
           guardrails: [Deterministic Output]
@@ -1188,7 +1199,7 @@ System:
               ref: 'measured 29.09: sha256 d6f53e0858cb92ac… reproduced across PYTHONHASHSEED 7 and 99'
             - given: 'a matrix holding null cells'
               when: 'the heat map is drawn'
-              then: 'no exception, and the null cells carry no colour'
+              then: 'no exception, and every null cell carries the "n/a" mark and a fill distinguishable from the zero of the diverging scale'
       dataObjects:
         - name: Report Data
           description: >
