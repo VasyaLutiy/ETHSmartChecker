@@ -2,14 +2,22 @@
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
 clusters top, cluster, similar, seed add, seed list. Output is plain
-text, one record per line, tab-separated, fully ordered; alerts from
-ingest print as lines starting "ALERT". Exit codes: 0 success, 1 a
-failed RPC call, 2 usage error, 3 a budget or cap stop that left work
-undone -- then one line goes to stderr:
-"stopped: <budget|cap>, spent <N> credits, progress <P>".
+text, one record per line, tab-separated, fully ordered; ALERT lines are
+printed from the on_alerts sink of follow_chain as each block ends and
+flushed at once, so an alert reaches the log before the next block is
+fetched and survives a pass that never returns. The summary alerts are
+not printed a second time: each alert appears exactly once. Exit codes:
+0 success, 1 a failed RPC call, 2 usage error, 3 a budget or cap stop
+that left work undone -- then one line goes to stderr:
+"stopped: <budget|cap>, spent <N> credits, progress <P>", where <N> is
+the ledger of summary["day"], the day the pass last charged, and <P> is
+"none" when no block has ever completed. The day is left to follow_chain
+(day=None): it resolves the ledger day per block.
 KeyboardInterrupt anywhere in listen or backfill -- in the sleep, in an
-rpc call, inside ingest, in a store write -- is a clean stop: exit 0,
-no traceback, no stderr, the store still closed. main() never raises
+rpc call, in a retry backoff, inside ingest, in a store write, while the
+ALERT lines are being written, while the stop line is being written, and
+in the gap between a pass and the pause -- is a clean stop: exit 0, no
+traceback, no stderr, the store still closed. main() never raises
 SystemExit: argparse failures are caught and returned as the int code
 2, so tests calling main() directly see the same code sys.exit(main())
 produces in __main__.
@@ -21,7 +29,6 @@ attributes.
 """
 
 import argparse
-import datetime
 import re
 import sys
 import time
@@ -53,12 +60,8 @@ def _check_address(address):
     return address
 
 
-def _utc_day():
-    """Today's UTC date as "%Y-%m-%d", the day follow_chain charges."""
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-
-
 def _print_alerts(alerts):
+    """Write the block's ALERT lines to stdout and flush at once."""
     for alert in alerts:
         sys.stdout.write(
             "ALERT\t%s\t%s\t%s\t%.4f\n"
@@ -69,6 +72,7 @@ def _print_alerts(alerts):
                 alert["score"],
             )
         )
+    sys.stdout.flush()
 
 
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
@@ -76,11 +80,12 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
     """One follow_chain call with the CLI's error and exit-code policy.
 
     Returns the exit code, or None when the pass was interrupted by
-    KeyboardInterrupt (a clean stop: no output, no traceback). The UTC
-    day is computed per pass and passed to follow_chain, so a stop line
-    reports the ledger of the same day the pass was charged on.
+    KeyboardInterrupt (a clean stop: no output, no traceback). The ALERT
+    lines of every block -- a complete one included -- are printed by
+    the on_alerts sink as the block ends. The stop line reports the
+    ledger of summary["day"], the day the pass last charged, not the
+    day it started on.
     """
-    day = _utc_day()
     try:
         summary = follow_chain(
             rpc,
@@ -89,58 +94,68 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             stop=stop,
             max_calls_per_block=max_calls,
             daily_budget=daily_budget,
-            day=day,
             prices=PRICES,
+            on_alerts=_print_alerts,
         )
     except KeyboardInterrupt:
         return None
     except RpcError as err:
         sys.stderr.write(str(err) + "\n")
         return 1
-    _print_alerts(summary["alerts"])
     if summary["stopped"] is None:
         return 0
     progress = summary["progress"]
-    sys.stderr.write(
-        "stopped: %s, spent %d credits, progress %s\n"
-        % (
-            summary["stopped"],
-            store.spent(day),
-            "none" if progress is None else progress,
+    try:
+        sys.stderr.write(
+            "stopped: %s, spent %d credits, progress %s\n"
+            % (
+                summary["stopped"],
+                store.spent(summary["day"]),
+                "none" if progress is None else progress,
+            )
         )
-    )
+    except KeyboardInterrupt:
+        return None
     return 3
 
 
 def _run_backfill(args, rpc, store):
-    code = _follow(
-        rpc,
-        store,
-        start=args.from_block,
-        stop=args.to_block,
-        daily_budget=args.daily_budget,
-        max_calls=args.max_calls_per_block,
-    )
+    try:
+        code = _follow(
+            rpc,
+            store,
+            start=args.from_block,
+            stop=args.to_block,
+            daily_budget=args.daily_budget,
+            max_calls=args.max_calls_per_block,
+        )
+    except KeyboardInterrupt:
+        # Ctrl-C in the gap between the pass and the return.
+        return 0
     return 0 if code is None else code
 
 
 def _run_listen(args, rpc, store, sleep):
-    while True:
-        code = _follow(
-            rpc,
-            store,
-            daily_budget=args.daily_budget,
-            max_calls=args.max_calls_per_block,
-        )
-        if code is None:
-            # Ctrl-C inside the pass: a clean stop, no pause, no loop.
-            return 0
-        if code != 0:
-            return code
-        try:
-            sleep(args.interval)
-        except KeyboardInterrupt:
-            return 0
+    try:
+        while True:
+            code = _follow(
+                rpc,
+                store,
+                daily_budget=args.daily_budget,
+                max_calls=args.max_calls_per_block,
+            )
+            if code is None:
+                # Ctrl-C inside the pass: a clean stop, no pause, no loop.
+                return 0
+            if code != 0:
+                return code
+            try:
+                sleep(args.interval)
+            except KeyboardInterrupt:
+                return 0
+    except KeyboardInterrupt:
+        # Ctrl-C in the gap between a pass and the pause.
+        return 0
 
 
 def _run_clusters_top(args, store):

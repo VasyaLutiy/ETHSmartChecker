@@ -15,7 +15,12 @@ import unittest
 from ethsc.cli import main
 from ethsc.rpc import RpcError
 from ethsc.store import Store
-from tests.helpers import FakeRpc, block_codes, load_hex
+from tests.helpers import (
+    FakeRpc,
+    InterruptAfter,
+    block_codes,
+    load_hex,
+)
 
 _PAIR = "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc"
 _BELLE = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
@@ -44,9 +49,17 @@ def _fill(path):
     store.close()
 
 
-class CliSmoke(unittest.TestCase):
-    maxDiff = None
+class _BoomStderr(object):
+    """A stderr whose write raises KeyboardInterrupt (a Ctrl-C on I/O)."""
 
+    def write(self, text):
+        raise KeyboardInterrupt()
+
+    def flush(self):
+        pass
+
+
+class CliSmoke(unittest.TestCase):
     def test_main_importable(self):
         self.assertTrue(callable(main), msg="ethsc.cli.main missing")
 
@@ -160,3 +173,58 @@ class CliSmoke(unittest.TestCase):
         progress = again.get_progress()
         again.close()
         self.assertEqual(progress, 26077728, msg="progress unchanged")
+
+    def test_alert_survives_interrupted_pass(self):
+        """Ctrl-C on the next block's receipts: the ALERT already printed."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        store = Store(path)
+        store.put_address(
+            _BELLE, store.put_code(load_hex("code_belle.hex")), 1
+        )
+        store.add_seed(_BELLE, "BELLE honeypot")
+        store.set_progress(26077728)
+        store.close()
+        rpc = InterruptAfter(
+            FakeRpc(
+                codes={
+                    _COPY: "0x" + load_hex("code_belle_copy_1807090d.hex").hex()
+                },
+                receipts=[{"to": _COPY}],
+                head="0x18dea22",
+            ),
+            3,
+        )
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        code, out, err = _run(
+            ["--db", path, "listen"], rpc, sleep=fake_sleep
+        )
+        self.assertEqual(code, 0, msg="interrupted listen exit")
+        self.assertEqual(
+            out,
+            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_COPY, _BELLE),
+            msg="alert lost across interrupt",
+        )
+        self.assertEqual(err, "", msg="stderr on interrupted pass")
+        self.assertEqual(sleeps, [], msg="sleep after interrupt")
+        again = Store(path)
+        progress = again.get_progress()
+        again.close()
+        self.assertEqual(progress, 26077729, msg="progress after interrupt")
+
+    def test_interrupt_during_stop_line(self):
+        """Ctrl-C while the stopped line is written: exit 0, no traceback."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with contextlib.redirect_stderr(_BoomStderr()):
+                code = main(
+                    ["--db", path, "backfill", "--from", "26077729",
+                     "--to", "26077729", "--daily-budget", "79"],
+                    FakeRpc(),
+                )
+        self.assertEqual(code, 0, msg="interrupt during stop line exit")
+        self.assertEqual(out.getvalue(), "", msg="stdout on stop-line Ctrl-C")
