@@ -128,3 +128,35 @@ class CliSmoke(unittest.TestCase):
         progress = again.get_progress()
         again.close()
         self.assertEqual(progress, 26077729, msg="listen progress")
+
+    def test_listen_interrupt_inside_ingest(self):
+        """Ctrl-C on the first eth_getCode: exit 0, no pause, no output."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        store = Store(path)
+        store.set_progress(26077728)
+        store.close()
+
+        class _InterruptingCodes(dict):
+            def __getitem__(self, key):
+                raise KeyboardInterrupt()
+
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            return None
+
+        code, out, err = _run(
+            ["--db", path, "listen"],
+            FakeRpc(codes=_InterruptingCodes(block_codes()),
+                    head="0x18dea21"),
+            sleep=fake_sleep,
+        )
+        self.assertEqual(code, 0, msg="interrupt inside ingest exit")
+        self.assertEqual(err, "", msg="stderr on interrupt inside ingest")
+        self.assertEqual(out, "", msg="stdout on interrupt inside ingest")
+        self.assertEqual(sleeps, [], msg="sleep not reached after Ctrl-C")
+        again = Store(path)
+        progress = again.get_progress()
+        again.close()
+        self.assertEqual(progress, 26077728, msg="progress unchanged")
