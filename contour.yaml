@@ -393,6 +393,39 @@ System:
               when: 'spend("2026-09-28", "eth_getBlockReceipts", 1000) once and spend("2026-09-28", "eth_getCode", 80) 206 times'
               then: 'spent("2026-09-28") is 17480 and spent("2026-09-29") is 0'
               ref: '206 candidates of block 26077729; prices 1000 and 80 from Infura''s credit table'
+        - name: Base Counts
+          description: >
+            The read-only aggregates a report needs and no other reader
+            gives. counts() -> dict with exactly the keys addresses,
+            addresses_with_code, addresses_without_code, codes, blocks;
+            ledger_days() -> list of {day, credits} over the whole ledger,
+            sorted by day ascending.
+          behavior: >
+            counts()["blocks"] is the number of distinct block values in the
+            addresses table, not their span. addresses_without_code counts
+            the rows whose code_id is NULL (accounts whose eth_getCode was
+            "0x"), and addresses equals addresses_with_code plus
+            addresses_without_code. codes is the number of rows of the codes
+            table, the same length as fingerprints(). ledger_days() sums the
+            credits of every method of one day into one int per day and
+            gives [] on an empty ledger. On an empty database counts()
+            gives 0 under all five keys. Both are pure reads: they write
+            nothing and commit nothing, and every value they return is an
+            int.
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - reads: Code Database
+          examples:
+            - given: 'a store filled from codes_26077729.json (206 addresses of block 26077729, 59 of them without code)'
+              when: 'counts() is called'
+              then: 'addresses 206, addresses_with_code 147, addresses_without_code 59, codes 130, blocks 1'
+              ref: 'counted over codes_26077729.json'
+            - given: 'a fresh db, then spend("2026-09-28", "eth_getBlockReceipts", 1000) and spend("2026-09-28", "eth_getCode", 80) twice, then spend("2026-09-27", "eth_blockNumber", 80)'
+              when: 'ledger_days() is called on the fresh db and after the spends'
+              then: '[] first; then [{"day": "2026-09-27", "credits": 80}, {"day": "2026-09-28", "credits": 1160}]'
+            - given: 'an empty database'
+              when: 'counts() is called'
+              then: 'all five keys are 0'
       dataObjects:
         - name: Code Database
           description: One SQLite file.
@@ -808,12 +841,16 @@ System:
             [--interval S], backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K], clusters top [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L, seed list,
-            recheck [--min 0.8].
+            recheck [--min 0.8], report [--out PREFIX].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
-            Without rpc, builds RpcClient(infura_url()); sleep=None means
-            time.sleep, injected so listen can be stopped in a test. Entry
-            point python -m ethsc: ethsc/__main__.py is a thin
-            sys.exit(main()).
+            Without rpc, builds RpcClient(infura_url()), but only on the way
+            into a subcommand that talks to the chain -- listen and
+            backfill. Every other subcommand runs with INFURA_API_KEY unset
+            and no .env in sight, and infura_url() is not called at all, so
+            its RpcError never reaches the caller as a traceback.
+            sleep=None means time.sleep, injected so listen can be stopped
+            in a test. Entry point python -m ethsc: ethsc/__main__.py is a
+            thin sys.exit(main()).
           behavior: >
             Output is plain text, one record per line, tab-separated, fully
             ordered; every float is printed "%.4f", exact inside. Records:
@@ -858,8 +895,16 @@ System:
             0, and a seed add that fails still exits 2 with an empty
             stdout. Both write through the same ALERT sink as listen and
             backfill, make no rpc call of their own, and a second run on an
-            unchanged database prints exactly the same bytes. Nothing
-            printed ever contains the key.
+            unchanged database prints exactly the same bytes. report writes
+            build_report(store, prefix) -- two files, <PREFIX>.html and
+            <PREFIX>.json, PREFIX being --out, "ethsc-report" by default --
+            and prints exactly two stdout records, the html path then the
+            json path, one per line, in that order; stderr stays empty and
+            the exit code is 0, also on an empty database. It is the one
+            subcommand that needs matplotlib: with matplotlib absent it
+            writes neither file, leaves stdout empty, prints one line on
+            stderr naming matplotlib and exits 2 with no traceback. It makes
+            no rpc call. Nothing printed ever contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -926,13 +971,254 @@ System:
             - given: 'a db with addresses but no seeds, and then the same db with --min 1.0'
               when: 'main(["--db", db, "recheck"]) and main(["--db", db, "recheck", "--min", "1.0"])'
               then: 'exit 0 and empty stdout in the first case; in the second only the alerts with score exactly 1.0000'
+            - given: 'the db of the backfill above (206 addresses of block 26077729) and an empty temp directory'
+              when: 'main(["--db", db, "report", "--out", tmp + "/r"]) is run twice'
+              then: >
+                exit 0 both times, stderr empty, stdout exactly two lines --
+                "<tmp>/r.html" then "<tmp>/r.json" -- and both files
+                byte-identical between the two runs
+              ref: 'Deterministic Output; matplotlib 3.11.2 with svg.hashsalt fixed and metadata Date None'
+            - given: 'INFURA_API_KEY unset, no .env in the working directory, and a db holding block 26077729'
+              when: 'main(["--db", db, "report", "--out", tmp + "/r"]), main(["--db", db, "clusters", "top"]) and main(["--db", db, "recheck"]) are run with rpc=None'
+              then: 'exit 0 each time and no RpcError, because infura_url() is never called outside listen and backfill'
+              ref: 'before this phase every subcommand built the rpc client first and died on a traceback from ethsc/rpc.py without a key'
+            - given: 'the same db and an import of ethsc.charts that raises ImportError'
+              when: 'main(["--db", db, "report", "--out", tmp + "/r"]) is run'
+              then: 'exit 2, stdout empty, no file written, and stderr exactly one line naming matplotlib, with no traceback'
+    - name: report
+      description: >
+        One offline report over the whole database: a self-contained HTML
+        page whose charts are embedded SVG, and a JSON holding the same
+        numbers. Every number lives in ethsc/report.py and is computed by
+        the standard library; ethsc/charts.py is the only module of the
+        package that imports matplotlib, and it only draws. No network, no
+        JavaScript, no external resource of any kind in the HTML.
+      functions:
+        - name: Collect Report Data
+          description: >
+            collect(store) -> ReportData, every number of the report and not
+            one chart. Standard library only: it must import and run with
+            matplotlib absent. Reads the store through counts(),
+            ledger_days(), fingerprints(), code_by_id(), addresses_of() and
+            seeds() only, and calls build_clusters and recheck_watchlist for
+            the cluster and alert sections.
+          behavior: >
+            The eight sections, under exactly the keys summary, levels,
+            skeletons, clusters, codes, ledger, alerts, spearman.
+            summary is store.counts() verbatim. levels holds, per level
+            "L0", "L1" and "proxy", the number of clusters, the number of
+            distinct member addresses and that number over
+            summary["addresses_with_code"]; the three shares do not sum to
+            one, because one address may sit in both an L0 and an L1
+            cluster; it also holds proxy_codes and proxy_code_share over
+            summary["codes"]. skeletons answers the phase 5 prediction:
+            over non-proxy codes only, non_proxy_codes, unique_codes (codes
+            whose skeleton_hash belongs to no other non-proxy code),
+            unique_share, and the same weighted by addresses --
+            non_proxy_addresses, unique_addresses, unique_address_share.
+            clusters is the 20 largest clusters as {level, key, size},
+            in the order build_clusters returns them, plus the histogram of
+            every cluster size over the fixed edges [2, 3, 4, 5, 9, 17, 33,
+            65]. codes holds, for bytecode size and for selector count,
+            min, median, max and a histogram over fixed edges: [0, 256,
+            1024, 4096, 8192, 16384, 24576] bytes and [0, 1, 2, 4, 8, 16,
+            32, 64] selectors. The edges are fixed, never derived from the
+            data, so two bases are comparable. ledger is
+            store.ledger_days() plus their total. alerts is
+            recheck_watchlist(store) folded per seed into {address, label,
+            count}, sorted by address, plus the total. The whole structure
+            is built of ints, floats, strings, lists and dicts only, holds
+            no path, no date and no object address, and two calls on the
+            same store give equal structures.
+          requirements: [Stdlib Only, Offline Tests]
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - uses: store
+            - uses: cluster
+            - uses: evm
+            - produces: Report Data
+          examples:
+            - given: 'a store filled from codes_26077729.json (206 addresses, 147 with code, 130 codes)'
+              when: 'collect(store)["levels"] is read'
+              then: >
+                L0 7 clusters over 16 addresses, L1 2 over 13, proxy 6 over
+                14; the shares 16/147, 13/147 and 14/147; proxy_codes 12 and
+                proxy_code_share 12/130
+              ref: 'counted over codes_26077729.json; cluster counts match Build Clusters'
+            - given: 'the same store'
+              when: 'collect(store)["skeletons"] is read'
+              then: >
+                non_proxy_codes 118, unique_codes 105, unique_share
+                105/118 = 0.8898; non_proxy_addresses 127,
+                unique_addresses 114, unique_address_share 114/127 = 0.8976
+              ref: 'the prediction of docs/TASK_PHASE5.md §9 was refuted on the live base at 75.7% by code_id and 54.6% by address; on one block it is higher still'
+            - given: 'the same store'
+              when: 'collect(store)["codes"] is read'
+              then: >
+                bytecode size min 20, median 4516, max 24313, histogram
+                [22, 5, 36, 19, 23, 25, 0]; selector count min 0, median 13,
+                max 72, histogram [28, 2, 3, 16, 27, 35, 17, 2]
+              ref: 'counted over codes_26077729.json against the fixed edges'
+            - given: 'the same store, plus seed 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc labelled "UniV2 pair seed"'
+              when: 'collect(store)["alerts"] is read'
+              then: 'total 4 and one seed entry, that address, label "UniV2 pair seed", count 4'
+              ref: 'the four alerts of Recheck Watchlist in the cluster group'
+            - given: 'an empty database'
+              when: 'collect(store) is called'
+              then: 'all eight keys present, summary all zeros, clusters, ledger and alert lists empty, and no exception'
+        - name: Spearman Matrix
+          description: >
+            spearman(rows) -> {"features": [...], "n": int, "matrix":
+            [[...]]}, the rank correlation of the six numeric features of a
+            code over every code of the base. The features, in this fixed
+            order: bytecode_size, opcode_count, selector_count,
+            address_count, l1_family_size, is_proxy.
+          behavior: >
+            bytecode_size is the fingerprint size, opcode_count is
+            len(disassemble(code)), selector_count is the length of the
+            selector list, address_count is len(addresses_of(code_id)),
+            l1_family_size is the number of distinct code_id sharing this
+            code's skeleton_hash counted over every code of the base,
+            proxies included -- which is not the L1 cluster of Build
+            Clusters, where proxies are excluded -- and is_proxy is 1 or 0.
+            Ties are ranked by their average rank and the coefficient is
+            then Pearson's on those ranks; the shortcut 1 - 6*sum(d^2)/(n*(n^2-1))
+            is wrong here and forbidden, because the base is full of ties
+            (on one block 117 of 130 codes share one address_count). The
+            matrix is square in the feature order, symmetric, with 1.0 on
+            the diagonal. A feature with zero variance -- every value equal,
+            as is_proxy on a base with no proxy -- gives null in every cell
+            of its row and column, the diagonal included, and never a zero
+            and never an exception. Fewer than two codes gives null
+            everywhere. Standard library only: no numpy, no statistics
+            beyond what is written here.
+          requirements: [Stdlib Only]
+          guardrails: [Deterministic Output]
+          steps:
+            - uses: evm
+            - uses: store
+          examples:
+            - given: 'the store from codes_26077729.json, n = 130 codes'
+              when: 'the matrix is read'
+              then: >
+                bytecode_size~opcode_count 0.9893, bytecode_size~selector_count
+                0.8422, bytecode_size~address_count -0.3368,
+                opcode_count~selector_count 0.8559,
+                address_count~is_proxy 0.4289, l1_family_size~is_proxy 0.2326
+              ref: 'computed independently on the fixture with average ranks, 29.09'
+            - given: 'the same store'
+              when: 'bytecode_size~address_count and address_count~is_proxy are compared with the tie-blind shortcut'
+              then: >
+                the correct values are -0.3368 and 0.4289 while the shortcut
+                gives 0.1898 and 0.8509 -- these two numbers are what
+                catches wrong tie handling
+              ref: 'both computed on codes_26077729.json, 29.09'
+            - given: 'the rows [(1, 10), (2, 20), (2, 30), (3, 40)] as two features'
+              when: 'their coefficient is computed'
+              then: '0.9486832980505138, the average ranks being [1.0, 2.5, 2.5, 4.0]'
+            - given: 'a base of non-proxy codes only'
+              when: 'the matrix is read'
+              then: 'every cell of the is_proxy row and column is null, the diagonal included, and the other four features keep their coefficients'
+        - name: Render Report
+          description: >
+            build_report(store, prefix, charts=None) -> (html_path,
+            json_path) writes prefix + ".html" and prefix + ".json" and
+            returns their paths. render_html(data, svgs) -> str builds the
+            page from collected data and a mapping of chart name to SVG
+            text. With charts None, build_report imports ethsc.charts and
+            raises ChartsUnavailable on ImportError, having written
+            nothing.
+          behavior: >
+            The JSON is json.dump of the collected data with sort_keys
+            True, indent 2 and a trailing newline: no path, no date, no id.
+            The HTML is one file with no script tag, no link tag, no img
+            tag and no http:// or https:// reference of any kind -- the five
+            SVGs are inlined verbatim, each stripped of its XML declaration
+            and its DOCTYPE, so nothing is ever fetched. It carries the
+            summary, the level and skeleton shares, the top clusters, the
+            ledger, the alerts per seed and the Spearman coefficients as a
+            table beside the heat map, every float printed "%.4f" and every
+            null cell printed as an empty cell. Two runs on the same store
+            in the same environment give byte-identical html and json. The
+            charts mapping has exactly the keys cluster_sizes, top_clusters,
+            code_sizes, selector_counts and spearman; an absent or extra key
+            is an error, not a silently missing picture.
+          requirements: [Stdlib Only, Deterministic Output]
+          guardrails: [Deterministic Output]
+          steps:
+            - uses: store
+            - uses: Report Data
+          examples:
+            - given: 'the store from codes_26077729.json and five stub SVG strings'
+              when: 'render_html(collect(store), stubs) is called twice'
+              then: 'the two strings are equal, all five stubs appear in them, and "<script", "<link", "<img" and "http" do not'
+            - given: 'that store and a prefix in a temp directory'
+              when: 'build_report(store, prefix) is run twice with matplotlib installed'
+              then: 'both files byte-identical between the runs, and json.load of the second gives back exactly collect(store)'
+            - given: 'the same store and an ethsc.charts whose import raises ImportError'
+              when: 'build_report(store, prefix) is called'
+              then: 'ChartsUnavailable is raised and neither file exists'
+        - name: Draw Charts
+          description: >
+            ethsc/charts.py, the only module allowed to import matplotlib.
+            render_charts(data) -> dict of the five SVG strings keyed
+            cluster_sizes, top_clusters, code_sizes, selector_counts and
+            spearman. It computes nothing: every number it draws comes from
+            data.
+          behavior: >
+            cluster_sizes is the cluster-size histogram on a logarithmic
+            count axis; top_clusters is a horizontal bar of the largest
+            clusters by address count, labelled "<level> <key[:10]>";
+            code_sizes and selector_counts are the two histograms of the
+            codes section; spearman is the heat map of the matrix on a
+            diverging scale from -1 to 1, with the null cells left blank.
+            Determinism is bought with three settings and nothing else:
+            matplotlib.use("Agg") before pyplot, rcParams["svg.hashsalt"]
+            fixed to a constant string, and savefig(format="svg",
+            metadata={"Date": None}); every figure is closed. Byte-identical
+            output is promised within one environment and one matplotlib
+            version, not across versions.
+          guardrails: [Deterministic Output]
+          steps:
+            - uses: Report Data
+          examples:
+            - given: 'the collected data of codes_26077729.json, matplotlib 3.11.2'
+              when: 'render_charts is called twice in two separate processes'
+              then: 'five keys both times and each SVG byte-identical between the processes, with no "<dc:date>" and no "Created with matplotlib" in any of them'
+              ref: 'measured 29.09: sha256 d6f53e0858cb92ac… reproduced across PYTHONHASHSEED 7 and 99'
+            - given: 'a matrix holding null cells'
+              when: 'the heat map is drawn'
+              then: 'no exception, and the null cells carry no colour'
+      dataObjects:
+        - name: Report Data
+          description: >
+            What collect returns and the JSON holds, the input of both
+            render_html and render_charts.
+          schema: >
+            summary{addresses, addresses_with_code, addresses_without_code,
+            codes, blocks}; levels{L0|L1|proxy -> {clusters, addresses,
+            share}, proxy_codes, proxy_code_share};
+            skeletons{non_proxy_codes, unique_codes, unique_share,
+            non_proxy_addresses, unique_addresses, unique_address_share};
+            clusters{top[{level, key, size}], histogram{edges, counts}};
+            codes{size{min, median, max, histogram{edges, counts}},
+            selectors{min, median, max, histogram{edges, counts}}};
+            ledger{days[{day, credits}], total};
+            alerts{seeds[{address, label, count}], total};
+            spearman{features[6], n, matrix[6][6] of float or null}
 Requirement:
   - name: Stdlib Only
     description: >
       Python 3.12 runtime, standard library only (urllib, sqlite3, hashlib,
       json, unittest; pytest is the test runner). Syntax stays 3.9-compatible
-      because the card acceptance checks it. No third-party runtime
-      dependency.
+      because the card acceptance checks it. Exactly one exception, added
+      2026-09-29: ethsc/charts.py may import matplotlib, because nothing in
+      the standard library draws a chart. No other module of ethsc/ may
+      import it -- not ethsc/report.py either: every number, including the
+      Spearman coefficients, is computed by the standard library and
+      matplotlib only draws. The package imports and every subcommand but
+      report runs with matplotlib absent; report then exits 2 with one line
+      on stderr.
   - name: Offline Tests
     description: >
       No test opens a network connection. All chain data comes from
