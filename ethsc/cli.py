@@ -5,9 +5,14 @@ clusters top, cluster, similar, seed add, seed list. Output is plain
 text, one record per line, tab-separated, fully ordered; alerts from
 ingest print as lines starting "ALERT". Exit codes: 0 success, 1 a
 failed RPC call, 2 usage error, 3 a budget or cap stop that left work
-undone. main() never raises SystemExit: argparse failures are caught
-and returned as the int code 2, so tests calling main() directly see
-the same code sys.exit(main()) produces in __main__.
+undone -- then one line goes to stderr:
+"stopped: <budget|cap>, spent <N> credits, progress <P>".
+KeyboardInterrupt anywhere in listen or backfill -- in the sleep, in an
+rpc call, inside ingest, in a store write -- is a clean stop: exit 0,
+no traceback, no stderr, the store still closed. main() never raises
+SystemExit: argparse failures are caught and returned as the int code
+2, so tests calling main() directly see the same code sys.exit(main())
+produces in __main__.
 
 No network in this module: urllib, http and socket stay in ethsc.rpc.
 The rpc object is injected (tests) or built here from ethsc.rpc only;
@@ -16,6 +21,7 @@ attributes.
 """
 
 import argparse
+import datetime
 import re
 import sys
 import time
@@ -47,6 +53,11 @@ def _check_address(address):
     return address
 
 
+def _utc_day():
+    """Today's UTC date as "%Y-%m-%d", the day follow_chain charges."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
 def _print_alerts(alerts):
     for alert in alerts:
         sys.stdout.write(
@@ -62,7 +73,14 @@ def _print_alerts(alerts):
 
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             max_calls=None):
-    """One follow_chain call with the CLI's error and exit-code policy."""
+    """One follow_chain call with the CLI's error and exit-code policy.
+
+    Returns the exit code, or None when the pass was interrupted by
+    KeyboardInterrupt (a clean stop: no output, no traceback). The UTC
+    day is computed per pass and passed to follow_chain, so a stop line
+    reports the ledger of the same day the pass was charged on.
+    """
+    day = _utc_day()
     try:
         summary = follow_chain(
             rpc,
@@ -71,17 +89,31 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             stop=stop,
             max_calls_per_block=max_calls,
             daily_budget=daily_budget,
+            day=day,
             prices=PRICES,
         )
+    except KeyboardInterrupt:
+        return None
     except RpcError as err:
         sys.stderr.write(str(err) + "\n")
         return 1
     _print_alerts(summary["alerts"])
-    return 0 if summary["stopped"] is None else 3
+    if summary["stopped"] is None:
+        return 0
+    progress = summary["progress"]
+    sys.stderr.write(
+        "stopped: %s, spent %d credits, progress %s\n"
+        % (
+            summary["stopped"],
+            store.spent(day),
+            "none" if progress is None else progress,
+        )
+    )
+    return 3
 
 
 def _run_backfill(args, rpc, store):
-    return _follow(
+    code = _follow(
         rpc,
         store,
         start=args.from_block,
@@ -89,6 +121,7 @@ def _run_backfill(args, rpc, store):
         daily_budget=args.daily_budget,
         max_calls=args.max_calls_per_block,
     )
+    return 0 if code is None else code
 
 
 def _run_listen(args, rpc, store, sleep):
@@ -99,6 +132,9 @@ def _run_listen(args, rpc, store, sleep):
             daily_budget=args.daily_budget,
             max_calls=args.max_calls_per_block,
         )
+        if code is None:
+            # Ctrl-C inside the pass: a clean stop, no pause, no loop.
+            return 0
         if code != 0:
             return code
         try:

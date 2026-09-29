@@ -1,0 +1,176 @@
+{
+  "deck_id": "20260929-133316-0e9da770",
+  "completed_at": "2026-09-29T13:40:58.841",
+  "branch": "morph/20260929-133316-0e9da770",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "cli"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-ca767c68b1374ef8b6787075d21e0c1c",
+    "local-2ce61b0a6353441fa762d819569defbc",
+    "local-eacfeffe22ea46ec95baada7f7bb403b"
+  ],
+  "outcomes": {
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cli.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\nlisten ctrl-c on first getCode sleep calls: got [12], want []\nlisten ctrl-c in second pass sleep calls: got [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12], want [12]\n",
+      "commit": "571e3c65b546c7c0ee1cee4747334774541532dc",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 42,
+          "deletions": 6
+        },
+        {
+          "path": "tests/test_cli.py",
+          "insertions": 32,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "aa2d77be5373c01be5e29fb981e05a58cf2139f3",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 147,
+          "deletions": 39
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790685197-a6kQraRGU0IvepGwIZbs",
+      "input_tokens": 26618,
+      "output_tokens": 3840,
+      "cost": 0.00354762,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790685197-L6KjruGqtT1sCB4HBP8Y",
+      "input_tokens": 26591,
+      "output_tokens": 4689,
+      "cost": 0.00379989,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790685302-fVFba4e0xhfS3okpQ09l",
+      "input_tokens": 30675,
+      "output_tokens": 3902,
+      "cost": 0.00393135,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790685302-W0cTZ5ojOWCSQ55FTD1F",
+      "input_tokens": 30675,
+      "output_tokens": 5031,
+      "cost": 0.00427005,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790685501-hkGcu6op0iNJSZrBzj8y",
+      "input_tokens": 26850,
+      "output_tokens": 4198,
+      "cost": 0.0036759,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 141409,
+    "output_tokens": 21660,
+    "cost": 0.01922481,
+    "requests": 5,
+    "requests_with_usage": 5
+  },
+  "orchestrator_usage": {}
+}
