@@ -161,3 +161,72 @@ def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
             )
     result.sort(key=lambda alert: (-alert["score"], alert["seed_address"]))
     return result
+
+
+def recheck_watchlist(
+    store, min_score: float = 0.8, seed_addresses=None
+) -> List[dict]:
+    """Every stored address whose code matches a watchlist seed.
+
+    The whole database is rechecked against the seeds, without the
+    network, so a copy of a scam already in the store becomes visible:
+    match_watchlist only sees a code arriving after the seed was added.
+
+    Each Alert has exactly the keys address (the matching stored
+    address, lowercase), seed_address, label and score (the float from
+    similarity, unrounded). One similarity() call per (code_id, seed)
+    pair, fanned out to that code's addresses. A seed never alerts on
+    itself -- the single pair address == seed_address is dropped --
+    while every other address of the seed's own code alerts with 1.0.
+    Addresses stored without code are never checked. seed_addresses
+    restricts the check to those seeds (any case accepted, unknown ones
+    simply match nothing); None means every seed of store.seeds().
+
+    Returns [] with no seeds, on an empty store or when seed_addresses
+    names nothing known. The list is sorted by address ascending, then
+    score descending, then seed_address ascending; it does not depend
+    on insertion order, and two calls on the same store give equal
+    lists. Reads the store through seeds(), fingerprints(),
+    code_by_id() and addresses_of() only.
+    """
+    seeds = store.seeds()
+    if seed_addresses is not None:
+        wanted = set(address.lower() for address in seed_addresses)
+        seeds = [seed for seed in seeds if seed["address"] in wanted]
+
+    codes = {}  # code_id -> stored code bytes
+    for fp in store.fingerprints():
+        codes[fp["code_id"]] = store.code_by_id(fp["code_id"])
+
+    alerts = []
+    for seed in seeds:
+        seed_code = codes.get(seed["code_id"])
+        if seed_code is None:
+            seed_code = store.code_by_id(seed["code_id"])
+        if seed_code is None:
+            continue
+        for code_id, code in codes.items():
+            if code is None:
+                continue
+            score = similarity(seed_code, code)
+            if score < min_score:
+                continue
+            for addr in store.addresses_of(code_id):
+                if addr == seed["address"]:
+                    continue
+                alerts.append(
+                    {
+                        "address": addr,
+                        "seed_address": seed["address"],
+                        "label": seed["label"],
+                        "score": score,
+                    }
+                )
+    alerts.sort(
+        key=lambda alert: (
+            alert["address"],
+            -alert["score"],
+            alert["seed_address"],
+        )
+    )
+    return alerts

@@ -228,3 +228,52 @@ class CliSmoke(unittest.TestCase):
                 )
         self.assertEqual(code, 0, msg="interrupt during stop line exit")
         self.assertEqual(out.getvalue(), "", msg="stdout on stop-line Ctrl-C")
+
+    def test_recheck_and_seed_add(self):
+        """recheck prints stored copies of a seed; seed add prints them too."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        code, out, err = _run(
+            ["--db", path, "seed", "add", _PAIR,
+             "--label", "UniV2 pair seed"],
+            FakeRpc(),
+        )
+        self.assertEqual(code, 0, msg="seed add exit %d, err=%r" % (code, err))
+        lines = out.strip().splitlines()
+        self.assertEqual(len(lines), 4, msg="seed add alert lines")
+        self.assertEqual(lines[0].split("\t")[1], "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
+                         msg="seed add first alert address")
+        self.assertEqual(lines[-1].split("\t")[-1], "0.8125",
+                         msg="seed add last score")
+        code, out2, err = _run(["--db", path, "recheck"], FakeRpc())
+        self.assertEqual(code, 0, msg="recheck exit")
+        self.assertEqual(out2, out, msg="recheck output equals seed add")
+        self.assertEqual(err, "", msg="recheck stderr")
+
+    def test_recheck_empty(self):
+        """recheck on a db without seeds: exit 0, empty stdout and stderr."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        code, out, err = _run(["--db", path, "recheck"], FakeRpc())
+        self.assertEqual(code, 0, msg="recheck no-seed exit")
+        self.assertEqual(out, "", msg="recheck no-seed stdout")
+        self.assertEqual(err, "", msg="recheck no-seed stderr")
+        empty = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        code, out, err = _run(["--db", empty, "recheck"], FakeRpc())
+        self.assertEqual(code, 0, msg="recheck empty-db exit")
+        self.assertEqual(out, "", msg="recheck empty-db stdout")
+
+    def test_seed_add_failure(self):
+        """A failed seed add: exit 2, empty stdout, one stderr line."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        code, out, err = _run(
+            ["--db", path, "seed", "add", "0x" + "11" * 20,
+             "--label", "nothing"],
+            FakeRpc(),
+        )
+        self.assertEqual(code, 2, msg="failed seed add exit")
+        self.assertEqual(out, "", msg="failed seed add stdout")
+        self.assertEqual(err.strip(),
+                         "unknown address or no code: 0x%s" % ("11" * 20),
+                         msg="failed seed add stderr")
+
