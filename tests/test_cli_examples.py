@@ -22,6 +22,7 @@ from tests.helpers import (FakeRpc, InterruptAfter, block_codes, load_hex,
                            temp_store)
 
 _BELLE_SEED = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
+_BELLE_SEED_UPPER = "0x34C6211621F2763C60EB007DC2AE91090A2D22F6"
 _BELLE_COPY = "0x1807090dd15a6f58e00fd769e32ebf20ee610385"
 _PAIR = "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc"
 _SIMILAR_L0 = [
@@ -32,6 +33,20 @@ _SIMILAR_L0 = [
 _EXPECTED_ALERT = (
     "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_BELLE_COPY, _BELLE_SEED)
 )
+# The four BELLE copies, in address order; only the first address is a
+# real fixture address, the other three carry the fixture-name prefixes.
+_BELLE_COPY_ADDRESSES = [
+    "0x1807090dd15a6f58e00fd769e32ebf20ee610385",
+    "0x2141be5f00000000000000000000000000000000",
+    "0x46cadea500000000000000000000000000000000",
+    "0x6411bed800000000000000000000000000000000",
+]
+_BELLE_COPY_FILES = [
+    "code_belle_copy_1807090d.hex",
+    "code_belle_copy_2141be5f.hex",
+    "code_belle_copy_46cadea5.hex",
+    "code_belle_copy_6411bed8.hex",
+]
 
 
 class _KIMap(dict):
@@ -117,6 +132,29 @@ class CliExamplesTest(unittest.TestCase):
             code_id = store.put_code(code_belle)
             store.put_address(_BELLE_SEED, code_id, 26077728)
             store.add_seed(_BELLE_SEED, "BELLE honeypot")
+        finally:
+            store.close()
+
+    def _fill_block(self):
+        """Backfill block 26077729 into self.db via main()."""
+        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
+        code, out, err = self.run_main(
+            ["--db", self.db, "backfill", "--from", "26077729",
+             "--to", "26077729"], rpc)
+        self.assertEqual(0, code,
+                         msg="backfill setup: got %r; stderr=%r"
+                             % (code, err))
+
+    def _fill_belle_copies(self):
+        """Store code_belle.hex and its four copies, no seed yet."""
+        store = Store(self.db)
+        try:
+            seed_id = store.put_code(load_hex("code_belle.hex"))
+            store.put_address(_BELLE_SEED, seed_id, 26077728)
+            for address, name in zip(_BELLE_COPY_ADDRESSES,
+                                     _BELLE_COPY_FILES):
+                store.put_address(
+                    address, store.put_code(load_hex(name)), 26077729)
         finally:
             store.close()
 
@@ -278,8 +316,6 @@ class CliExamplesTest(unittest.TestCase):
             err,
             msg="cap-stop stderr: got %r, want %r"
                 % (err, "stopped: cap, spent 1160 credits, progress none\n"))
-        self.assertEqual([], out.splitlines()[:-1] if False else [],
-                         msg="placeholder guard: no extra stdout lines")
 
     def test_listen_with_failing_rpc_no_secret_no_traceback(self):
         """contour example: listen with an RpcError-ing rpc.
@@ -422,7 +458,136 @@ class CliExamplesTest(unittest.TestCase):
         self.assertNotIn("Traceback", err,
                          msg="bad address printed a traceback: %r" % (err,))
 
+    def test_seed_add_then_recheck_twice_deterministic(self):
+        """contour example: seed add over the filled block db, then
+        recheck twice.
+
+        The db of the backfill above (206 addresses), seeded with
+        seed add 0xb4e16d01... --label "UniV2 pair seed". seed add
+        exits 0 with four ALERT lines on stdout; recheck then exits 0
+        twice with byte-identical stdout holding exactly those four
+        lines -- 0x22052a1a..., 0x2621cc0b..., 0x3041cbd3... with
+        1.0000, then 0xcf6daab9... with 0.8125, all naming the seed
+        address and the label; stderr empty.
+        """
+        self._fill_block()
+        seed_lines = [
+            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\n" % (addr, _PAIR)
+            for addr in _SIMILAR_L0
+        ] + [
+            "ALERT\t0xcf6daab95c476106eca715d48de4b13287ffdeaa\t%s"
+            "\tUniV2 pair seed\t0.8125\n" % _PAIR
+        ]
+        want = "".join(seed_lines)
+        code, out, err = self.run_main(
+            ["--db", self.db, "seed", "add", _PAIR,
+             "--label", "UniV2 pair seed"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="seed add exit code: got %r, want 0; stderr=%r"
+                             % (code, err))
+        self.assertEqual(want, out,
+                         msg="seed add stdout: got %r, want %r" % (out, want))
+        self.assertEqual("", err,
+                         msg="seed add stderr: got %r, want empty" % (err,))
+
+        code, out, err = self.run_main(["--db", self.db, "recheck"],
+                                       FakeRpc())
+        self.assertEqual(0, code,
+                         msg="first recheck exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual(want, out,
+                         msg="first recheck stdout: got %r, want %r"
+                             % (out, want))
+        self.assertEqual("", err,
+                         msg="first recheck stderr: got %r, want empty"
+                             % (err,))
+        first = out
+        code, out, err = self.run_main(["--db", self.db, "recheck"],
+                                       FakeRpc())
+        self.assertEqual(0, code,
+                         msg="second recheck exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual(first, out,
+                         msg="recheck not deterministic: first %r, second %r"
+                             % (first, out))
+        self.assertEqual("", err,
+                         msg="second recheck stderr: got %r, want empty"
+                             % (err,))
+        self.assertNotIn(_BELLE_SEED, out,
+                         msg="seed address among the alerts: %r" % (out,))
+
+    def test_seed_add_uppercase_finds_four_belle_copies(self):
+        """contour example: seed add over the BELLE db with four copies.
+
+        The BELLE db with no seed yet, the seed address given in upper
+        case: exit 0 and exactly four ALERT lines with 0.8667, one per
+        copy in address order, the seed address lowercase in each, the
+        seed's own address absent.
+        """
+        self._fill_belle_copies()
+        want = "".join(
+            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n"
+            % (addr, _BELLE_SEED)
+            for addr in _BELLE_COPY_ADDRESSES)
+        code, out, err = self.run_main(
+            ["--db", self.db, "seed", "add", _BELLE_SEED_UPPER,
+             "--label", "BELLE honeypot"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="seed add exit code: got %r, want 0" % (code,))
+        self.assertEqual(want, out,
+                         msg="seed add stdout: got %r, want %r"
+                             % (out, want))
+        self.assertEqual("", err,
+                         msg="seed add stderr: got %r, want empty" % (err,))
+        self.assertNotIn(_BELLE_SEED_UPPER, out,
+                         msg="uppercase seed address echoed: %r" % (out,))
+        self.assertNotIn(
+            "ALERT\t%s\t" % _BELLE_SEED, out,
+            msg="seed's own address among the alerts: %r" % (out,))
+
+    def test_recheck_empty_without_seeds_and_min_one_filters(self):
+        """contour example: recheck with no seeds, then recheck --min 1.0.
+
+        recheck on a db with addresses but no seeds: exit 0 and empty
+        stdout. recheck --min 1.0 on the seeded db of the block: only
+        the three 1.0000 lines.
+        """
+        self._fill_block()
+        code, out, err = self.run_main(["--db", self.db, "recheck"],
+                                       FakeRpc())
+        self.assertEqual(0, code,
+                         msg="unseeded recheck exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual("", out,
+                         msg="unseeded recheck stdout: got %r, want empty"
+                             % (out,))
+        self.assertEqual("", err,
+                         msg="unseeded recheck stderr: got %r, want empty"
+                             % (err,))
+
+        # The same db, now seeded as in the pair-seed example above;
+        # recheck --min 1.0 keeps only the three score-1.0 alerts.
+        code, out, err = self.run_main(
+            ["--db", self.db, "seed", "add", _PAIR,
+             "--label", "UniV2 pair seed"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="seed add setup: got %r; stderr=%r"
+                             % (code, err))
+        want = "".join(
+            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\n" % (addr, _PAIR)
+            for addr in _SIMILAR_L0)
+        code, out, err = self.run_main(
+            ["--db", self.db, "recheck", "--min", "1.0"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="recheck --min 1.0 exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual(want, out,
+                         msg="recheck --min 1.0 stdout: got %r, want %r"
+                             % (out, want))
+        self.assertEqual("", err,
+                         msg="recheck --min 1.0 stderr: got %r, want empty"
+                             % (err,))
+
 
 if __name__ == "__main__":
     unittest.main()
-
