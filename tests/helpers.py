@@ -127,3 +127,24 @@ class FakeRpc(object):
                 codes = self._codes
             return codes[params[0]]
         raise KeyError(method)
+
+
+class InterruptAfter(object):
+    """Wraps an rpc: answers the first n calls, raises KeyboardInterrupt after.
+
+    InterruptAfter(inner, n) -- .call(method, params) forwards to
+    inner.call for the first n calls and raises KeyboardInterrupt from
+    call n+1 on, forever. The wrapped object stays reachable as .inner,
+    so its .calls log remains usable.
+    """
+
+    def __init__(self, inner, n):
+        self.inner = inner
+        self.n = n
+        self._answered = 0
+
+    def call(self, method, params):
+        if self._answered >= self.n:
+            raise KeyboardInterrupt
+        self._answered += 1
+        return self.inner.call(method, params)

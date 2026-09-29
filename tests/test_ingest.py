@@ -1,6 +1,6 @@
 """Smoke tests for ethsc.ingest (Discover Candidates, Ingest Block,
 Follow Chain). Completeness is the acceptance probe's and the judge
-card's job; this file holds at most 5 tests on fixtures only -- no
+card's job; this file holds at most 7 tests on fixtures only -- no
 network, no socket import.
 """
 
@@ -14,6 +14,7 @@ from ethsc.ingest import (
     follow_chain,
     ingest_block,
 )
+from tests.helpers import load_hex
 from ethsc.store import Store
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -131,6 +132,44 @@ class IngestSmoke(unittest.TestCase):
             store.code_of("0x22052a1a0f5a3d2839d71c458f177e68b0e73963"),
             msg="another UniswapV2Pair address must be stored",
         )
+
+    def test_ingest_on_alerts(self):
+        """on_alerts is called exactly once, with the block's alerts."""
+        store = _fresh_store()
+        belle = "0x" + load_hex("code_belle.hex").hex()
+        copy = "0x" + load_hex("code_belle_copy_1807090d.hex").hex()
+        seed_addr = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
+        new_addr = "0x1807090dd15a6f58e00fd769e32ebf20ee610385"
+        code_id = store.put_code(bytes.fromhex(belle[2:]))
+        store.put_address(seed_addr, code_id, BLOCK - 1)
+        store.add_seed(seed_addr, "BELLE honeypot")
+        receipts = [{"contractAddress": new_addr}]
+        seen = []
+        stats = ingest_block(BLOCK, receipts, lambda a, b: copy, store,
+                             on_alerts=seen.append)
+        self.assertEqual(len(seen), 1,
+                         msg="on_alerts must be called exactly once")
+        self.assertEqual(seen[0], stats["alerts"],
+                         msg="the sink gets the returned alert list")
+        self.assertEqual(seen[0][0]["address"], new_addr,
+                         msg="the alert names the new address")
+        self.assertAlmostEqual(seen[0][0]["score"], 13.0 / 15.0,
+                               msg="BELLE copy scores 13/15")
+
+    def test_follow_chain_day_key(self):
+        """summary carries the key day: the last resolved ledger day."""
+        store = _fresh_store()
+        store.set_progress(BLOCK - 1)
+        rpc = FakeRpc(_codes())
+        days = iter(["2026-09-28", "2026-09-28", "2026-09-29"])
+        summary = follow_chain(rpc, store, daily_budget=3000000,
+                               day=lambda: next(days), prices=PRICES)
+        self.assertEqual(summary["day"], "2026-09-28",
+                         msg="one block resolves the day twice")
+        self.assertEqual(summary["blocks"], 1,
+                         msg="exactly one block must complete")
+        self.assertEqual(summary["progress"], BLOCK,
+                         msg="progress must reach 26077729")
 
 
 if __name__ == "__main__":
