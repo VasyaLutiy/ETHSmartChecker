@@ -671,7 +671,10 @@ System:
             after each successful rpc call it does store.spend(day, method,
             prices.get(method, 0)); RpcClient.on_spend is left unconnected.
             set_progress runs only for a complete block; a rerun resumes the
-            unfinished block, skipping known addresses.
+            unfinished block, skipping known addresses. day is fixed once per
+            follow_chain call (listen refreshes it on every pass); a single
+            pass that runs across midnight UTC keeps charging the day it
+            started with.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
@@ -698,16 +701,39 @@ System:
       functions:
         - name: Command Line
           description: >
-            main(argv=None, rpc=None) -> exit code. Subcommands: listen,
-            backfill --from N --to M, clusters top [--n K], cluster <addr>,
+            main(argv=None, rpc=None, sleep=None) -> exit code. Subcommands:
+            listen [--daily-budget C] [--max-calls-per-block K]
+            [--interval S], backfill --from N --to M [--daily-budget C]
+            [--max-calls-per-block K], clusters top [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L, seed list.
-            Global --db PATH (default ethsc.sqlite). Without rpc, builds
-            RpcClient(infura_url()).
+            Global --db PATH (default ethsc.sqlite) before the subcommand.
+            Without rpc, builds RpcClient(infura_url()); sleep=None means
+            time.sleep, injected so listen can be stopped in a test. Entry
+            point python -m ethsc: ethsc/__main__.py is a thin
+            sys.exit(main()).
           behavior: >
             Output is plain text, one record per line, tab-separated, fully
-            ordered. Alerts from ingest print as lines starting "ALERT". Exit
-            0 on success, 2 on usage error, 3 when a budget stop left work
-            undone. No traceback on a network or budget stop.
+            ordered; every float is printed "%.4f", exact inside. Records:
+            "ALERT\t<address>\t<seed_address>\t<label>\t<score>" from
+            backfill and listen; clusters top (K default 20):
+            "<level>\t<key>\t<member count>"; cluster <addr>:
+            "<level>\t<key>\t<members comma-joined>", 0 or 1 line; similar:
+            "<address>\t<score>"; seed list: "<address>\t<label>". stdout
+            holds only these records; stderr only one-line messages. Exit
+            codes: 0 success; 1 RpcError out of follow_chain (stderr is
+            str(err), no traceback); 2 usage error (argparse, a positional
+            address not matching ^0x[0-9a-fA-F]{40}$, seed add on an
+            address without code) and main returns argparse's code instead
+            of raising SystemExit; 3 when a budget or cap stop left work
+            undone, and then one line goes to stderr: "stopped: <budget|cap>,
+            spent <credits> credits, progress <block>". listen is a loop of
+            follow_chain passes with sleep(interval) between them (interval
+            default 12); a code 3 stop ends the loop. KeyboardInterrupt
+            anywhere in listen or backfill, in the sleep as well as inside a
+            pass (a transport call, a retry backoff), is a clean stop: exit
+            0, no traceback, progress of the last complete block kept, the
+            unfinished block resumed on the next start. Nothing printed ever
+            contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -726,8 +752,19 @@ System:
               then: 'one stdout line starts "ALERT" and names 0x1807090dd15a6f58e00fd769e32ebf20ee610385, "BELLE honeypot" and 0.8667'
             - given: 'an environment with INFURA_API_KEY=TESTKEY-0000 and an rpc that raises RpcError'
               when: 'main(["--db", db, "listen"]) is run'
-              then: 'nonzero exit, no traceback, and "TESTKEY-0000" nowhere in stdout or stderr'
+              then: 'exit 1, no traceback, and "TESTKEY-0000" nowhere in stdout or stderr'
               ref: 'Secret Hygiene'
+            - given: 'a fresh db and the fake rpc over block 26077729'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--daily-budget", "79"])'
+              then: 'exit 3, stdout empty, stderr exactly one line starting "stopped: budget"'
+              ref: 'eth_blockNumber costs 80 > 79; the cli acceptance of phase 5'
+            - given: 'a fake rpc whose eth_getCode raises KeyboardInterrupt on its first call, progress 26077728'
+              when: 'main(["--db", db, "listen"], rpc=fake, sleep=fake_sleep)'
+              then: 'exit 0, no traceback, progress still 26077728, sleep never called'
+              ref: 'live smoke 2026-09-29: Ctrl-C during a block gave a traceback (TASK_PHASE5 §13)'
+            - given: 'the same fake rpc over block 26077729, progress 26077728, and a sleep that raises KeyboardInterrupt'
+              when: 'main(["--db", db, "listen"], rpc=fake, sleep=that_sleep)'
+              then: 'exit 0, sleep called once with 12, progress 26077729'
 Requirement:
   - name: Stdlib Only
     description: >
