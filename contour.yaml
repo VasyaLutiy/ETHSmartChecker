@@ -990,8 +990,8 @@ System:
         One offline report over the whole database: a self-contained HTML
         page whose charts are embedded SVG, and a JSON holding the same
         numbers. Every number lives in ethsc/report.py and is computed by
-        the standard library; ethsc/charts.py is the only module of the
-        package that imports matplotlib, and it only draws. No network, no
+        the standard library alone; the drawing is a group apart, charts,
+        which is the only place matplotlib may be imported. No network, no
         JavaScript, no external resource of any kind in the HTML.
       functions:
         - name: Collect Report Data
@@ -1162,6 +1162,32 @@ System:
             - given: 'the same store and an ethsc.charts whose import raises ImportError'
               when: 'build_report(store, prefix) is called'
               then: 'ChartsUnavailable is raised and neither file exists'
+      dataObjects:
+        - name: Report Data
+          description: >
+            What collect returns and the JSON holds, the input of both
+            render_html and render_charts.
+          schema: >
+            summary{addresses, addresses_with_code, addresses_without_code,
+            codes, blocks}; levels{L0|L1|proxy -> {clusters, addresses,
+            share}, proxy_codes, proxy_code_share};
+            skeletons{non_proxy_codes, unique_codes, unique_share,
+            non_proxy_addresses, unique_addresses, unique_address_share};
+            clusters{top[{level, key, size}], histogram{edges, counts}};
+            codes{size{min, median, max, histogram{edges, counts}},
+            selectors{min, median, max, histogram{edges, counts}}};
+            ledger{days[{day, credits}], total};
+            alerts{seeds[{address, label, count}], total};
+            spearman{features[6], n, matrix[6][6] of float or null}
+    - name: charts
+      description: >
+        The drawing layer, and the only module of the package allowed a
+        third-party import. It holds no number of its own: everything it
+        draws comes from Report Data, which the stdlib-only report group
+        computed. Kept a group apart so the one exception to Stdlib Only
+        has a boundary a guard can check: matplotlib inside ethsc/charts.py,
+        nowhere else in ethsc/.
+      functions:
         - name: Draw Charts
           description: >
             ethsc/charts.py, the only module allowed to import matplotlib.
@@ -1200,23 +1226,6 @@ System:
             - given: 'a matrix holding null cells'
               when: 'the heat map is drawn'
               then: 'no exception, and every null cell carries the "n/a" mark and a fill distinguishable from the zero of the diverging scale'
-      dataObjects:
-        - name: Report Data
-          description: >
-            What collect returns and the JSON holds, the input of both
-            render_html and render_charts.
-          schema: >
-            summary{addresses, addresses_with_code, addresses_without_code,
-            codes, blocks}; levels{L0|L1|proxy -> {clusters, addresses,
-            share}, proxy_codes, proxy_code_share};
-            skeletons{non_proxy_codes, unique_codes, unique_share,
-            non_proxy_addresses, unique_addresses, unique_address_share};
-            clusters{top[{level, key, size}], histogram{edges, counts}};
-            codes{size{min, median, max, histogram{edges, counts}},
-            selectors{min, median, max, histogram{edges, counts}}};
-            ledger{days[{day, credits}], total};
-            alerts{seeds[{address, label, count}], total};
-            spearman{features[6], n, matrix[6][6] of float or null}
 Requirement:
   - name: Stdlib Only
     description: >

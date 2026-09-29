@@ -2,7 +2,9 @@
 
 > Дата: 29.09.2026. Проект ETHSmartChecker. Запись системы — `contour.yaml`: новая
 > группа `report` (Functions `Collect Report Data`, `Spearman Matrix`,
-> `Render Report`, `Draw Charts`, dataObject `Report Data`), новая Function
+> `Render Report`, dataObject `Report Data`), новая группа `charts` (Function
+> `Draw Charts`) — отдельная именно затем, чтобы у единственного исключения из
+> `Stdlib Only` была граница, которую проверяет guard, — новая Function
 > `Base Counts` в группе `store`, подкоманда `report` и ленивое построение rpc в
 > `Command Line`, и единственное исключение в Requirement `Stdlib Only`. Контракт
 > этой задачи внесён коммитом `effd07a` **до** этой спеки. Где Контур не уточняет
