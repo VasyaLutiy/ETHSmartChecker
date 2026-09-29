@@ -1,5 +1,0 @@
-Phase 3 of ETHSmartChecker adds the contour component cluster on top of the merged evm, fingerprint and store modules.
-cluster (new module ethsc/cluster.py) gives build_clusters(store) -> L0/L1/proxy Cluster dicts, find_similar(store, address, min_score=0.8) -> [(address, score)] by full scan, and match_watchlist(store, code, min_score=0.8) -> Alert dicts against the seeds.
-The public Store API in ethsc/store.py cannot enumerate stored codes or fetch a code by code_id, so the store needs a small read-in-bulk addition (all fingerprints, code by code_id) without changing any existing method.
-All examples are in contour.yaml under group cluster and are proven offline on tests/fixtures (codes_26077729.json, code_belle*.hex, code_weth9.hex), with tests in tests/test_cluster.py.
-No network, no third-party dependency, deterministic sorted output, and ethsc/evm.py and ethsc/fingerprint.py stay unchanged.
