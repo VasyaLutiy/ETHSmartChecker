@@ -1,0 +1,299 @@
+{
+  "deck_id": "20260929-203316-cf957e94",
+  "completed_at": "2026-09-29T20:44:40.526",
+  "branch": "morph/20260929-203316-cf957e94",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "cluster"
+    ],
+    [
+      "cli",
+      "cluster-judge"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-d4f6a5dd109f4938bbe1508870e5b43a",
+    "local-a51bab56fe84421fa47ff53f9f4d8d5e",
+    "local-ca6f62dba3db4ac48162c4f3d989301c",
+    "local-bcfafa19ee4f403782fa4594362f03bf"
+  ],
+  "outcomes": {
+    "cluster": {
+      "custom_id": "cluster",
+      "status": "written",
+      "paths": [
+        "./ethsc/cluster.py",
+        "./tests/test_cluster.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cluster.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "6f403c22a7550c6a767ce6ffe6dfa9f761db0cb3",
+      "diffstat": [
+        {
+          "path": "ethsc/cluster.py",
+          "insertions": 69,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_cluster.py",
+          "insertions": 90,
+          "deletions": 1
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "1fe01a6a4e02107a706e7adb2d97658b6195c8b4",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 25,
+          "deletions": 9
+        },
+        {
+          "path": "tests/test_cli.py",
+          "insertions": 49,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster-judge": {
+      "custom_id": "cluster-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cluster_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cluster-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "f235b8c7e6bdbfa796b6885f02228537b7bf65ee",
+      "diffstat": [
+        {
+          "path": "tests/test_cluster_examples.py",
+          "insertions": 110,
+          "deletions": 1
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cli-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\n.........F.....                                                          [100%]\n=================================== FAILURES ===================================\nE   AssertionError: 'ALERT\\t0x22052a1a0f5a3d2839d71c458f177e68[315 chars]00\\n' != ''\n    - ALERT\t0x22052a1a0f5a3d2839d71c458f177e68b0e73963\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\tUniV2 pair seed\t1.0000\n    - ALERT\t0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\tUniV2 pair seed\t1.0000\n    - ALERT\t0x3041cbd36888becc7bbcbc0045e3b1f144466f5f\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\tUniV2 pair seed\t1.0000\n     : recheck --min 1.0 stdout: got '', want 'ALERT\\t0x22052a1a0f5a3d2839d71c458f177e68b0e73963\\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\\tUniV2 pair seed\\t1.0000\\nALERT\\t0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c\\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\\tUniV2 pair seed\\t1.0000\\nALERT\\t0x3041cbd36888becc7bbcbc0045e3b1f144466f5f\\t0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc\\tUniV2 pair seed\\t1.0000\\n'\n/usr/lib/python3.12/unittest/case.py:715: AssertionError: 'ALERT\\t0x22052a1a0f5a3d2839d71c458f177e68[315 chars]00\\n' != ''\n=========================== short test summary info ============================\nFAILED tests/test_cli_examples.py::CliExamplesTest::test_recheck_empty_without_seeds_and_min_one_filters\n1 failed, 14 passed in 10.49s\n",
+      "commit": "531a37fc46e63d33b0e4ea9bab42386dce0ad525",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 168,
+          "deletions": 3
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "cluster.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710398-zLa1Ermpxx1GrDuJLJif",
+      "input_tokens": 35473,
+      "output_tokens": 8528,
+      "cost": 0.00575097,
+      "finish_reason": "stop"
+    },
+    "cluster.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710398-pAD6RuQMple5yjjAI9rF",
+      "input_tokens": 35473,
+      "output_tokens": 8873,
+      "cost": 0.00585447,
+      "finish_reason": "stop"
+    },
+    "cluster-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710601-stt1oDPUO77DAcDYpnXC",
+      "input_tokens": 32267,
+      "output_tokens": 3654,
+      "cost": 0.00400023,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710601-qQHWVQmoe5kasesgeTgB",
+      "input_tokens": 36212,
+      "output_tokens": 6009,
+      "cost": 0.00506178,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710601-PzfShTt5QqpiNbl5iyhr",
+      "input_tokens": 36212,
+      "output_tokens": 5080,
+      "cost": 0.00478308,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710825-nTzjeDM4MzPeoFNQPc2a",
+      "input_tokens": 36493,
+      "output_tokens": 7345,
+      "cost": 0.00548787,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790710913-Bph2h4FYN4QOfcprAHxK",
+      "input_tokens": 40538,
+      "output_tokens": 6870,
+      "cost": 0.003350124,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 252668,
+    "output_tokens": 46359,
+    "cost": 0.034288524,
+    "requests": 7,
+    "requests_with_usage": 7
+  },
+  "orchestrator_usage": {}
+}
