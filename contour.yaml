@@ -502,6 +502,57 @@ System:
               when: 'match_watchlist is called'
               then: '[] both times'
               ref: 'Tolerant Parser'
+        - name: Recheck Watchlist
+          description: >
+            recheck_watchlist(store, min_score=0.8, seed_addresses=None) ->
+            list of Alert carrying address: every stored address whose code
+            matches a seed of the watchlist, over the whole store, without
+            the network. seed_addresses restricts the check to those seeds
+            (any case, unknown ones simply match nothing); None means every
+            seed of store.seeds(). This is what makes a copy of a scam
+            already in the database visible: match_watchlist only ever sees
+            a code arriving after the seed.
+          behavior: >
+            Each Alert has exactly the keys address, seed_address, label and
+            score; address is the matching stored address, lowercase, and
+            score is the float from similarity, unrounded. One similarity per
+            (code_id, seed) pair, fanned out to addresses_of(code_id): the
+            cost is distinct codes times seeds, never addresses times seeds.
+            A seed never alerts on itself -- the single pair address ==
+            seed_address is dropped -- while every other address of the
+            seed's own code alerts with score 1.0. Addresses stored without
+            code are never checked. The list is sorted by address ascending,
+            then score descending, then seed_address ascending; it does not
+            depend on insertion order, and two calls on the same store give
+            equal lists. No seeds, an empty store, or seed_addresses naming
+            nothing known give []. Reads the store through seeds(),
+            fingerprints(), code_by_id() and addresses_of() only.
+          guardrails: [Deterministic Output, No Network In Core]
+          steps:
+            - uses: store
+            - uses: fingerprint
+            - produces: Alert
+          examples:
+            - given: 'a store filled from codes_26077729.json, seed 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc labelled "UniV2 pair seed"'
+              when: 'recheck_watchlist(store) is called'
+              then: >
+                4 alerts, addresses ascending: 0x22052a1a…, 0x2621cc0b… and
+                0x3041cbd3… with 1.0, then 0xcf6daab9… with 26/32 (0.8125);
+                the seed address itself is absent
+              ref: 'the three other UniswapV2Pair addresses of the same code plus the solc 0.6.12 pair of Find Similar'
+            - given: 'the same store'
+              when: 'recheck_watchlist(store, min_score=1.0), and then with seed_addresses=["0xB4E16D0168E52D35CACD2C6185B44281EC28C9DC"]'
+              then: 'the three 1.0 alerts only; and the same 4 alerts as the default call (the seed address may come in any case)'
+            - given: 'a store holding code_belle.hex at 0x34c6… seeded "BELLE honeypot" and its four copies code_belle_copy_*.hex at their addresses'
+              when: 'recheck_watchlist(store) is called twice'
+              then: >
+                both times the same 4 alerts, each 13/15 (0.8667), in address
+                order 0x1807…, 0x2141…, 0x46ca…, 0x6411…, label "BELLE
+                honeypot"
+              ref: 'Deterministic Output; the copies were already in the store when the seed was added'
+            - given: 'that store with no seeds at all, and then with seed_addresses=["0x1111111111111111111111111111111111111111"]'
+              when: 'recheck_watchlist is called'
+              then: '[] both times'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
@@ -511,13 +562,16 @@ System:
             members: sorted lowercase addresses
         - name: Alert
           description: >
-            A new code matching a seed, as match_watchlist returns it. Ingest
+            A code matching a seed, as match_watchlist returns it. Ingest
             Block adds the key address (the new address whose code matched)
-            to every alert it passes on.
+            to every alert it passes on; Recheck Watchlist returns alerts
+            with that key already set (the stored address that matched), so
+            a cli record is written the same way whichever produced it.
           schema:
             seed_address: str
             label: str
             score: float
+            address: 'str -- added by Ingest Block, returned by Recheck Watchlist'
     - name: rpc
       description: >
         The only network module: a minimal JSON-RPC client over an injected
@@ -753,7 +807,8 @@ System:
             listen [--daily-budget C] [--max-calls-per-block K]
             [--interval S], backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K], clusters top [--n K], cluster <addr>,
-            similar <addr> [--min 0.8], seed add <addr> --label L, seed list.
+            similar <addr> [--min 0.8], seed add <addr> --label L, seed list,
+            recheck [--min 0.8].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
             Without rpc, builds RpcClient(infura_url()); sleep=None means
             time.sleep, injected so listen can be stopped in a test. Entry
@@ -763,7 +818,7 @@ System:
             Output is plain text, one record per line, tab-separated, fully
             ordered; every float is printed "%.4f", exact inside. Records:
             "ALERT\t<address>\t<seed_address>\t<label>\t<score>" from
-            backfill and listen; clusters top (K default 20):
+            backfill, listen, recheck and seed add; clusters top (K default 20):
             "<level>\t<key>\t<member count>"; cluster <addr>:
             "<level>\t<key>\t<members comma-joined>", 0 or 1 line; similar:
             "<address>\t<score>"; seed list: "<address>\t<label>". stdout
@@ -791,7 +846,20 @@ System:
             and anywhere means the sleep, inside a pass (a transport call, a
             retry backoff), while the ALERT lines are being written, while
             the stop line is being written, and between a pass and the
-            pause. Nothing printed ever contains the key.
+            pause. recheck prints the alerts of recheck_watchlist(store,
+            min_score=--min, 0.8 by default) over the whole database, one
+            ALERT line each, in the order that function returns them, and
+            exits 0 -- also with no seeds, no alerts or an empty database,
+            where stdout stays empty. seed add, after a successful add_seed,
+            prints the ALERT lines of recheck_watchlist(store,
+            seed_addresses=[the new address]) at the fixed threshold 0.8:
+            the copies of the new seed already in the database, which no
+            listen or backfill will ever report again; its exit code stays
+            0, and a seed add that fails still exits 2 with an empty
+            stdout. Both write through the same ALERT sink as listen and
+            backfill, make no rpc call of their own, and a second run on an
+            unchanged database prints exactly the same bytes. Nothing
+            printed ever contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -832,6 +900,32 @@ System:
               when: 'main(["--db", db, "listen"], rpc=fake, sleep=fake_sleep)'
               then: 'exit 0, no traceback, stdout holds the one ALERT line of block 26077729, progress 26077729, sleep never called'
               ref: 'the alert of a block completed inside an interrupted pass must reach stdout; before phase 6 it was lost forever, since the address is known on the resume'
+            - given: >
+                the db of the backfill above (206 addresses of block
+                26077729), seeded with seed add
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc --label "UniV2
+                pair seed"
+              when: 'main(["--db", db, "recheck"]) is run twice'
+              then: >
+                exit 0 both times and byte-identical stdout: 4 ALERT lines,
+                0x22052a1a…, 0x2621cc0b…, 0x3041cbd3… with 1.0000, then
+                0xcf6daab9… with 0.8125, all naming the seed and "UniV2 pair
+                seed"; stderr empty
+              ref: 'Deterministic Output; no network, the whole check is the stored codes'
+            - given: >
+                a db holding code_belle.hex at
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 and its four
+                copies code_belle_copy_*.hex at 0x1807…, 0x2141…, 0x46ca…,
+                0x6411…, with no seed yet
+              when: 'main(["--db", db, "seed", "add", "0x34C6211621F2763C60EB007DC2AE91090A2D22F6", "--label", "BELLE honeypot"])'
+              then: >
+                exit 0 and exactly 4 ALERT lines on stdout, one per copy in
+                address order, each with 0.8667 and the seed address
+                lowercase; the seed's own address is not among them
+              ref: 'TASK_PHASE6_2 §7: copies already in the base never produced an alert'
+            - given: 'a db with addresses but no seeds, and then the same db with --min 1.0'
+              when: 'main(["--db", db, "recheck"]) and main(["--db", db, "recheck", "--min", "1.0"])'
+              then: 'exit 0 and empty stdout in the first case; in the second only the alerts with score exactly 1.0000'
 Requirement:
   - name: Stdlib Only
     description: >
