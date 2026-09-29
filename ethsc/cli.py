@@ -1,14 +1,19 @@
 """Command line interface of ETHSmartChecker.
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
-clusters top, cluster, similar, seed add, seed list. Output is plain
-text, one record per line, tab-separated, fully ordered; ALERT lines are
-printed from the on_alerts sink of follow_chain as each block ends and
-flushed at once, so an alert reaches the log before the next block is
-fetched and survives a pass that never returns. The summary alerts are
-not printed a second time: each alert appears exactly once. Exit codes:
-0 success, 1 a failed RPC call, 2 usage error, 3 a budget or cap stop
-that left work undone -- then one line goes to stderr:
+clusters top, cluster, similar, seed add, seed list, recheck. Output is
+plain text, one record per line, tab-separated, fully ordered; ALERT
+lines are printed from the on_alerts sink of follow_chain as each block
+ends and flushed at once, so an alert reaches the log before the next
+block is fetched and survives a pass that never returns. The summary
+alerts are not printed a second time: each alert appears exactly once.
+recheck prints the alerts of recheck_watchlist over the whole database
+-- including the copies already stored when the seed was added, which
+no listen or backfill will ever report -- and seed add, after a
+successful add_seed, prints the alerts for the new seed alone. Neither
+makes an rpc call: both print through the same _print_alerts sink.
+Exit codes: 0 success, 1 a failed RPC call, 2 usage error, 3 a budget
+or cap stop that left work undone -- then one line goes to stderr:
 "stopped: <budget|cap>, spent <N> credits, progress <P>", where <N> is
 the ledger of summary["day"], the day the pass last charged, and <P> is
 "none" when no block has ever completed. The day is left to follow_chain
@@ -33,7 +38,7 @@ import re
 import sys
 import time
 
-from ethsc.cluster import build_clusters, find_similar
+from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
 from ethsc.config import PRICES
 from ethsc.ingest import follow_chain
 from ethsc.rpc import RpcClient, RpcError, infura_url
@@ -196,12 +201,18 @@ def _run_seed_add(args, store):
     except KeyError:
         sys.stderr.write("unknown address or no code: %s\n" % args.address)
         return 2
+    _print_alerts(recheck_watchlist(store, seed_addresses=[args.address]))
     return 0
 
 
 def _run_seed_list(args, store):
     for seed in store.seeds():
         sys.stdout.write("%s\t%s\n" % (seed["address"], seed["label"]))
+    return 0
+
+
+def _run_recheck(args, store):
+    _print_alerts(recheck_watchlist(store, min_score=args.min))
     return 0
 
 
@@ -239,6 +250,9 @@ def _build_parser():
     seed_add.add_argument("address")
     seed_add.add_argument("--label", required=True)
     seed_sub.add_parser("list")
+
+    recheck = sub.add_parser("recheck")
+    recheck.add_argument("--min", type=float, default=0.8)
 
     return parser
 
@@ -282,6 +296,8 @@ def main(argv=None, rpc=None, sleep=None) -> int:
             if args.subcommand == "list":
                 return _run_seed_list(args, store)
             raise _UsageError("missing seed subcommand")
+        if args.command == "recheck":
+            return _run_recheck(args, store)
         raise _UsageError("missing command")
     except _UsageError as err:
         sys.stderr.write("%s\n" % err)

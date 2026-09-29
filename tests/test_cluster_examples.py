@@ -2,7 +2,8 @@
 
 This file does not touch the implementation: it only builds stores from
 the fixtures and compares what ethsc.cluster returns against the
-examples given for Build Clusters, Find Similar and Match Watchlist.
+examples given for Build Clusters, Find Similar, Match Watchlist and
+Recheck Watchlist.
 """
 
 import json
@@ -11,6 +12,7 @@ import tempfile
 import unittest
 
 from ethsc.cluster import build_clusters, find_similar, match_watchlist
+from ethsc.cluster import recheck_watchlist
 from ethsc.store import Store
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -21,6 +23,13 @@ BELLE_COPIES = [
     "0x2141be5f2afa674c94167ab167a478a56cb539f5",
     "0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a",
     "0x6411bed82614b91ef655d82486e0bd3a13d2eb8c",
+]
+
+UNIV2_SEED = "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc"
+UNIV2_ADDRESSES = [
+    "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
+    "0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c",
+    "0x3041cbd36888becc7bbcbc0045e3b1f144466f5f",
 ]
 
 
@@ -243,5 +252,105 @@ class TestMatchWatchlistExamples(unittest.TestCase):
         )
 
 
+class TestRecheckWatchlistExamples(unittest.TestCase):
+    maxDiff = None
+
+    def test_recheck_example_1_univ2_seed(self):
+        """Recheck Watchlist example 1: 4 alerts, the seed's own absent."""
+        store = _block_store()
+        store.add_seed(UNIV2_SEED, "UniV2 pair seed")
+        alerts = recheck_watchlist(store)
+        want = [
+            {
+                "address": addr,
+                "seed_address": UNIV2_SEED,
+                "label": "UniV2 pair seed",
+                "score": 1.0,
+            }
+            for addr in UNIV2_ADDRESSES
+        ]
+        want.append(
+            {
+                "address": "0xcf6daab95c476106eca715d48de4b13287ffdeaa",
+                "seed_address": UNIV2_SEED,
+                "label": "UniV2 pair seed",
+                "score": 26 / 32,
+            }
+        )
+        self.assertEqual(
+            alerts, want,
+            "exactly 4 alerts: three 1.0 of the same code, then 0xcf6daab9... "
+            "at 26/32",
+        )
+        self.assertNotIn(
+            UNIV2_SEED,
+            [alert["address"] for alert in alerts],
+            "the seed's own address is not among the alerts",
+        )
+
+    def test_recheck_example_2_min_score_and_seed_addresses(self):
+        """Recheck Watchlist example 2: min_score=1.0 and upper-case seed."""
+        store = _block_store()
+        store.add_seed(UNIV2_SEED, "UniV2 pair seed")
+        alerts = recheck_watchlist(store, min_score=1.0)
+        want = [
+            {
+                "address": addr,
+                "seed_address": UNIV2_SEED,
+                "label": "UniV2 pair seed",
+                "score": 1.0,
+            }
+            for addr in UNIV2_ADDRESSES
+        ]
+        self.assertEqual(
+            alerts, want, "min_score=1.0 gives only the three 1.0 alerts"
+        )
+        upper = recheck_watchlist(
+            store, seed_addresses=[UNIV2_SEED.upper()]
+        )
+        self.assertEqual(
+            upper, recheck_watchlist(store),
+            "seed_addresses with the upper-case seed equals the default call",
+        )
+
+    def test_recheck_example_3_belle_copies_twice(self):
+        """Recheck Watchlist example 3: two equal runs, 4 alerts at 13/15."""
+        store = _belle_store()
+        store.add_seed(BELLE_SEED, "BELLE honeypot")
+        first = recheck_watchlist(store)
+        second = recheck_watchlist(store)
+        self.assertEqual(
+            first, second, "two calls on the same store give equal lists"
+        )
+        want = [
+            {
+                "address": addr,
+                "seed_address": BELLE_SEED,
+                "label": "BELLE honeypot",
+                "score": 13 / 15,
+            }
+            for addr in BELLE_COPIES
+        ]
+        self.assertEqual(
+            first, want, "the 4 copies, each 13/15, in address order"
+        )
+
+    def test_recheck_example_4_empty(self):
+        """Recheck Watchlist example 4: no seeds and unknown seed give []."""
+        store = _belle_store()
+        self.assertEqual(
+            recheck_watchlist(store), [], "no seeds -> []"
+        )
+        self.assertEqual(
+            recheck_watchlist(
+                store,
+                seed_addresses=["0x1111111111111111111111111111111111111111"],
+            ),
+            [],
+            "seed_addresses naming nothing known -> []",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
+
