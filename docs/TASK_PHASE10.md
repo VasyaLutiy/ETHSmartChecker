@@ -84,8 +84,10 @@ All 265 existing tests stay green and **no existing test file changes**: this ph
 adds files, it does not rewrite them. **One exception, decided at the operator gate
 after run 1 (30.09):** `tests/test_rpc_examples.py` example 5 fed `eth_getBlockReceipts`
 `ok_body(None)` — a null result — as a success, which requirement (4) makes a failure; its
-first answer becomes `ok_body([])`, at most 2 lines, all five test names kept (owner:
-rpc-judge). Recon missed it: the grep looked for a literal null, not `ok_body(None)`. Infura without `--source` behaves byte for byte as
+first answer becomes `ok_body([])`. Run 2 gave it to rpc-judge: three attempts rewrote the
+whole file (+42/−41) and the guard refused them; by the operator's decision the line was
+committed by hand before run 3. Recon missed it: the grep looked for a literal null, not
+`ok_body(None)`. Infura without `--source` behaves byte for byte as
 before. Inherited decisions this phase keeps (reviewed at the operator gate, 30.09):
 
 | # | decision | where recorded |
