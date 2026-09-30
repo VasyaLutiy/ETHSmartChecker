@@ -36,7 +36,8 @@ def _default_transport(url, body):
     req = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "ethsc/0.1"},
         method="POST",
     )
     try:
@@ -54,6 +55,10 @@ class RpcClient(object):
     max_retries + 1 transport calls, then RpcError. A JSON-RPC error object
     raises RpcError(code, message) at once, with no retry. After every
     successful call, on_spend(method, prices[method]) is called once.
+    A result of null for eth_getBlockReceipts is not a block: it is retried
+    on the same schedule as a 429 and, once the retries are exhausted,
+    raises RpcError(None, "eth_getBlockReceipts returned null"). A null
+    result of any other method is returned as is, with no retry.
     """
 
     def __init__(self, url, transport=None, sleep=time.sleep, prices=None,
@@ -92,6 +97,13 @@ class RpcClient(object):
                 if "result" not in parsed:
                     raise RpcError(None, "response has no result")
                 result = parsed["result"]
+                if result is None and method == "eth_getBlockReceipts":
+                    # A null result is not a block: retry as for a 429.
+                    if retries < self.max_retries:
+                        retries += 1
+                        self.sleep(2 ** (retries - 1))
+                        continue
+                    raise RpcError(None, "eth_getBlockReceipts returned null")
                 if self.on_spend is not None:
                     self.on_spend(method, self.prices.get(method, 0))
                 return result
