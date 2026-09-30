@@ -252,3 +252,49 @@ queue time per generation; regenerations; final test count; dollars per accepted
 the two recon numbers (scout targets named vs the deck's final targets; roles moved).
 
 ## 11. Actual
+
+Three runs, 7 of 7 cards accepted in the end; final branch
+`morph/20260930-195929-64b7eafc` (stacked on the two before it).
+
+| run | cards | written / failed / skipped | generations | minutes | executor bill |
+|---|---|---|---|---|---|
+| 20260930-190412-72c26543 | 7 | 3 / 1 / 3 | 4 | 28 | $0.0302 |
+| 20260930-193712-5002a9fb | 4 | 2 / 2 / 0 | 3 | 17 | $0.0372 |
+| 20260930-195929-64b7eafc | 2 | 2 / 0 / 0 | 1 | 9 | $0.0115 |
+| **total** | | **7 accepted** | | **54** | **$0.0789** |
+
+- Regenerations: 10 (run 1: rpc ×2, both `finish_reason=error`, $0; run 2: rpc ×1,
+  rpc-judge ×2, cli-judge ×2; run 3: rpc-judge ×1, cli-judge ×2).
+- Tests: 265 → **302**, all green (+15 smoke, +22 judge = one per phase-10 example).
+  Old test files: one line changed (`tests/test_rpc_examples.py`, see §2.4).
+- Edit envelope: `ingest.py` +153/−52 in its card (planned ~50) — accepted, over the gate.
+- Every failure was a criterion fault, none an executor bug in product code:
+  1. run 1, `rpc`: old `test_rpc_examples.py` example 5 fed `ok_body(None)` as a
+     successful `eth_getBlockReceipts`; recon grepped for a literal null and missed it;
+  2. run 2, `cli-judge`: the deselect of that test was put on two cards of four;
+  3. run 2, `rpc-judge`: asked to change one line of the old file, it rewrote 42 lines on
+     all three attempts; the guard refused them; the line was committed by hand
+     (operator's decision);
+  4. run 2: a rolled-back `cli-judge` attempt left a 1.2 MB SQLite file `x` in the root;
+     removed, and the acceptance now refuses files left in the tree.
+- Debt: `tests/test_cli_examples_p10.py:25` uses `datetime.utcnow()` — 2
+  DeprecationWarnings in the suite.
+
+**Recon.** Scout 104 s, $0.0026, `stop_reason` "the model answered on its own",
+`spent` reads 0 / calls 0 / rounds 1 (the primer seed used the round-zero budget).
+Targets named: **3 of the deck's 11** (`rpc.py`, `ingest.py`, `cli.py`; the other 8: six
+new test files, `config.py`, `tests/helpers.py`). Roles moved by the orchestrator: **3**
+(`config.py` and `tests/helpers.py` context → target at the gate;
+`tests/test_rpc_examples.py` context → target after run 1). The three facts that made the
+phase work (403 on urllib, archive refusal, null past the head) came from live probes of
+the node, not from the scout.
+
+**Falsifiable claim — confirmed** (live, 30.09, no `INFURA_API_KEY`):
+- `backfill --from 26077729 --to 26077729 --source publicnode`: exit 0 in 8.2 s,
+  206 addresses, 147 with code, 130 codes, 0 credits;
+- `listen --source publicnode` for 10 min: 50 blocks, lag to the head 1 block at the end
+  (2 at minute 8.5), 5 903 addresses, 2 010 codes, 0 credits, empty stderr.
+
+Skill lessons (ripple by execution, grep the value, one acceptance builder, known-red
+deck-wide, small edits as data, stray-file step) went into
+`~/.claude/skills/morph-orchestrator/SKILL.md` the same day.
