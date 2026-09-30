@@ -14,6 +14,7 @@ from ethsc.evm import (
     detect_proxy,
     disassemble,
     extract_selectors,
+    is_std_proxy,
     strip_metadata,
 )
 
@@ -40,7 +41,9 @@ def fingerprint(code: bytes) -> Optional[dict]:
 def _opcode_trigrams(code: bytes) -> set:
     """The set of opcode 3-grams (tuples of consecutive ops) of the body.
 
-    Args are dropped; truncated PUSHes are tolerated by the parser.
+    Kept only as a helper for callers outside similarity; the Similarity
+    Score no longer calls it. Args are dropped; truncated PUSHes are
+    tolerated by the parser.
     """
     body, _ = strip_metadata(code)
     ops = [op for _, op, _ in disassemble(body)]
@@ -51,22 +54,35 @@ def _opcode_trigrams(code: bytes) -> set:
 
 
 def similarity(code_a: bytes, code_b: bytes) -> float:
-    """Jaccard index in [0, 1] between two codes.
+    """Jaccard index in [0, 1] between two codes, by identity not shape.
 
-    Selector sets when both are non-empty, otherwise the opcode 3-gram
-    sets of the two stripped bodies. 0.0 when both sets are empty.
-    Symmetric; identical code gives 1.0.
+    The rule, in order:
+    (1) if either code is a recognized delegation (detect_proxy not None),
+        the score is 1.0 when both are the same detect_proxy kind AND
+        target, else 0.0;
+    (2) otherwise, if either code is a standard upgradeable proxy
+        (is_std_proxy) or either selector set is empty, the score is 0.0;
+    (3) otherwise the Jaccard index of the two non-empty selector sets,
+        the float of the division, never rounded.
+    Symmetric; similarity(b"", b"") == 0.0; no exception on empty or
+    garbage bytes. Two codes with the same non-empty selector set score
+    1.0.
     """
+    proxy_a = detect_proxy(code_a)
+    proxy_b = detect_proxy(code_b)
+    if proxy_a is not None or proxy_b is not None:
+        if proxy_a is not None and proxy_b is not None \
+                and proxy_a["kind"] == proxy_b["kind"] \
+                and proxy_a["target"] == proxy_b["target"]:
+            return 1.0
+        return 0.0
     sel_a = set(extract_selectors(code_a))
     sel_b = set(extract_selectors(code_b))
-    if sel_a and sel_b:
-        union = len(sel_a | sel_b)
-        if union == 0:
-            return 0.0
-        return float(len(sel_a & sel_b)) / float(union)
-    gram_a = _opcode_trigrams(code_a)
-    gram_b = _opcode_trigrams(code_b)
-    union = len(gram_a | gram_b)
+    if is_std_proxy(code_a) or is_std_proxy(code_b) \
+            or not sel_a or not sel_b:
+        return 0.0
+    union = len(sel_a | sel_b)
     if union == 0:
         return 0.0
-    return float(len(gram_a & gram_b)) / float(union)
+    return float(len(sel_a & sel_b)) / float(union)
+
