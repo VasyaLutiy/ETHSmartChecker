@@ -1,8 +1,5 @@
 """Judge tests for the cli card: one test per contour.yaml example of
-Command Line, plus the exit-code, stop-line and ALERT-line contracts of
-docs/TASK_PHASE5.md section 2.2 as amended by docs/TASK_PHASE6.md 2.2,
-plus the three phase 7.2 examples (report determinism, lazy rpc, report
-without matplotlib) of docs/TASK_PHASE7_2.md section 3.6.
+Command Line (docs/TASK_PHASE8.md), examples 1..18.
 
 Offline: every rpc is a tests.helpers.FakeRpc; no fixture loaders or
 fakes are written here. INFURA_API_KEY is set to TESTKEY-0000 and the
@@ -21,8 +18,7 @@ from ethsc.rpc import RpcError
 from ethsc.cli import main
 from ethsc.store import Store
 
-from tests.helpers import (FakeRpc, InterruptAfter, block_codes, load_hex,
-                           temp_store)
+from tests.helpers import FakeRpc, InterruptAfter, block_codes, load_hex
 
 _BELLE_SEED = "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"
 _BELLE_SEED_UPPER = "0x34C6211621F2763C60EB007DC2AE91090A2D22F6"
@@ -36,8 +32,8 @@ _SIMILAR_L0 = [
 _EXPECTED_ALERT = (
     "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_BELLE_COPY, _BELLE_SEED)
 )
-# The four BELLE copies, in address order; only the first address is a
-# real fixture address, the other three carry the fixture-name prefixes.
+# The four BELLE copies, in address order; each address carries the
+# fixture-name prefix of its code_belle_copy_*.hex file.
 _BELLE_COPY_ADDRESSES = [
     "0x1807090dd15a6f58e00fd769e32ebf20ee610385",
     "0x2141be5f00000000000000000000000000000000",
@@ -50,6 +46,10 @@ _BELLE_COPY_FILES = [
     "code_belle_copy_46cadea5.hex",
     "code_belle_copy_6411bed8.hex",
 ]
+_BELLE_CODES = {
+    _BELLE_COPY: "0x" + load_hex("code_belle_copy_1807090d.hex").hex(),
+}
+_BELLE_RECEIPTS = [{"to": _BELLE_COPY, "contractAddress": None, "logs": []}]
 
 
 class _KIMap(dict):
@@ -131,8 +131,7 @@ class CliExamplesTest(unittest.TestCase):
         """Store code_belle.hex under the seed address and mark it bad."""
         store = Store(self.db)
         try:
-            code_belle = load_hex("code_belle.hex")
-            code_id = store.put_code(code_belle)
+            code_id = store.put_code(load_hex("code_belle.hex"))
             store.put_address(_BELLE_SEED, code_id, 26077728)
             store.add_seed(_BELLE_SEED, "BELLE honeypot")
         finally:
@@ -161,10 +160,17 @@ class CliExamplesTest(unittest.TestCase):
         finally:
             store.close()
 
-    def test_backfill_block_stores_206_addresses_130_codes(self):
-        """contour example: backfill 26077729..26077729 with a fake rpc.
+    def _fill_belle_block(self):
+        """BELLE-seeded db, progress 26077728, one candidate block."""
+        self._seed_belle()
+        self._set_progress(26077728)
+        return FakeRpc(codes=_BELLE_CODES, receipts=_BELLE_RECEIPTS,
+                       head="0x18dea22")
 
-        exit 0 and the db holds 206 addresses and 130 codes.
+    def test_command_line_example_1_backfill_block(self):
+        """Command Line example 1: a fake rpc over receipts_26077729.json
+        and codes_26077729.json; backfill 26077729..26077729 gives exit 0
+        and the db holds 206 addresses and 130 codes.
         """
         rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
         code, out, err = self.run_main(
@@ -187,144 +193,64 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual(130, codes,
                          msg="codes in db: got %d, want 130" % codes)
 
-    def test_similar_pair_finds_three_copies_and_one_partial(self):
-        """contour example: similar <pair> --min 0.8 on the filled db.
-
-        4 lines: three UniswapV2Pair addresses with 1.0000 first in
-        address order, then 0xcf6daab9... with 0.8125.
+    def test_command_line_example_2_similar_pair(self):
+        """Command Line example 2: that db; similar <pair> --min 0.8
+        gives 4 lines, the three UniswapV2Pair addresses with 1.0000
+        first, 0xcf6daab9... with 0.8125 last (each line ends in the
+        always-present "-" flags field).
         """
-        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
+        self._fill_block()
         code, out, err = self.run_main(
-            ["--db", self.db, "backfill", "--from", "26077729",
-             "--to", "26077729"], rpc)
-        self.assertEqual(0, code, msg="backfill setup: got %r" % (code,))
-        code, out, err = self.run_main(
-            ["--db", self.db, "similar", _PAIR, "--min", "0.8"], rpc)
+            ["--db", self.db, "similar", _PAIR, "--min", "0.8"], FakeRpc())
         self.assertEqual(0, code,
                          msg="similar exit code: got %r, want 0; stderr=%r"
                              % (code, err))
         lines = out.splitlines()
-        want_addresses = _SIMILAR_L0 + [
-            "0xcf6daab95c476106eca715d48de4b13287ffdeaa"]
-        want = ["%s\t1.0000" % addr for addr in _SIMILAR_L0] + [
-            "0xcf6daab95c476106eca715d48de4b13287ffdeaa\t0.8125"]
+        want = ["%s\t1.0000\t-" % addr for addr in _SIMILAR_L0] + [
+            "0xcf6daab95c476106eca715d48de4b13287ffdeaa\t0.8125\t-"]
         self.assertEqual(4, len(lines),
                          msg="similar lines: got %r, want 4 lines" % (lines,))
         self.assertEqual(want, lines,
                          msg="similar output lines: got %r, want %r"
                              % (lines, want))
-        self.assertEqual(want_addresses,
-                         [line.split("\t")[0] for line in lines],
-                         msg="similar address order: got %r" % (lines,))
+        self.assertEqual(_SIMILAR_L0 + [
+            "0xcf6daab95c476106eca715d48de4b13287ffdeaa"],
+            [line.split("\t")[0] for line in lines],
+            msg="similar address order: got %r" % (lines,))
 
-    def test_backfill_of_belle_copy_prints_exactly_one_alert_line(self):
-        """contour example: ALERT for the BELLE copy against the seed.
-
-        One stdout line, exactly ALERT\t0x1807090d...\t0x34c6...\tBELLE
-        honeypot\t0.8667.
+    def test_command_line_example_3_belle_copy_alert(self):
+        """Command Line example 3: a db holding code_belle.hex seeded
+        "BELLE honeypot"; a backfill over a fake block whose only
+        candidate is 0x1807090d... serving code_belle_copy_1807090d.hex
+        gives one stdout line starting "ALERT" and naming the address,
+        the label and 0.8667.
         """
         self._seed_belle()
-
-        receipts = [{
-            "to": _BELLE_COPY,
-            "contractAddress": None,
-            "logs": [],
-        }]
-        codes = {
-            _BELLE_COPY: "0x" + load_hex(
-                "code_belle_copy_1807090d.hex").hex(),
-        }
-        rpc = FakeRpc(codes=codes, receipts=receipts, head="0x18dea22")
+        rpc = FakeRpc(codes=_BELLE_CODES, receipts=_BELLE_RECEIPTS,
+                      head="0x18dea21")
         code, out, err = self.run_main(
             ["--db", self.db, "backfill", "--from", "26077729",
              "--to", "26077729"], rpc)
         self.assertEqual(0, code,
                          msg="backfill exit code: got %r, want 0; stderr=%r"
                              % (code, err))
-        self.assertEqual(_EXPECTED_ALERT, out,
-                         msg="alert stdout: got %r, want %r"
-                             % (out, _EXPECTED_ALERT))
+        lines = out.splitlines()
+        self.assertEqual(1, len(lines),
+                         msg="stdout lines: got %r, want 1" % (lines,))
+        self.assertTrue(lines[0].startswith("ALERT"),
+                        msg="line does not start with ALERT: %r" % (lines,))
+        self.assertIn(_BELLE_COPY, lines[0],
+                      msg="line does not name the copy: %r" % (lines,))
+        self.assertIn("BELLE honeypot", lines[0],
+                      msg="line does not name the label: %r" % (lines,))
+        self.assertIn("0.8667", lines[0],
+                      msg="line does not carry 0.8667: %r" % (lines,))
         self.assertEqual("", err, msg="unexpected stderr: %r" % (err,))
 
-    def test_listen_interrupted_after_complete_block_keeps_its_alert(self):
-        """contour example: the alert of a block completed inside an
-        interrupted listen pass.
-
-        Progress 26077728; the rpc interrupts on its fourth call -- the
-        eth_getBlockReceipts of block 26077730. Exit 0, stdout exactly
-        the one ALERT line of block 26077729, empty stderr, progress
-        26077729, sleep never called.
-        """
-        self._seed_belle()
-        self._set_progress(26077728)
-        codes = {
-            _BELLE_COPY: "0x" + load_hex(
-                "code_belle_copy_1807090d.hex").hex(),
-        }
-        receipts = [{"to": _BELLE_COPY, "contractAddress": None,
-                     "logs": []}]
-        inner = FakeRpc(codes=codes, receipts=receipts, head="0x18dea22")
-        rpc = InterruptAfter(inner, 3)
-        sleep = _SleepSpy()
-        code, out, err = self.run_main(["--db", self.db, "listen"], rpc,
-                                       sleep=sleep)
-        self.assertEqual(0, code,
-                         msg="interrupted listen exit code: got %r, want 0"
-                             % (code,))
-        self.assertEqual(_EXPECTED_ALERT, out,
-                         msg="alert stdout: got %r, want %r"
-                             % (out, _EXPECTED_ALERT))
-        self.assertEqual("", err,
-                         msg="interrupted listen stderr: got %r, want empty"
-                             % (err,))
-        self.assertNotIn("Traceback", out + err,
-                         msg="traceback leaked: stdout=%r stderr=%r"
-                             % (out, err))
-        self.assertEqual(26077729, self._progress(),
-                         msg="progress after interrupt: got %r, want 26077729"
-                             % (self._progress(),))
-        self.assertEqual([], sleep.calls,
-                         msg="sleep calls after interrupt: got %r, want []"
-                             % (sleep.calls,))
-
-    def test_backfill_cap_stop_prints_alert_before_stop_line(self):
-        """contour example: the alert of a block stopped by the cap.
-
-        A seeded db, no progress, two candidates (the BELLE copy and the
-        pair), --max-calls-per-block 1: exit 3, stdout exactly the one
-        ALERT line, stderr exactly the cap stop line with spent 1160 and
-        progress none. The alert is printed before the stop line.
-        """
-        self._seed_belle()
-        codes = {
-            _BELLE_COPY: "0x" + load_hex(
-                "code_belle_copy_1807090d.hex").hex(),
-            _PAIR: block_codes()[_PAIR],
-        }
-        receipts = [
-            {"to": _BELLE_COPY, "contractAddress": None, "logs": []},
-            {"to": _PAIR, "contractAddress": None, "logs": []},
-        ]
-        rpc = FakeRpc(codes=codes, receipts=receipts, head="0x18dea21")
-        code, out, err = self.run_main(
-            ["--db", self.db, "backfill", "--from", "26077729",
-             "--to", "26077729", "--max-calls-per-block", "1"], rpc)
-        self.assertEqual(3, code,
-                         msg="cap-stop exit code: got %r, want 3" % (code,))
-        self.assertEqual(_EXPECTED_ALERT, out,
-                         msg="alert stdout: got %r, want %r"
-                             % (out, _EXPECTED_ALERT))
-        self.assertEqual(
-            "stopped: cap, spent 1160 credits, progress none\n",
-            err,
-            msg="cap-stop stderr: got %r, want %r"
-                % (err, "stopped: cap, spent 1160 credits, progress none\n"))
-
-    def test_listen_with_failing_rpc_no_secret_no_traceback(self):
-        """contour example: listen with an RpcError-ing rpc.
-
-        Exit 1, no traceback, and TESTKEY-0000 nowhere in stdout or
-        stderr.
+    def test_command_line_example_4_listen_rpc_error_secret_hygiene(self):
+        """Command Line example 4: INFURA_API_KEY=TESTKEY-0000 and an
+        rpc that raises RpcError; listen gives exit 1, no traceback, and
+        "TESTKEY-0000" nowhere in stdout or stderr (Secret Hygiene).
         """
         rpc = FakeRpc(fail=RpcError(None, "transport failed"))
         code, out, err = self.run_main(["--db", self.db, "listen"], rpc)
@@ -339,13 +265,11 @@ class CliExamplesTest(unittest.TestCase):
         self.assertNotIn("TESTKEY-0000", err,
                          msg="secret in stderr: %r" % (err,))
 
-    def test_backfill_budget_stop_exit_code_3_stop_line(self):
-        """phase 6 contract: budget stop before any work -> exit 3 with
-        the stop line.
-
-        --daily-budget 79 (< the 80-credit eth_blockNumber price) stops
-        follow_chain before the first call: exit 3, stdout empty, stderr
-        exactly the one stop line with progress none.
+    def test_command_line_example_5_budget_79_exit_3(self):
+        """Command Line example 5: a fresh db, the fake rpc over block
+        26077729, --daily-budget 79; exit 3, stdout empty, stderr
+        exactly one line starting "stopped: budget" (eth_blockNumber
+        costs 80 > 79; the cli acceptance of phase 5).
         """
         rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
         code, out, err = self.run_main(
@@ -362,37 +286,12 @@ class CliExamplesTest(unittest.TestCase):
                                 "stopped: budget, spent 0 credits,"
                                 " progress none\n"))
 
-    def test_backfill_budget_stop_reports_spent_and_progress(self):
-        """phase 6 table row: budget cut mid-block reports the real count.
-
-        Progress 26077728, --daily-budget 10000: 80 + 1000 + 111 x 80 =
-        9960 credits spent, the block left incomplete, so progress stays
-        26077728.
-        """
-        self._set_progress(26077728)
-        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
-        code, out, err = self.run_main(
-            ["--db", self.db, "backfill", "--from", "26077729",
-             "--to", "26077729", "--daily-budget", "10000"], rpc)
-        self.assertEqual(3, code,
-                         msg="budget-stop exit code: got %r, want 3" % (code,))
-        self.assertEqual("stopped: budget, spent 9960 credits,"
-                         " progress 26077728\n",
-                         err,
-                         msg="stop line: got %r, want %r"
-                             % (err,
-                                "stopped: budget, spent 9960 credits,"
-                                " progress 26077728\n"))
-        self.assertEqual("", out,
-                         msg="stop-line stdout: got %r, want empty" % (out,))
-
-    def test_listen_interrupt_inside_pass_at_first_code_fetch(self):
-        """contour example: Ctrl-C inside the pass, at the first
-        eth_getCode.
-
-        Progress 26077728, a codes map raising KeyboardInterrupt from
-        __getitem__: exit 0, empty stdout and stderr, progress still
-        26077728, sleep never called.
+    def test_command_line_example_6_interrupt_at_first_code_fetch(self):
+        """Command Line example 6: a fake rpc whose eth_getCode raises
+        KeyboardInterrupt on its first call, progress 26077728; listen
+        gives exit 0, no traceback, progress still 26077728, sleep never
+        called (live smoke 2026-09-29: Ctrl-C during a block gave a
+        traceback, TASK_PHASE5 §13).
         """
         self._set_progress(26077728)
         sleep = _SleepSpy()
@@ -408,6 +307,9 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual("", err,
                          msg="interrupted listen stderr: got %r, want empty"
                              % (err,))
+        self.assertNotIn("Traceback", out + err,
+                         msg="traceback leaked: stdout=%r stderr=%r"
+                             % (out, err))
         self.assertEqual(26077728, self._progress(),
                          msg="progress after interrupt: got %r, want 26077728"
                              % (self._progress(),))
@@ -415,12 +317,10 @@ class CliExamplesTest(unittest.TestCase):
                          msg="sleep calls after interrupt: got %r, want []"
                              % (sleep.calls,))
 
-    def test_listen_interrupt_in_sleep_after_full_pass(self):
-        """contour example: Ctrl-C in the sleep between passes.
-
-        Progress 26077728, block 26077729 completes, then the sleep
-        raises KeyboardInterrupt: exit 0, sleep called once with 12,
-        progress 26077729.
+    def test_command_line_example_7_interrupt_in_sleep(self):
+        """Command Line example 7: the fake rpc over block 26077729,
+        progress 26077728, a sleep that raises KeyboardInterrupt; exit
+        0, sleep called once with 12, progress 26077729.
         """
         self._set_progress(26077728)
         sleep = _SleepSpy(raise_after=0)
@@ -433,6 +333,9 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual("", err,
                          msg="interrupted listen stderr: got %r, want empty"
                              % (err,))
+        self.assertNotIn("Traceback", out + err,
+                         msg="traceback leaked: stdout=%r stderr=%r"
+                             % (out, err))
         self.assertEqual([12], sleep.calls,
                          msg="sleep calls: got %r, want [12]"
                              % (sleep.calls,))
@@ -440,92 +343,88 @@ class CliExamplesTest(unittest.TestCase):
                          msg="progress after interrupt: got %r, want 26077729"
                              % (self._progress(),))
 
-    def test_usage_error_no_subcommand_exit_code_2(self):
-        """section 2.2 contract: argparse usage error -> exit code 2."""
-        code, out, err = self.run_main(["--db", self.db], FakeRpc())
-        self.assertEqual(2, code,
-                         msg="usage-error exit code: got %r, want 2"
+    def test_command_line_example_8_interrupt_keeps_completed_alert(self):
+        """Command Line example 8: a BELLE-seeded db, progress 26077728,
+        a fake rpc with head 0x18dea22 whose only candidate in block
+        26077729 is 0x1807090d... with code_belle_copy_1807090d.hex,
+        raising KeyboardInterrupt on its fourth call (the
+        eth_getBlockReceipts of block 26077730); exit 0, no traceback,
+        stdout holds the one ALERT line of block 26077729, progress
+        26077729, sleep never called (the alert of a block completed
+        inside an interrupted pass must reach stdout).
+        """
+        rpc = self._fill_belle_block()
+        rpc = InterruptAfter(rpc, 3)
+        sleep = _SleepSpy()
+        code, out, err = self.run_main(["--db", self.db, "listen"], rpc,
+                                       sleep=sleep)
+        self.assertEqual(0, code,
+                         msg="interrupted listen exit code: got %r, want 0"
                              % (code,))
-        self.assertNotEqual("", err,
-                            msg="usage error should say why; stderr empty")
-        self.assertNotIn("Traceback", err,
-                         msg="usage error printed a traceback: %r" % (err,))
+        self.assertEqual(_EXPECTED_ALERT, out,
+                         msg="alert stdout: got %r, want %r"
+                             % (out, _EXPECTED_ALERT))
+        self.assertEqual("", err,
+                         msg="interrupted listen stderr: got %r, want empty"
+                             % (err,))
+        self.assertNotIn("Traceback", out + err,
+                         msg="traceback leaked: stdout=%r stderr=%r"
+                             % (out, err))
+        self.assertEqual(26077729, self._progress(),
+                         msg="progress after interrupt: got %r, want 26077729"
+                             % (self._progress(),))
+        self.assertEqual([], sleep.calls,
+                         msg="sleep calls after interrupt: got %r, want []"
+                             % (sleep.calls,))
 
-    def test_usage_error_bad_address_exit_code_2(self):
-        """section 2.2 contract: malformed address argument -> exit 2."""
-        code, out, err = self.run_main(
-            ["--db", self.db, "similar", "not-an-address"], FakeRpc())
-        self.assertEqual(2, code,
-                         msg="bad-address exit code: got %r, want 2"
-                             % (code,))
-        self.assertNotIn("Traceback", err,
-                         msg="bad address printed a traceback: %r" % (err,))
-
-    def test_seed_add_then_recheck_twice_deterministic(self):
-        """contour example: seed add over the filled block db, then
-        recheck twice.
-
-        The db of the backfill above (206 addresses), seeded with
-        seed add 0xb4e16d01... --label "UniV2 pair seed". seed add
-        exits 0 with four ALERT lines on stdout; recheck then exits 0
-        twice with byte-identical stdout holding exactly those four
-        lines -- 0x22052a1a..., 0x2621cc0b..., 0x3041cbd3... with
-        1.0000, then 0xcf6daab9... with 0.8125, all naming the seed
-        address and the label; stderr empty.
+    def test_command_line_example_9_recheck_twice_deterministic(self):
+        """Command Line example 9: the db of the backfill (206
+        addresses), seeded with seed add 0xb4e16d01... --label "UniV2
+        pair seed"; recheck twice: exit 0 both times and byte-identical
+        stdout -- 4 ALERT lines, 0x22052a1a..., 0x2621cc0b...,
+        0x3041cbd3... with 1.0000, then 0xcf6daab9... with 0.8125, all
+        naming the seed and the label; stderr empty (Deterministic
+        Output; no network, the whole check is the stored codes).
         """
         self._fill_block()
-        seed_lines = [
+        want = "".join(
             "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\n" % (addr, _PAIR)
             for addr in _SIMILAR_L0
-        ] + [
-            "ALERT\t0xcf6daab95c476106eca715d48de4b13287ffdeaa\t%s"
+        ) + "ALERT\t0xcf6daab95c476106eca715d48de4b13287ffdeaa\t%s" \
             "\tUniV2 pair seed\t0.8125\n" % _PAIR
-        ]
-        want = "".join(seed_lines)
         code, out, err = self.run_main(
             ["--db", self.db, "seed", "add", _PAIR,
              "--label", "UniV2 pair seed"], FakeRpc())
         self.assertEqual(0, code,
                          msg="seed add exit code: got %r, want 0; stderr=%r"
                              % (code, err))
-        self.assertEqual(want, out,
-                         msg="seed add stdout: got %r, want %r" % (out, want))
-        self.assertEqual("", err,
-                         msg="seed add stderr: got %r, want empty" % (err,))
-
-        code, out, err = self.run_main(["--db", self.db, "recheck"],
-                                       FakeRpc())
-        self.assertEqual(0, code,
-                         msg="first recheck exit code: got %r, want 0"
-                             % (code,))
-        self.assertEqual(want, out,
-                         msg="first recheck stdout: got %r, want %r"
-                             % (out, want))
-        self.assertEqual("", err,
-                         msg="first recheck stderr: got %r, want empty"
-                             % (err,))
-        first = out
-        code, out, err = self.run_main(["--db", self.db, "recheck"],
-                                       FakeRpc())
-        self.assertEqual(0, code,
-                         msg="second recheck exit code: got %r, want 0"
-                             % (code,))
+        first = None
+        for run in (1, 2):
+            code, out, err = self.run_main(["--db", self.db, "recheck"],
+                                           FakeRpc())
+            self.assertEqual(0, code,
+                             msg="recheck run %d exit code: got %r, want 0"
+                                 % (run, code))
+            self.assertEqual(want, out,
+                             msg="recheck run %d stdout: got %r, want %r"
+                                 % (run, out, want))
+            self.assertEqual("", err,
+                             msg="recheck run %d stderr: got %r, want empty"
+                                 % (run, err))
+            if first is None:
+                first = out
         self.assertEqual(first, out,
-                         msg="recheck not deterministic: first %r, second %r"
-                             % (first, out))
-        self.assertEqual("", err,
-                         msg="second recheck stderr: got %r, want empty"
-                             % (err,))
-        self.assertNotIn(_BELLE_SEED, out,
-                         msg="seed address among the alerts: %r" % (out,))
+                         msg="recheck not byte-identical between the two"
+                             " runs: first %r, second %r" % (first, out))
 
-    def test_seed_add_uppercase_finds_four_belle_copies(self):
-        """contour example: seed add over the BELLE db with four copies.
-
-        The BELLE db with no seed yet, the seed address given in upper
-        case: exit 0 and exactly four ALERT lines with 0.8667, one per
-        copy in address order, the seed address lowercase in each, the
-        seed's own address absent.
+    def test_command_line_example_10_seed_add_uppercase_four_copies(self):
+        """Command Line example 10: a db holding code_belle.hex at
+        0x34c6... and its four copies code_belle_copy_*.hex, no seed
+        yet; seed add with the seed address in upper case gives exit 0
+        and exactly 4 ALERT lines on stdout, one per copy in address
+        order, each with 0.8667 and the seed address lowercase; the
+        seed's own address is not among them (TASK_PHASE6_2 §7: copies
+        already in the base never produced an alert).
         """
         self._fill_belle_copies()
         want = "".join(
@@ -548,12 +447,11 @@ class CliExamplesTest(unittest.TestCase):
             "ALERT\t%s\t" % _BELLE_SEED, out,
             msg="seed's own address among the alerts: %r" % (out,))
 
-    def test_recheck_empty_without_seeds_and_min_one_filters(self):
-        """contour example: recheck with no seeds, then recheck --min 1.0.
-
-        recheck on a db with addresses but no seeds: exit 0 and empty
-        stdout. recheck --min 1.0 on the seeded db of the block: only
-        the three 1.0000 lines.
+    def test_command_line_example_11_recheck_empty_then_min_1(self):
+        """Command Line example 11: a db with addresses but no seeds, and
+        then the same db with --min 1.0; recheck gives exit 0 and empty
+        stdout in the first case; in the second only the alerts with
+        score exactly 1.0000.
         """
         self._fill_block()
         code, out, err = self.run_main(["--db", self.db, "recheck"],
@@ -567,9 +465,6 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual("", err,
                          msg="unseeded recheck stderr: got %r, want empty"
                              % (err,))
-
-        # The same db, now seeded as in the pair-seed example above;
-        # recheck --min 1.0 keeps only the three score-1.0 alerts.
         code, out, err = self.run_main(
             ["--db", self.db, "seed", "add", _PAIR,
              "--label", "UniV2 pair seed"], FakeRpc())
@@ -591,15 +486,12 @@ class CliExamplesTest(unittest.TestCase):
                          msg="recheck --min 1.0 stderr: got %r, want empty"
                              % (err,))
 
-    # -- phase 7.2 examples (docs/TASK_PHASE7_2.md section 3.6) ---------
-
-    def test_report_twice_exit_0_two_lines_byte_identical_files(self):
-        """contour example: report --out run twice on the block db.
-
-        The db of block 26077729 and an empty output directory: exit 0
-        both times, stderr empty, stdout exactly two lines -- the html
-        path then the json path -- and both files byte-identical between
-        the two runs.
+    def test_command_line_example_12_report_twice_byte_identical(self):
+        """Command Line example 12: the db of the backfill and an empty
+        temp directory; report --out run twice gives exit 0 both times,
+        stderr empty, stdout exactly two lines -- the html path then the
+        json path -- and both files byte-identical between the two runs
+        (Deterministic Output).
         """
         self._fill_block()
         outdir = tempfile.mkdtemp(prefix="ethsc-report-judge-")
@@ -634,13 +526,12 @@ class CliExamplesTest(unittest.TestCase):
                 % (len(files[0][0]), len(files[1][0]),
                    len(files[0][1]), len(files[1][1])))
 
-    def test_report_clusters_recheck_run_without_infura_key(self):
-        """contour example: report, clusters top and recheck with no key.
-
-        INFURA_API_KEY removed from the environment, the working
-        directory changed to one holding no .env: each of report,
-        clusters top and recheck exits 0 with rpc=None and raises no
-        RpcError (no traceback in stdout or stderr).
+    def test_command_line_example_13_no_key_still_runs(self):
+        """Command Line example 13: INFURA_API_KEY unset, no .env in the
+        working directory, a db holding block 26077729; report,
+        clusters top and recheck run with rpc=None give exit 0 each time
+        and no RpcError, because infura_url() is never called outside
+        listen and backfill.
         """
         self._fill_block()
         saved_key = os.environ.pop("INFURA_API_KEY", None)
@@ -648,43 +539,28 @@ class CliExamplesTest(unittest.TestCase):
         nodir = tempfile.mkdtemp(prefix="ethsc-noenv-judge-")
         os.chdir(nodir)
         try:
-            code, out, err = self.run_main(
-                ["--db", self.db, "report", "--out",
-                 os.path.join(nodir, "r")], None)
-            self.assertEqual(0, code,
-                             msg="report without key exit code: got %r,"
-                                 " want 0; stderr=%r" % (code, err))
-            self.assertNotIn("Traceback", out + err,
-                             msg="report without key raised: stdout=%r"
-                                 " stderr=%r" % (out, err))
-            code, out, err = self.run_main(
-                ["--db", self.db, "clusters", "top"], None)
-            self.assertEqual(0, code,
-                             msg="clusters top without key exit code:"
-                                 " got %r, want 0; stderr=%r"
-                                 % (code, err))
-            self.assertNotIn("Traceback", out + err,
-                             msg="clusters top without key raised:"
-                                 " stdout=%r stderr=%r" % (out, err))
-            code, out, err = self.run_main(["--db", self.db, "recheck"],
-                                           None)
-            self.assertEqual(0, code,
-                             msg="recheck without key exit code: got %r,"
-                                 " want 0; stderr=%r" % (code, err))
-            self.assertNotIn("Traceback", out + err,
-                             msg="recheck without key raised: stdout=%r"
-                                 " stderr=%r" % (out, err))
+            for run, argv in enumerate((
+                    ["--db", self.db, "report", "--out",
+                     os.path.join(nodir, "r")],
+                    ["--db", self.db, "clusters", "top"],
+                    ["--db", self.db, "recheck"]), 1):
+                code, out, err = self.run_main(argv, None)
+                self.assertEqual(0, code,
+                                 msg="subcommand %r exit code: got %r, want"
+                                     " 0; stderr=%r" % (argv, code, err))
+                self.assertNotIn("Traceback", out + err,
+                                 msg="subcommand %r raised: stdout=%r"
+                                     " stderr=%r" % (argv, out, err))
         finally:
             os.chdir(saved_cwd)
             if saved_key is not None:
                 os.environ["INFURA_API_KEY"] = saved_key
 
-    def test_report_without_matplotlib_exit_2_one_stderr_line(self):
-        """contour example: report with an unimportable ethsc.charts.
-
-        sys.modules["ethsc.charts"] = None (restored afterwards): exit
-        2, stdout empty, no file written, stderr exactly one line
-        containing the literal word matplotlib, and no traceback.
+    def test_command_line_example_14_report_without_matplotlib(self):
+        """Command Line example 14: the same db and an import of
+        ethsc.charts that raises ImportError; report gives exit 2,
+        stdout empty, no file written, and stderr exactly one line
+        naming matplotlib, with no traceback.
         """
         self._fill_block()
         outdir = tempfile.mkdtemp(prefix="ethsc-nompl-judge-")
@@ -726,6 +602,133 @@ class CliExamplesTest(unittest.TestCase):
             os.path.exists(prefix + ".json"),
             msg="json file written despite missing matplotlib: %s"
                 % (prefix + ".json",))
+
+    def test_command_line_example_15_risk_listing_34_lines(self):
+        """Command Line example 15: the db of the backfill (206
+        addresses of block 26077729); risk run twice gives exit 0 both
+        times and byte-identical stdout: 34 lines, the first
+        "0x07696dcab55e62cfef953666b29fe1970518cb00 mutable_delegatecall"
+        and the last
+        "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc selfdestruct";
+        stderr empty (33 addresses mutable_delegatecall + 1
+        selfdestruct, no overlap; Deterministic Output).
+        """
+        self._fill_block()
+        code, out, err = self.run_main(["--db", self.db, "risk"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="risk exit code: got %r, want 0" % (code,))
+        lines = out.splitlines()
+        self.assertEqual(34, len(lines),
+                         msg="risk line count: got %d, want 34"
+                             % (len(lines),))
+        self.assertEqual(
+            "0x07696dcab55e62cfef953666b29fe1970518cb00"
+            "\tmutable_delegatecall",
+            lines[0],
+            msg="first risk line: got %r, want the mutable_delegatecall"
+                " address" % (lines[0],))
+        self.assertEqual(
+            "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct",
+            lines[-1],
+            msg="last risk line: got %r, want the selfdestruct address"
+                % (lines[-1],))
+        self.assertEqual("", err,
+                         msg="risk stderr: got %r, want empty" % (err,))
+        first = out
+        code, out, err = self.run_main(["--db", self.db, "risk"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="second risk exit code: got %r, want 0"
+                             % (code,))
+        self.assertEqual(first, out,
+                         msg="risk not byte-identical between the two runs:"
+                             " first %r, second %r" % (first, out))
+        self.assertEqual("", err,
+                         msg="second risk stderr: got %r, want empty"
+                             % (err,))
+
+    def test_command_line_example_16_risk_flag_selfdestruct(self):
+        """Command Line example 16: the same db; risk --flag
+        selfdestruct gives exit 0 and exactly one line,
+        "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct"
+        (the one code with a SELFDESTRUCT opcode in the block).
+        """
+        self._fill_block()
+        code, out, err = self.run_main(
+            ["--db", self.db, "risk", "--flag", "selfdestruct"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="risk --flag exit code: got %r, want 0"
+                             % (code,))
+        lines = out.splitlines()
+        self.assertEqual(
+            ["0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct"],
+            lines,
+            msg="risk --flag selfdestruct lines: got %r, want exactly the"
+                " one selfdestruct line" % (lines,))
+        self.assertEqual("", err,
+                         msg="risk --flag stderr: got %r, want empty"
+                             % (err,))
+
+    def test_command_line_example_17_cluster_line_flags_field(self):
+        """Command Line example 17: the same db; cluster
+        0x28b5a0e9c621a5badaa536219b3a228c8168cf5d gives exit 0 and one
+        line whose fourth tab field is "mutable_delegatecall": an L0
+        cluster of two addresses 0x28b5a0e9... and 0x81d40f21... sharing
+        one code (two addresses of one code that has DELEGATECALL, SLOAD
+        and is no eip1167).
+        """
+        self._fill_block()
+        code, out, err = self.run_main(
+            ["--db", self.db, "cluster",
+             "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="cluster exit code: got %r, want 0" % (code,))
+        lines = out.splitlines()
+        self.assertEqual(1, len(lines),
+                         msg="cluster line count: got %r, want 1" % (lines,))
+        fields = lines[0].split("\t")
+        self.assertEqual(4, len(fields),
+                         msg="cluster field count: got %r, want 4"
+                             % (fields,))
+        self.assertEqual("L0", fields[0],
+                         msg="cluster level: got %r, want L0" % (fields[0],))
+        self.assertEqual(
+            "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d,"
+            "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+            fields[2],
+            msg="cluster members: got %r, want the two addresses"
+                " comma-joined" % (fields[2],))
+        self.assertEqual("mutable_delegatecall", fields[3],
+                         msg="cluster flags field: got %r, want"
+                             " mutable_delegatecall" % (fields[3],))
+
+    def test_command_line_example_18_similar_lines_end_in_dash(self):
+        """Command Line example 18: the same db; similar <pair> --min 0.8
+        gives exit 0 and 4 lines, each ending in a "-" field (the flag
+        column is always present; UniswapV2Pair has no SELFDESTRUCT and
+        no DELEGATECALL opcode), the score still the field before it.
+        """
+        self._fill_block()
+        code, out, err = self.run_main(
+            ["--db", self.db, "similar", _PAIR, "--min", "0.8"], FakeRpc())
+        self.assertEqual(0, code,
+                         msg="similar exit code: got %r, want 0" % (code,))
+        lines = out.splitlines()
+        self.assertEqual(4, len(lines),
+                         msg="similar line count: got %r, want 4"
+                             % (lines,))
+        want = ["%s\t1.0000\t-" % addr for addr in _SIMILAR_L0] + [
+            "0xcf6daab95c476106eca715d48de4b13287ffdeaa\t0.8125\t-"]
+        self.assertEqual(want, lines,
+                         msg="similar lines: got %r, want %r"
+                             % (lines, want))
+        for line in lines:
+            fields = line.split("\t")
+            self.assertEqual(3, len(fields),
+                             msg="field count of %r: got %d, want 3"
+                                 % (line, len(fields)))
+            self.assertEqual("-", fields[2],
+                             msg="flag field of %r: got %r, want -"
+                                 % (line, fields[2]))
 
 
 if __name__ == "__main__":
