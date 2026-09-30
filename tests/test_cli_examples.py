@@ -1,5 +1,8 @@
 """Judge tests for the cli card: one test per contour.yaml example of
-Command Line (docs/TASK_PHASE8.md), examples 1..18.
+Command Line (docs/TASK_PHASE9.md), examples 1..20: the phase-8 set with
+the cap-stop and the budget mid-block examples added, and the risk and
+cluster listings re-counted after is_std_proxy dropped the standard
+proxies.
 
 Offline: every rpc is a tests.helpers.FakeRpc; no fixture loaders or
 fakes are written here. INFURA_API_KEY is set to TESTKEY-0000 and the
@@ -285,6 +288,71 @@ class CliExamplesTest(unittest.TestCase):
                              % (err,
                                 "stopped: budget, spent 0 credits,"
                                 " progress none\n"))
+
+    def test_command_line_cap_stop_alert_before_stop_line(self):
+        """Command Line example: a BELLE-seeded db with no progress yet,
+        a fake rpc over block 26077729 whose two candidates are the copy
+        0x1807090d... (code_belle_copy_1807090d.hex) and the UniV2 pair;
+        backfill --max-calls-per-block 1 gives exit 3, stdout exactly
+        the one ALERT line at 0.8667, stderr exactly "stopped: cap,
+        spent 1160 credits, progress none" (80 + 1000 + 1 x 80); the
+        alert is printed before the stop line, checked on one merged
+        stream since the two records go to different channels.
+        """
+        self._seed_belle()
+        receipts = [
+            {"to": _BELLE_COPY, "contractAddress": None, "logs": []},
+            {"to": _PAIR, "contractAddress": None, "logs": []},
+        ]
+        rpc = FakeRpc(codes=_BELLE_CODES, receipts=receipts,
+                      head="0x18dea21")
+        merged = io.StringIO()
+        with contextlib.redirect_stdout(merged):
+            with contextlib.redirect_stderr(merged):
+                code = main(["--db", self.db, "backfill", "--from",
+                             "26077729", "--to", "26077729",
+                             "--max-calls-per-block", "1"], rpc)
+        self.assertEqual(3, code,
+                         msg="cap-stop exit code: got %r, want 3" % (code,))
+        want = _EXPECTED_ALERT + \
+            "stopped: cap, spent 1160 credits, progress none\n"
+        self.assertEqual(
+            want, merged.getvalue(),
+            msg="cap-stop output: got %r, want %r -- the ALERT line ahead"
+                " of the stop line" % (merged.getvalue(), want))
+        self.assertIsNone(self._progress(),
+                          msg="progress after cap stop: got %r, want None"
+                              % (self._progress(),))
+
+    def test_command_line_budget_mid_block_stop_line(self):
+        """Command Line example: progress 26077728 and the fake rpc over
+        block 26077729; backfill --daily-budget 10000 gives exit 3,
+        stdout empty, stderr exactly "stopped: budget, spent 9960
+        credits, progress 26077728" -- the budget cut the block mid-way
+        (80 + 1000 + 111 x 80 = 9960) and progress stayed at the last
+        complete block.
+        """
+        self._set_progress(26077728)
+        rpc = FakeRpc(codes=block_codes(), head="0x18dea21")
+        code, out, err = self.run_main(
+            ["--db", self.db, "backfill", "--from", "26077729",
+             "--to", "26077729", "--daily-budget", "10000"], rpc)
+        self.assertEqual(3, code,
+                         msg="budget mid-block exit code: got %r, want 3"
+                             % (code,))
+        self.assertEqual("", out,
+                         msg="budget mid-block stdout: got %r, want empty"
+                             % (out,))
+        self.assertEqual(
+            "stopped: budget, spent 9960 credits, progress 26077728\n",
+            err,
+            msg="budget mid-block stderr: got %r, want %r"
+                % (err,
+                   "stopped: budget, spent 9960 credits,"
+                   " progress 26077728\n"))
+        self.assertEqual(26077728, self._progress(),
+                         msg="progress after budget stop: got %r, want"
+                             " 26077728" % (self._progress(),))
 
     def test_command_line_example_6_interrupt_at_first_code_fetch(self):
         """Command Line example 6: a fake rpc whose eth_getCode raises
@@ -603,26 +671,28 @@ class CliExamplesTest(unittest.TestCase):
             msg="json file written despite missing matplotlib: %s"
                 % (prefix + ".json",))
 
-    def test_command_line_example_15_risk_listing_34_lines(self):
+    def test_command_line_example_15_risk_listing_14_lines(self):
         """Command Line example 15: the db of the backfill (206
         addresses of block 26077729); risk run twice gives exit 0 both
-        times and byte-identical stdout: 34 lines, the first
-        "0x07696dcab55e62cfef953666b29fe1970518cb00 mutable_delegatecall"
+        times and byte-identical stdout: 14 lines, the first
+        "0x11b74d6995904232ad5cdf78b421f7bba1e8e646 mutable_delegatecall"
         and the last
         "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc selfdestruct";
-        stderr empty (33 addresses mutable_delegatecall + 1
-        selfdestruct, no overlap; Deterministic Output).
+        stderr empty (13 addresses mutable_delegatecall + 1
+        selfdestruct, no overlap; the block's standard EIP-1967 proxies
+        are excluded by is_std_proxy -- it was 34 lines, first
+        0x07696dcab55e..., before; Deterministic Output).
         """
         self._fill_block()
         code, out, err = self.run_main(["--db", self.db, "risk"], FakeRpc())
         self.assertEqual(0, code,
                          msg="risk exit code: got %r, want 0" % (code,))
         lines = out.splitlines()
-        self.assertEqual(34, len(lines),
-                         msg="risk line count: got %d, want 34"
+        self.assertEqual(14, len(lines),
+                         msg="risk line count: got %d, want 14"
                              % (len(lines),))
         self.assertEqual(
-            "0x07696dcab55e62cfef953666b29fe1970518cb00"
+            "0x11b74d6995904232ad5cdf78b421f7bba1e8e646"
             "\tmutable_delegatecall",
             lines[0],
             msg="first risk line: got %r, want the mutable_delegatecall"
@@ -670,16 +740,19 @@ class CliExamplesTest(unittest.TestCase):
 
     def test_command_line_example_17_cluster_line_flags_field(self):
         """Command Line example 17: the same db; cluster
-        0x28b5a0e9c621a5badaa536219b3a228c8168cf5d gives exit 0 and one
+        0xe6b738da243e8fa2a0ed5915645789add5de5152 gives exit 0 and one
         line whose fourth tab field is "mutable_delegatecall": an L0
-        cluster of two addresses 0x28b5a0e9... and 0x81d40f21... sharing
-        one code (two addresses of one code that has DELEGATECALL, SLOAD
-        and is no eip1167).
+        cluster of two addresses 0xe6b738da243e8fa2a0ed5915645789add5de5152
+        and 0xf40bcc0845528873784f36e5c105e62a93ff7021 sharing one code
+        (two addresses of one non-proxy code that has DELEGATECALL and
+        SLOAD and is no eip1167 and no standard proxy; the old example
+        0x28b5a0e9... is now a standard proxy, no longer
+        mutable_delegatecall).
         """
         self._fill_block()
         code, out, err = self.run_main(
             ["--db", self.db, "cluster",
-             "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"], FakeRpc())
+             "0xe6b738da243e8fa2a0ed5915645789add5de5152"], FakeRpc())
         self.assertEqual(0, code,
                          msg="cluster exit code: got %r, want 0" % (code,))
         lines = out.splitlines()
@@ -692,8 +765,8 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual("L0", fields[0],
                          msg="cluster level: got %r, want L0" % (fields[0],))
         self.assertEqual(
-            "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d,"
-            "0x81d40f21f12a8f0e3252bccb954d722d4c464b64",
+            "0xe6b738da243e8fa2a0ed5915645789add5de5152,"
+            "0xf40bcc0845528873784f36e5c105e62a93ff7021",
             fields[2],
             msg="cluster members: got %r, want the two addresses"
                 " comma-joined" % (fields[2],))
