@@ -1,0 +1,366 @@
+{
+  "deck_id": "20260930-193712-5002a9fb",
+  "completed_at": "2026-09-30T19:54:53.177",
+  "branch": "morph/20260930-193712-5002a9fb",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "rpc"
+    ],
+    [
+      "cli",
+      "rpc-judge"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-1275f15cc6c14e9084f54150f538fe4a",
+    "local-d04ff7e8979d40b1836431a749770788",
+    "local-1abe1091e62f451d8c41bd32c668728d",
+    "local-61438a19ddfd41a6982dc0f042bdf583",
+    "local-0f5f54e196c14344815a2f081d0e35b1",
+    "local-5cc45a3d3aac4620a2929c19ce48f79d",
+    "local-ea9f982233f84dcf99d6d81b8572fa0a",
+    "local-b949e74d99f74d10a12de9cf6a94da5a"
+  ],
+  "outcomes": {
+    "rpc": {
+      "custom_id": "rpc",
+      "status": "written",
+      "paths": [
+        "./ethsc/rpc.py",
+        "./ethsc/config.py",
+        "./tests/test_rpc_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "rpc.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nprobe OK: rpc\nFF...                                                                   [100%]\n=================================== FAILURES ===================================\n_________ TestUserAgentHeader.test_default_transport_sends_user_agent __________\ntests/test_rpc_p10.py:27: in test_default_transport_sends_user_agent\n    status, body = RpcClient(\"https://ethereum-rpc.publicnode.com\").call(\n    ^^^^^^^^^^^^\nE   ValueError: too many values to unpack (expected 2)\n_________ TestNullReceipts.test_null_exhausted_raises [null exhausted] _________\ntests/test_rpc_p10.py:69: in test_null_exhausted_raises\n    client.call(\"eth_getBlockReceipts\", [\"0x1312d00\"])\nethsc/rpc.py:106: in call\n    raise RpcError(None, \"eth_getBlockReceipts returned null\")\nE   ethsc.rpc.RpcError: eth_getBlockReceipts returned null\n_________________ TestNullReceipts.test_null_exhausted_raises __________________\ntests/test_rpc_p10.py:67: in test_null_exhausted_raises\n    with self.assertRaises(RpcError) as caught, \\\nE   AssertionError: RpcError not raised\n----------------------------- Captured stdout call -----------------------------\nu\n=========================== short test summary info ============================\nFAILED tests/test_rpc_p10.py::TestUserAgentHeader::test_default_transport_sends_user_agent\nSUBFAILED[null exhausted] tests/test_rpc_p10.py::TestNullReceipts::test_null_exhausted_raises\nFAILED tests/test_rpc_p10.py::TestNullReceipts::test_null_exhausted_raises - ...\n3 failed, 3 passed in 0.05s\n",
+      "commit": "e40cea9676d8376323f2531de68968f689c0a7cf",
+      "diffstat": [
+        {
+          "path": "ethsc/config.py",
+          "insertions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "ethsc/rpc.py",
+          "insertions": 13,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_rpc_p10.py",
+          "insertions": 103,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/rpc.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/rpc.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_rpc_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "6405a2b5c3bf2dd009999ad9f4db990d0004105b",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 64,
+          "deletions": 10
+        },
+        {
+          "path": "tests/test_cli_p10.py",
+          "insertions": 142,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "rpc-judge": {
+      "custom_id": "rpc-judge",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard OK\n.....                                                                    [100%]\n5 passed in 0.04s\ntests/test_rpc_examples.py: 42 insertions, 41 deletions; only the null answer of example 5 may change (at most 2 lines)\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_rpc_examples_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_examples_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_rpc_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard OK\n.......                                                                  [100%]\n7 passed in 6.42s\n........................................................................ [ 27%]\n........................................................................ [ 54%]\n........................................................................ [ 81%]\n...............F.................................                        [100%]\n=================================== FAILURES ===================================\nE   IndexError: pop from empty list\n/home/john/Documents/Work2026/ETHSmartChecker/tests/test_rpc_examples.py:43: IndexError: pop from empty list\n=========================== short test summary info ============================\nFAILED tests/test_rpc_examples.py::RpcClientExamples::test_rpc_client_example_5_on_spend_sums_to_1160\n1 failed, 264 passed in 111.41s (0:01:51)\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "rpc.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793433-wfdMczuTTqDoNgRBCAUZ",
+      "input_tokens": 37763,
+      "output_tokens": 2488,
+      "cost": 0.001785774,
+      "finish_reason": "stop"
+    },
+    "rpc.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793433-4fXjoCWbdU0Dj8XT9s1A",
+      "input_tokens": 37763,
+      "output_tokens": 2515,
+      "cost": 0.00415317,
+      "finish_reason": "stop"
+    },
+    "rpc.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793474-G7QkjV0HLOgQiPg7If3h",
+      "input_tokens": 41689,
+      "output_tokens": 2766,
+      "cost": 0.002222514,
+      "finish_reason": "stop"
+    },
+    "rpc.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793474-3ZM8L2pxo38U3aDXG0nY",
+      "input_tokens": 41689,
+      "output_tokens": 2883,
+      "cost": 0.001916622,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793634-pXvSIrBKDaYY7VnGvbQ5",
+      "input_tokens": 40048,
+      "output_tokens": 5889,
+      "cost": 0.00537102,
+      "finish_reason": "stop"
+    },
+    "rpc-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793634-9VnLYt5iHrMfr3F58Vrm",
+      "input_tokens": 9624,
+      "output_tokens": 2430,
+      "cost": 0.00159516,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793634-4YbXCirE9AWQDRBP9Y6C",
+      "input_tokens": 40030,
+      "output_tokens": 6040,
+      "cost": 0.0054147,
+      "finish_reason": "stop"
+    },
+    "rpc-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793860-JBplcs57WppsDDMLAe5O",
+      "input_tokens": 13861,
+      "output_tokens": 6160,
+      "cost": 0.00309549,
+      "finish_reason": "stop"
+    },
+    "rpc-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790793957-1ueDgv5ghNEqojMMSBMF",
+      "input_tokens": 13761,
+      "output_tokens": 6593,
+      "cost": 0.00321639,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794059-vdCisEPRa9bOyz7e0WTe",
+      "input_tokens": 12277,
+      "output_tokens": 3396,
+      "cost": 0.00212373,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794129-GnhZSzfWVoXfc63zPvms",
+      "input_tokens": 15000,
+      "output_tokens": 8775,
+      "cost": 0.0039825,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794326-ThnM6aq38IukKbrikjCj",
+      "input_tokens": 14851,
+      "output_tokens": 3225,
+      "cost": 0.00230409,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 318356,
+    "output_tokens": 53160,
+    "cost": 0.03718116,
+    "requests": 12,
+    "requests_with_usage": 12
+  },
+  "orchestrator_usage": {}
+}
