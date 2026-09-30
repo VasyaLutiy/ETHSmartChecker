@@ -394,5 +394,70 @@ class BudgetLedgerTest(unittest.TestCase):
             store.close()
 
 
+class BaseCountsSmokeTest(unittest.TestCase):
+    """Function Base Counts: import, happy path, empty db."""
+
+    def test_counts_happy_path(self):
+        """counts() over a small store: ints, distinct blocks, NULL split."""
+        store = Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+        try:
+            code_id = store.put_code(_code_bytes("code_belle.hex"))
+            store.put_address(_BELLE, code_id, 26077729)
+            store.put_address(
+                "0x00000000000000000000000000000000000000EA", None, 26077729
+            )
+            store.put_address(
+                "0x1111111111111111111111111111111111111111", None, 26077730
+            )
+            got = store.counts()
+            self.assertEqual(
+                sorted(got),
+                ["addresses", "addresses_with_code", "addresses_without_code",
+                 "blocks", "codes"],
+                msg="counts() must have exactly the five keys",
+            )
+            self.assertEqual(got["addresses"], 3)
+            self.assertEqual(got["addresses_with_code"], 1)
+            self.assertEqual(got["addresses_without_code"], 2)
+            self.assertEqual(got["codes"], 1)
+            self.assertEqual(got["blocks"], 2)
+        finally:
+            store.close()
+
+    def test_ledger_days_happy_path(self):
+        """ledger_days(): sums per day, sorted ascending."""
+        store = Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+        try:
+            store.spend("2026-09-28", "eth_getBlockReceipts", 1000)
+            store.spend("2026-09-28", "eth_getCode", 80)
+            store.spend("2026-09-27", "eth_blockNumber", 80)
+            got = store.ledger_days()
+            self.assertEqual(
+                got,
+                [{"day": "2026-09-27", "credits": 80},
+                 {"day": "2026-09-28", "credits": 1080}],
+                msg="ledger_days must sum per day, sorted by day",
+            )
+        finally:
+            store.close()
+
+    def test_counts_and_ledger_days_empty_db(self):
+        """Empty db: counts() all five zeros; ledger_days() []."""
+        store = Store(os.path.join(tempfile.mkdtemp(), "t.db"))
+        try:
+            self.assertEqual(
+                store.counts(),
+                {"addresses": 0, "addresses_with_code": 0,
+                 "addresses_without_code": 0, "codes": 0, "blocks": 0},
+                msg="counts() on an empty db must give 0 under all keys",
+            )
+            self.assertEqual(
+                store.ledger_days(), [],
+                msg="ledger_days on an empty ledger must give []",
+            )
+        finally:
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main()
