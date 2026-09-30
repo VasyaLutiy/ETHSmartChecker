@@ -36,7 +36,7 @@ codes are standard proxies); a later open reads the NULL count in **5 ms**;
 What stays slow and is not this phase: `report` also disassembles every code twice in
 `report.py` (the instruction count of the Spearman row, 8.7 s, and `risk_flags`, 9.3 s).
 With the index alone `report` took **50.4 s**, of which `recheck` **30.6 s**: after this
-phase ≈ **20 s**, not under 5 s. See §3.6 and the gate.
+phase ≈ **20 s**, not under 5 s. The operator accepted `< 25 s` at the gate (§3.6).
 
 ## 2. Contract
 
@@ -144,7 +144,7 @@ only by master code so far) with the merged branch:
 | `recheck` | `recheck.out` 13d85d5c…d713, 192 lines | < 2 s |
 | `similar 0x004f611a9682ffd7f9dd06012e0f4b835b8b2298` | `similar.out` 50477dc3…2f9b, 192 lines | < 2 s |
 | `clusters top --n 50` | `clusters.out` 86997c0e…1a91 | (0.12 s measured; no limit given) |
-| `report --out smoke/p11/report-base.html` | `report.out` 64a69f5d…598a, `report-base.html.json` 071791d6…67c8, `report-base.html.html` 3afb82d2…3311 | **< 25 s** (proposed; see gate) |
+| `report --out smoke/p11/report-base.html` | `report.out` 64a69f5d…598a, `report-base.html.json` 071791d6…67c8, `report-base.html.html` 3afb82d2…3311 | **< 25 s** (agreed at the gate, 30.09) |
 | second `Store(path)` of the migrated copy | — | < 1 s |
 
 Byte-identical: `cmp` of every stdout and of both report files against the baseline.
