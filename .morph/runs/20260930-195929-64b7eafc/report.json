@@ -1,0 +1,154 @@
+{
+  "deck_id": "20260930-195929-64b7eafc",
+  "completed_at": "2026-09-30T20:08:39.590",
+  "branch": "morph/20260930-195929-64b7eafc",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "rpc-judge",
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-5c48f72bed1046e38a990cb879ab6357",
+    "local-0f0d6e1e2c0f4fd2af2c0ded4de518a3",
+    "local-d8bc8c7819504910be77293e66433b4a"
+  ],
+  "outcomes": {
+    "rpc-judge": {
+      "custom_id": "rpc-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_rpc_examples_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "rpc-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\n..FFF                                                                    [100%]\n=================================== FAILURES ===================================\n____ RpcClientPhase10Examples.test_rpc_client_example_7_null_then_receipts _____\ntests/test_rpc_examples_p10.py:51: in test_rpc_client_example_7_null_then_receipts\n    transport = FakeTransport([\n                ^^^^^^^^^^^^^\nE   NameError: name 'FakeTransport' is not defined\n_ RpcClientPhase10Examples.test_rpc_client_example_8_always_null_exhausts_retries _\ntests/test_rpc_examples_p10.py:76: in test_rpc_client_example_8_always_null_exhausts_retries\n    transport = FakeTransport([(200, body(None))] * 6)\n                ^^^^^^^^^^^^^\nE   NameError: name 'FakeTransport' is not defined\n_ RpcClientPhase10Examples.test_rpc_client_example_9_null_get_code_is_returned_as_is _\ntests/test_rpc_examples_p10.py:100: in test_rpc_client_example_9_null_get_code_is_returned_as_is\n    transport = FakeTransport([(200, body(None))])\n                ^^^^^^^^^^^^^\nE   NameError: name 'FakeTransport' is not defined\n=========================== short test summary info ============================\nFAILED tests/test_rpc_examples_p10.py::RpcClientPhase10Examples::test_rpc_client_example_7_null_then_receipts\nFAILED tests/test_rpc_examples_p10.py::RpcClientPhase10Examples::test_rpc_client_example_8_always_null_exhausts_retries\nFAILED tests/test_rpc_examples_p10.py::RpcClientPhase10Examples::test_rpc_client_example_9_null_get_code_is_returned_as_is\n3 failed, 2 passed in 0.04s\n",
+      "commit": "b6a43bb01ec0a7902932f0b38dabffbf80f3eee4",
+      "diffstat": [
+        {
+          "path": "tests/test_rpc_examples_p10.py",
+          "insertions": 128,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_rpc_examples_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_examples_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "cli-judge.r2",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nFF.F..F                                                                  [100%]\n=================================== FAILURES ===================================\n___________________ TestCliExamplesP10.test_command_line_21 ____________________\ntests/test_cli_examples_p10.py:58: in test_command_line_21\n    self.assertEqual(addresses, 206, msg=\"addresses\")\nE   AssertionError: 147 != 206 : addresses\n___________________ TestCliExamplesP10.test_command_line_22 ____________________\ntests/test_cli_examples_p10.py:89: in test_command_line_22\n    self.assertEqual(addresses, 206, msg=\"addresses\")\nE   AssertionError: 147 != 206 : addresses\n___________________ TestCliExamplesP10.test_command_line_24 ____________________\ntests/test_cli_examples_p10.py:160: in test_command_line_24\n    code = main(\nethsc/cli.py:438: in main\n    return _run_backfill(args, rpc, store, prices, code_tag, workers)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nethsc/cli.py:181: in _run_backfill\n    code = _follow(\nethsc/cli.py:145: in _follow\n    summary = follow_chain(\nethsc/ingest.py:299: in follow_chain\n    head = int(rpc.call(\"eth_blockNumber\", []), 16)\n               ^^^^^^^^\nE   AttributeError: '_RecorderClient' object has no attribute 'call'\n___________________ TestCliExamplesP10.test_command_line_27 ____________________\ntests/test_cli_examples_p10.py:235: in test_command_line_27\n    progress = store.progress()\n               ^^^^^^^^^^^^^^\nE   AttributeError: 'Store' object has no attribute 'progress'\n=========================== short test summary info ============================\nFAILED tests/test_cli_examples_p10.py::TestCliExamplesP10::test_command_line_21\nFAILED tests/test_cli_examples_p10.py::TestCliExamplesP10::test_command_line_22\nFAILED tests/test_cli_examples_p10.py::TestCliExamplesP10::test_command_line_24\nFAILED tests/test_cli_examples_p10.py::TestCliExamplesP10::test_command_line_27\n4 failed, 3 passed in 4.30s\n",
+      "commit": "81bb89b4c308aeb7edf7900ce2e3330703e3e06a",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples_p10.py",
+          "insertions": 277,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "rpc-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794770-jVjqNBbbx5MV1EOz0laN",
+      "input_tokens": 11300,
+      "output_tokens": 1478,
+      "cost": 0.0014604,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794770-uXFGh0007RjtOkhzBqBa",
+      "input_tokens": 12334,
+      "output_tokens": 4557,
+      "cost": 0.00247716,
+      "finish_reason": "stop"
+    },
+    "rpc-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794860-w5svpXgdpjKIk1n6pKlP",
+      "input_tokens": 14137,
+      "output_tokens": 1431,
+      "cost": 0.00170163,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790794860-WKagLzt1qiJMADQZTzQ8",
+      "input_tokens": 15213,
+      "output_tokens": 2640,
+      "cost": 0.00216117,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790795017-hdmPHvBd7x21DXv8808q",
+      "input_tokens": 15185,
+      "output_tokens": 7894,
+      "cost": 0.00373485,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 68169,
+    "output_tokens": 18000,
+    "cost": 0.011535209999999999,
+    "requests": 5,
+    "requests_with_usage": 5
+  },
+  "orchestrator_usage": {}
+}
