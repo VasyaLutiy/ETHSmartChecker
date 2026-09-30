@@ -5,9 +5,10 @@ no matplotlib, no numpy, no network, no sqlite3. The store is read only
 through its public methods (counts, ledger_days, fingerprints,
 code_by_id, addresses_of, seeds); clusters come from
 ethsc.cluster.build_clusters, alerts from
-ethsc.cluster.recheck_watchlist. The drawing layer ethsc.charts is
-imported lazily inside build_report and only there; an ImportError
-there becomes ChartsUnavailable, whose message names matplotlib.
+ethsc.cluster.recheck_watchlist, risk flags from ethsc.evm.risk_flags.
+The drawing layer ethsc.charts is imported lazily inside build_report
+and only there; an ImportError there becomes ChartsUnavailable, whose
+message names matplotlib.
 
 Two calls of collect() on the same store give equal structures.
 """
@@ -19,7 +20,7 @@ import math
 from typing import List, Tuple
 
 from ethsc.cluster import build_clusters, recheck_watchlist
-from ethsc.evm import disassemble
+from ethsc.evm import disassemble, risk_flags
 
 FEATURES = (
     "bytecode_size",
@@ -29,6 +30,8 @@ FEATURES = (
     "l1_family_size",
     "is_proxy",
 )
+
+RISK_FLAGS = ("selfdestruct", "mutable_delegatecall")
 
 SIZE_EDGES = [0, 256, 1024, 4096, 8192, 16384, 24576]
 SELECTOR_EDGES = [0, 1, 2, 4, 8, 16, 32, 64]
@@ -178,12 +181,13 @@ def spearman(rows) -> dict:
 def collect(store) -> dict:
     """Every number of the report, and not one chart.
 
-    Returns a dict with exactly the eight keys summary, levels,
-    skeletons, clusters, codes, ledger, alerts, spearman, built of ints,
-    floats, strings, lists and dicts only. Reads the store through
-    counts(), ledger_days(), fingerprints(), code_by_id(),
-    addresses_of() and seeds() only, and calls build_clusters and
-    recheck_watchlist for the cluster and alert sections.
+    Returns a dict with exactly the nine keys summary, levels,
+    skeletons, clusters, codes, ledger, alerts, spearman, risk, of
+    ints, floats, strings, lists and dicts only. Reads the store
+    through counts(), ledger_days(), fingerprints(), code_by_id(),
+    addresses_of() and seeds() only, and calls build_clusters,
+    recheck_watchlist and risk_flags for the cluster, alert and risk
+    sections.
     """
     summary = store.counts()
     fps = store.fingerprints()
@@ -303,6 +307,29 @@ def collect(store) -> dict:
         spearman_section = {"features": list(FEATURES), "n": result["n"],
                             "matrix": result["matrix"]}
 
+    # risk flags, over every code and every address with code
+    codes_with_flag = dict((name, 0) for name in RISK_FLAGS)
+    addrs_with_flag = dict((name, 0) for name in RISK_FLAGS)
+    for fp in fps:
+        code = store.code_by_id(fp["code_id"])
+        flags = risk_flags(code) if code is not None else \
+            {"selfdestruct": False, "mutable_delegatecall": False}
+        addresses = len(addr_by_code[fp["code_id"]])
+        for name in RISK_FLAGS:
+            if flags[name]:
+                codes_with_flag[name] += 1
+                addrs_with_flag[name] += addresses
+    risk = {}
+    for name in RISK_FLAGS:
+        risk[name] = {
+            "codes": codes_with_flag[name],
+            "code_share": _share(codes_with_flag[name],
+                                 summary["codes"]),
+            "addresses": addrs_with_flag[name],
+            "address_share": _share(addrs_with_flag[name],
+                                    summary["addresses_with_code"]),
+        }
+
     return {
         "summary": summary,
         "levels": levels,
@@ -312,6 +339,7 @@ def collect(store) -> dict:
         "ledger": ledger,
         "alerts": alerts_section,
         "spearman": spearman_section,
+        "risk": risk,
     }
 
 
@@ -447,6 +475,20 @@ def render_html(data, svgs) -> str:
     parts.append("</table>\n")
     parts.append("<p>A cell n/a means the coefficient is undefined "
                  "(a feature with zero variance), not zero.</p>\n")
+
+    risk = data["risk"]
+    parts.append("<h2>Risk flags</h2>\n<table>\n")
+    parts.append("<tr><th>flag</th><th>codes</th><th>code share</th>"
+                 "<th>addresses</th><th>address share</th></tr>\n")
+    for name in RISK_FLAGS:
+        entry = risk[name]
+        parts.append(
+            "<tr><th>%s</th><td>%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td></tr>\n"
+            % (_esc(name), _fmt(entry["codes"]),
+               _fmt(entry["code_share"]), _fmt(entry["addresses"]),
+               _fmt(entry["address_share"])))
+    parts.append("</table>\n")
 
     for key in CHART_KEYS:
         parts.append("<h2>%s</h2>\n" % _esc(key))
