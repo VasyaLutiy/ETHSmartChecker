@@ -1,12 +1,14 @@
 """Clusters and similarity search over the store.
 
 L0 identical code, L1 identical skeleton, proxy by target (EIP-1167
-clones only), eip7702 per delegation target, L2 similarity by full scan
-over code_id, and the security watchlist check for a new code. Pure
+clones only), eip7702 per delegation target, L2 similarity over stored
+fingerprints, and the security watchlist check for a new code. Pure
 orchestration: the module does no I/O of its own -- it reads the Store
-only through its public methods (fingerprints, code_by_id,
-addresses_of, code_of, seeds) and never imports sqlite3, urllib, http
-or socket.
+only through its public methods (fingerprints, code_of, addresses_of,
+seeds) and never imports sqlite3, urllib, http or socket. Since phase 11
+the three similarity searches score stored Fingerprint dicts with
+score_fingerprints: no stored code is loaded and similarity() over raw
+bytes is not called here.
 
 Every list returned is fully ordered; the result does not depend on the
 order in which codes or addresses were inserted into the store.
@@ -14,7 +16,7 @@ order in which codes or addresses were inserted into the store.
 
 from typing import List, Tuple
 
-from ethsc.fingerprint import similarity
+from ethsc.fingerprint import fingerprint, score_fingerprints
 
 # Sort rank of the cluster levels: L0 first, then L1, then proxy, then
 # eip7702 last -- the 7702 delegating EOAs must not drown out the
@@ -130,29 +132,27 @@ def find_similar(
 ) -> List[Tuple[str, float]]:
     """Every other stored address with code similar to address's code.
 
-    Full scan: one similarity() per distinct code_id, the score is
-    fanned out to that code's addresses. The queried address itself is
+    Full scan over stored fingerprints: the query code is fingerprinted
+    once and every element of store.fingerprints() is scored with
+    score_fingerprints -- no stored code is loaded. The score is fanned
+    out to that code's addresses. The queried address itself is
     excluded; the other addresses of the same code come back with 1.0.
     Returns (address, score) tuples sorted by score descending, then
     address ascending. An unknown address, or one without code, gives
-    []. Scores are the floats returned by similarity(), not rounded.
+    []. Scores are the floats from score_fingerprints, not rounded.
     """
     query = address.lower()
     code = store.code_of(query)
     if code is None:
         return []
-
-    scores = {}  # code_id -> score against the query code
-    for fp in store.fingerprints():
-        code_id = fp["code_id"]
-        scores[code_id] = similarity(code, store.code_by_id(code_id))
+    query_fp = fingerprint(code)
 
     result = []
-    for code_id, addresses in _code_addresses(store).items():
-        score = scores[code_id]
+    for fp in store.fingerprints():
+        score = score_fingerprints(query_fp, fp)
         if score < min_score:
             continue
-        for addr in addresses:
+        for addr in store.addresses_of(fp["code_id"]):
             if addr != query:
                 result.append((addr, score))
     result.sort(key=lambda item: (-item[1], item[0]))
@@ -163,17 +163,27 @@ def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
     """Every seed whose code is similar enough to the new code.
 
     Returns Alert dicts with exactly the keys seed_address, label and
-    score, one per seed with similarity(code, seed code) >= min_score,
-    sorted by score descending, then seed_address ascending. No seeds,
-    empty code or garbage bytes give [] (or the matching list); the
-    function never raises.
+    score, one per seed with score_fingerprints(code fingerprint, seed
+    fingerprint) >= min_score, sorted by score descending, then
+    seed_address ascending. The incoming code is fingerprinted once (a
+    None fingerprint for empty code still scores, 0.0 against every
+    seed, so min_score=0.0 keeps giving one 0.0 alert per seed); each
+    seed is scored against its element of store.fingerprints(), and a
+    seed whose code_id has no fingerprint is skipped. No stored code is
+    loaded. No seeds or garbage bytes give [] (or the matching list);
+    the function never raises.
     """
+    code_fp = fingerprint(code)
+    fps = {}  # code_id -> stored Fingerprint dict
+    for fp in store.fingerprints():
+        fps[fp["code_id"]] = fp
+
     result = []
     for seed in store.seeds():
-        seed_code = store.code_by_id(seed["code_id"])
-        if seed_code is None:
+        seed_fp = fps.get(seed["code_id"])
+        if seed_fp is None:
             continue
-        score = similarity(code, seed_code)
+        score = score_fingerprints(code_fp, seed_fp)
         if score >= min_score:
             result.append(
                 {
@@ -197,41 +207,40 @@ def recheck_watchlist(
 
     Each Alert has exactly the keys address (the matching stored
     address, lowercase), seed_address, label and score (the float from
-    similarity, unrounded). One similarity() call per (code_id, seed)
-    pair, fanned out to that code's addresses. A seed never alerts on
-    itself -- the single pair address == seed_address is dropped --
-    while every other address of the seed's own code alerts with 1.0.
-    Addresses stored without code are never checked. seed_addresses
-    restricts the check to those seeds (any case accepted, unknown ones
-    simply match nothing); None means every seed of store.seeds().
+    score_fingerprints, unrounded). Every (code_id, seed) pair is
+    scored by score_fingerprints over two elements of
+    store.fingerprints() -- no code is loaded -- and fanned out to that
+    code's addresses. A seed never alerts on itself -- the single pair
+    address == seed_address is dropped -- while every other address of
+    the seed's own code alerts with 1.0. A seed whose code_id has no
+    fingerprint is skipped. Addresses stored without code are never
+    checked. seed_addresses restricts the check to those seeds (any
+    case accepted, unknown ones simply match nothing); None means every
+    seed of store.seeds().
 
     Returns [] with no seeds, on an empty store or when seed_addresses
     names nothing known. The list is sorted by address ascending, then
     score descending, then seed_address ascending; it does not depend
     on insertion order, and two calls on the same store give equal
-    lists. Reads the store through seeds(), fingerprints(),
-    code_by_id() and addresses_of() only.
+    lists. Reads the store through seeds(), fingerprints() and
+    addresses_of() only.
     """
     seeds = store.seeds()
     if seed_addresses is not None:
         wanted = set(address.lower() for address in seed_addresses)
         seeds = [seed for seed in seeds if seed["address"] in wanted]
 
-    codes = {}  # code_id -> stored code bytes
+    fps = {}  # code_id -> stored Fingerprint dict
     for fp in store.fingerprints():
-        codes[fp["code_id"]] = store.code_by_id(fp["code_id"])
+        fps[fp["code_id"]] = fp
 
     alerts = []
     for seed in seeds:
-        seed_code = codes.get(seed["code_id"])
-        if seed_code is None:
-            seed_code = store.code_by_id(seed["code_id"])
-        if seed_code is None:
+        seed_fp = fps.get(seed["code_id"])
+        if seed_fp is None:
             continue
-        for code_id, code in codes.items():
-            if code is None:
-                continue
-            score = similarity(seed_code, code)
+        for code_id, fp in fps.items():
+            score = score_fingerprints(seed_fp, fp)
             if score < min_score:
                 continue
             for addr in store.addresses_of(code_id):
