@@ -1,9 +1,10 @@
 """Smoke tests for the ethsc CLI: exit codes and short output strings.
 
 Completeness lives in the acceptance probe and the judge card; this
-file only checks imports, one happy path per subcommand family and one
-usage/tolerant case. Fakes and fixture loaders come from tests.helpers;
-no network is opened.
+file only checks imports, one happy path per subcommand family, one
+usage/tolerant case, and the phase 8 additions (the risk filter and the
+fixed <flags> column of cluster and similar). Fakes and fixture loaders
+come from tests.helpers; no network is opened.
 """
 
 import contextlib
@@ -62,9 +63,11 @@ class _BoomStderr(object):
 
 class CliSmoke(unittest.TestCase):
     def test_main_importable(self):
+        """ethsc.cli.main is importable and callable."""
         self.assertTrue(callable(main), msg="ethsc.cli.main missing")
 
     def test_backfill_prints_alert(self):
+        """Example 3: a backfill over a seeded db prints one ALERT line."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         store = Store(path)
         store.put_address(
@@ -88,7 +91,23 @@ class CliSmoke(unittest.TestCase):
             msg="alert line wrong",
         )
 
+    def test_backfill_fills_db(self):
+        """Example 1: backfill exit 0, db holds 206 addresses, 130 codes."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        code, out, err = _run(
+            ["--db", path, "backfill", "--from", "26077729",
+             "--to", "26077729"],
+            FakeRpc(),
+        )
+        self.assertEqual(code, 0, msg="backfill exit %d, err=%r" % (code, err))
+        store = Store(path)
+        counts = store.counts()
+        store.close()
+        self.assertEqual(counts["addresses"], 206, msg="addresses stored")
+        self.assertEqual(counts["codes"], 130, msg="codes stored")
+
     def test_read_commands(self):
+        """Examples 2/17/18: clusters top, cluster and similar with flags."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         code, out, err = _run(["--db", path, "clusters", "top"], FakeRpc())
@@ -96,16 +115,59 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(len(out.strip().splitlines()), 15,
                          msg="clusters top lines")
         code, out, err = _run(
+            ["--db", path, "cluster", "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"],
+            FakeRpc(),
+        )
+        self.assertEqual(code, 0, msg="cluster exit")
+        fields = out.strip().split("\t")
+        self.assertEqual(len(fields), 4, msg="cluster field count")
+        self.assertEqual(fields[-1], "mutable_delegatecall",
+                         msg="cluster flags field")
+        self.assertIn("0x81d40f21f12a8f0e3252bccb954d722d4c464b64", fields[2],
+                      msg="cluster members")
+        code, out, err = _run(
             ["--db", path, "similar", _PAIR, "--min", "0.8"], FakeRpc()
         )
         self.assertEqual(code, 0, msg="similar exit")
         lines = out.strip().splitlines()
         self.assertEqual(len(lines), 4, msg="similar lines")
-        self.assertEqual(lines[-1].split("\t")[-1], "0.8125",
+        self.assertEqual(lines[-1].split("\t")[-2], "0.8125",
                          msg="similar last score")
+        for line in lines:
+            self.assertEqual(line.split("\t")[-1], "-",
+                             msg="similar flags field: %r" % line)
         self.assertEqual(err, "", msg="stderr not empty")
 
+    def test_risk_filter(self):
+        """Examples 15/16: risk prints 34 lines; --flag selfdestruct one."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        code, out, err = _run(["--db", path, "risk"], FakeRpc())
+        self.assertEqual(code, 0, msg="risk exit")
+        lines = out.strip().splitlines()
+        self.assertEqual(len(lines), 34, msg="risk line count")
+        self.assertEqual(lines[0],
+                         "0x07696dcab55e62cfef953666b29fe1970518cb00"
+                         "\tmutable_delegatecall",
+                         msg="risk first line")
+        self.assertEqual(lines[-1],
+                         "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc"
+                         "\tselfdestruct",
+                         msg="risk last line")
+        code, out2, err = _run(["--db", path, "risk"], FakeRpc())
+        self.assertEqual(out2, out, msg="risk deterministic")
+        code, out, err = _run(
+            ["--db", path, "risk", "--flag", "selfdestruct"], FakeRpc()
+        )
+        self.assertEqual(code, 0, msg="risk --flag exit")
+        self.assertEqual(
+            out,
+            "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct\n",
+            msg="risk --flag output",
+        )
+
     def test_usage_and_tolerant(self):
+        """Usage errors exit 2; unknown cluster address prints nothing."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         code, out, err = _run(
@@ -122,6 +184,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(out, "", msg="unknown cluster addr output")
 
     def test_listen_interrupt(self):
+        """Example 7: Ctrl-C in the sleep: exit 0, progress advanced."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         store = Store(path)
         store.set_progress(26077728)
@@ -144,7 +207,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(progress, 26077729, msg="listen progress")
 
     def test_listen_interrupt_inside_ingest(self):
-        """Ctrl-C on the first eth_getCode: exit 0, no pause, no output."""
+        """Example 6: Ctrl-C on the first eth_getCode: exit 0, no pause."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         store = Store(path)
         store.set_progress(26077728)
@@ -176,7 +239,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(progress, 26077728, msg="progress unchanged")
 
     def test_alert_survives_interrupted_pass(self):
-        """Ctrl-C on the next block's receipts: the ALERT already printed."""
+        """Example 8: Ctrl-C on the next block's receipts: ALERT printed."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         store = Store(path)
         store.put_address(
@@ -231,7 +294,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(out.getvalue(), "", msg="stdout on stop-line Ctrl-C")
 
     def test_recheck_and_seed_add(self):
-        """recheck prints stored copies of a seed; seed add prints them too."""
+        """Examples 9/10: recheck prints stored copies; seed add prints too."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         code, out, err = _run(
@@ -242,7 +305,8 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(code, 0, msg="seed add exit %d, err=%r" % (code, err))
         lines = out.strip().splitlines()
         self.assertEqual(len(lines), 4, msg="seed add alert lines")
-        self.assertEqual(lines[0].split("\t")[1], "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
+        self.assertEqual(lines[0].split("\t")[1],
+                         "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
                          msg="seed add first alert address")
         self.assertEqual(lines[-1].split("\t")[-1], "0.8125",
                          msg="seed add last score")
@@ -252,7 +316,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(err, "", msg="recheck stderr")
 
     def test_recheck_empty(self):
-        """recheck on a db without seeds: exit 0, empty stdout and stderr."""
+        """Example 11: recheck without seeds: exit 0, no output anywhere."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         code, out, err = _run(["--db", path, "recheck"], FakeRpc())
@@ -278,8 +342,36 @@ class CliSmoke(unittest.TestCase):
                          "unknown address or no code: 0x%s" % ("11" * 20),
                          msg="failed seed add stderr")
 
+    def test_rpc_error_exit_one(self):
+        """Example 4: an RpcError out of listen exits 1, no traceback."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        code, out, err = _run(
+            ["--db", path, "listen"],
+            FakeRpc(fail=RpcError(-32005, "Too Many Requests")),
+            sleep=lambda seconds: None,
+        )
+        self.assertEqual(code, 1, msg="rpc error exit")
+        self.assertEqual(out, "", msg="rpc error stdout")
+        self.assertEqual(err.strip(), "Too Many Requests",
+                         msg="rpc error stderr line")
+
+    def test_no_rpc_built_outside_listen_backfill(self):
+        """Example 13: infura_url() is never called outside listen/backfill."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        prefix = os.path.join(tempfile.mkdtemp(), "r")
+        with mock.patch("ethsc.cli.infura_url",
+                        side_effect=AssertionError("infura_url called")):
+            for argv in (
+                ["--db", path, "report", "--out", prefix],
+                ["--db", path, "clusters", "top"],
+                ["--db", path, "recheck"],
+            ):
+                code, out, err = _run(argv, None)
+                self.assertEqual(code, 0, msg="exit for %r" % argv)
+
     def test_report_writes_two_files(self):
-        """report prints the html path then the json path, exit 0."""
+        """Example 12: report prints html then json; runs are identical."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         prefix = os.path.join(tempfile.mkdtemp(), "r")
@@ -295,6 +387,15 @@ class CliSmoke(unittest.TestCase):
                         msg="html file missing")
         self.assertTrue(os.path.exists(prefix + ".json"),
                         msg="json file missing")
+        html1 = open(prefix + ".html", "rb").read()
+        json1 = open(prefix + ".json", "rb").read()
+        code2, out2, err2 = _run(["--db", path, "report", "--out", prefix],
+                                 None)
+        self.assertEqual(code2, 0, msg="report second run exit")
+        self.assertEqual(open(prefix + ".html", "rb").read(), html1,
+                         msg="html not byte-identical")
+        self.assertEqual(open(prefix + ".json", "rb").read(), json1,
+                         msg="json not byte-identical")
 
     def test_report_default_prefix_and_empty_db(self):
         """--out defaults to the relative name ethsc-report; empty db ok."""
@@ -319,7 +420,7 @@ class CliSmoke(unittest.TestCase):
             os.chdir(here)
 
     def test_report_without_matplotlib(self):
-        """No matplotlib: exit 2, empty stdout, no file, one stderr line."""
+        """Example 14: no matplotlib: exit 2, no file, one stderr line."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         prefix = os.path.join(tempfile.mkdtemp(), "r")

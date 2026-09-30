@@ -1,20 +1,32 @@
 """Command line interface of ETHSmartChecker.
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
-clusters top, cluster, similar, seed add, seed list, recheck, report.
-Output is plain text, one record per line, tab-separated, fully ordered;
-ALERT lines are printed from the on_alerts sink of follow_chain as each
-block ends and flushed at once, so an alert reaches the log before the
-next block is fetched and survives a pass that never returns. The
-summary alerts are not printed a second time: each alert appears exactly
-once. recheck prints the alerts of recheck_watchlist over the whole
-database -- including the copies already stored when the seed was added,
-which no listen or backfill will ever report -- and seed add, after a
-successful add_seed, prints the alerts for the new seed alone. Neither
-makes an rpc call: both print through the same _print_alerts sink.
+clusters top, cluster, similar, seed add, seed list, recheck, risk,
+report. Output is plain text, one record per line, tab-separated, fully
+ordered; every float is printed "%.4f". ALERT lines are printed from the
+on_alerts sink of follow_chain as each block ends and flushed at once,
+so an alert reaches the log before the next block is fetched and
+survives a pass that never returns. The summary alerts are not printed a
+second time: each alert appears exactly once. recheck prints the alerts
+of recheck_watchlist over the whole database -- including the copies
+already stored when the seed was added, which no listen or backfill will
+ever report -- and seed add, after a successful add_seed, prints the
+alerts for the new seed alone. Neither makes an rpc call: both print
+through the same _print_alerts sink.
+
+The <flags> field is the risk_flags of an address's code, the True names
+joined by "," in the fixed order selfdestruct then mutable_delegatecall,
+or "-" when neither is set (never an empty field). cluster and similar
+always carry the field, "-" included, so the record keeps a fixed column
+count. risk is a filter, not an annotation: it prints one
+"<address>\t<flags>" record only for a stored address whose code has at
+least one flag; a flagless address and an address without code never
+appear, so risk has no "-" placeholder at all.
+
 report writes build_report(store, --out) and prints exactly two lines:
 the html path, then the json path; without matplotlib it writes no file
 and exits 2 with one stderr line naming matplotlib.
+
 Exit codes: 0 success, 1 a failed RPC call, 2 usage error (or a report
 without matplotlib), 3 a budget or cap stop that left work undone --
 then one line goes to stderr:
@@ -47,12 +59,16 @@ import time
 
 from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
 from ethsc.config import PRICES
+from ethsc.evm import risk_flags
 from ethsc.ingest import follow_chain
 from ethsc.report import ChartsUnavailable, build_report
 from ethsc.rpc import RpcClient, RpcError, infura_url
 from ethsc.store import Store
 
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+# The fixed order of the flags field and of the --flag choices.
+_FLAG_NAMES = ("selfdestruct", "mutable_delegatecall")
 
 
 class _UsageError(Exception):
@@ -76,6 +92,17 @@ def _check_address(address):
 def _chain_rpc():
     """The rpc client for the subcommands that talk to the chain."""
     return RpcClient(infura_url())
+
+
+def _flags_field(code):
+    """The <flags> text of one code: the True names joined, or "-"."""
+    if code is None:
+        return "-"
+    flags = risk_flags(code)
+    names = [name for name in _FLAG_NAMES if flags[name]]
+    if not names:
+        return "-"
+    return ",".join(names)
 
 
 def _print_alerts(alerts):
@@ -188,12 +215,13 @@ def _run_clusters_top(args, store):
 def _run_cluster(args, store):
     _check_address(args.address)
     query = args.address.lower()
+    flags = _flags_field(store.code_of(query))
     for cluster in build_clusters(store):
         if query in cluster["members"]:
             sys.stdout.write(
-                "%s\t%s\t%s\n"
+                "%s\t%s\t%s\t%s\n"
                 % (cluster["level"], cluster["key"], ",".join(
-                    cluster["members"]))
+                    cluster["members"]), flags)
             )
     return 0
 
@@ -203,7 +231,38 @@ def _run_similar(args, store):
     for address, score in find_similar(
         store, args.address, min_score=args.min
     ):
-        sys.stdout.write("%s\t%.4f\n" % (address, score))
+        sys.stdout.write(
+            "%s\t%.4f\t%s\n"
+            % (address, score, _flags_field(store.code_of(address)))
+        )
+    return 0
+
+
+def _stored_addresses_with_code(store):
+    """Every stored address that has code, sorted ascending."""
+    seen = set()
+    for fp in store.fingerprints():
+        seen.update(store.addresses_of(fp["code_id"]))
+    return sorted(seen)
+
+
+def _run_risk(args, store):
+    """One "<address>\t<flags>" line per address with at least one flag.
+
+    A filter, not an annotation: a flagless address and an address
+    stored without code never appear. --flag restricts the listing to
+    that one flag and prints only its name.
+    """
+    for address in _stored_addresses_with_code(store):
+        flags = risk_flags(store.code_of(address))
+        if args.flag is not None:
+            if flags[args.flag]:
+                sys.stdout.write("%s\t%s\n" % (address, args.flag))
+        else:
+            names = [name for name in _FLAG_NAMES if flags[name]]
+            if names:
+                sys.stdout.write("%s\t%s\n" % (address, ",".join(names)))
+    sys.stdout.flush()
     return 0
 
 
@@ -274,6 +333,13 @@ def _build_parser():
     similar.add_argument("address")
     similar.add_argument("--min", type=float, default=0.8)
 
+    risk = sub.add_parser("risk")
+    risk.add_argument(
+        "--flag",
+        choices=["selfdestruct", "mutable_delegatecall"],
+        default=None,
+    )
+
     seed = sub.add_parser("seed")
     seed_sub = seed.add_subparsers(dest="subcommand")
     seed_add = seed_sub.add_parser("add")
@@ -327,6 +393,8 @@ def main(argv=None, rpc=None, sleep=None) -> int:
             return _run_cluster(args, store)
         if args.command == "similar":
             return _run_similar(args, store)
+        if args.command == "risk":
+            return _run_risk(args, store)
         if args.command == "seed":
             if args.subcommand == "add":
                 return _run_seed_add(args, store)
