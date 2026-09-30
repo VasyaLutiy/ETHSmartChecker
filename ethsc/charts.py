@@ -74,13 +74,21 @@ def _hist_axes(edges, counts, title, xlabel, log_y=False):
         lefts.append(lo)
         widths.append(max(hi - lo, 1.0))
         centers.append((lo + hi) / 2.0)
-    ax.bar(lefts, counts, width=widths, align="edge", log=log_y,
+    # A log axis with no positive value makes matplotlib warn to stderr
+    # ("Data has no positive values, and therefore cannot be log-scaled"),
+    # and the report contract is an empty stderr on an empty base too.
+    # The log axis is what the chart is for on real data; when nothing is
+    # positive it is dropped for the drawing only, never by filtering the
+    # warning.
+    use_log = bool(log_y) and any(c > 0 for c in counts)
+    ax.bar(lefts, counts, width=widths, align="edge", log=use_log,
            color=_HIST_COLOR, edgecolor=_EDGE_COLOR, linewidth=0.6)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
-    ax.set_ylabel("clusters" if log_y else "codes")
-    if log_y:
+    if use_log:
         ax.set_ylabel("count (log)")
+    else:
+        ax.set_ylabel("clusters" if log_y else "codes")
     ax.set_xticks(edges)
     return fig, ax
 
@@ -207,3 +215,4 @@ def render_charts(data):
     if set(charts) != set(CHART_KEYS):
         raise ValueError("chart keys mismatch")
     return charts
+

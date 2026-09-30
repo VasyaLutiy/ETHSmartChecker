@@ -148,3 +148,23 @@ class InterruptAfter(object):
             raise KeyboardInterrupt
         self._answered += 1
         return self.inner.call(method, params)
+
+
+def block_store():
+    """A fresh Store filled from block_codes() at block 26077729.
+
+    Takes no arguments, builds on temp_store() (a brand-new temporary
+    directory each call, so two calls never share a database) and
+    stores every entry of block_codes(): 206 addresses of block
+    26077729, 147 of them with code, 130 distinct code_id, 59 stored
+    with code_id None (their eth_getCode result is "0x").
+    """
+    store = temp_store()
+    block = 26077729
+    for address, text in sorted(block_codes().items()):
+        if text == "0x":
+            store.put_address(address, None, block)
+        else:
+            code_id = store.put_code(bytes.fromhex(text[2:]))
+            store.put_address(address, code_id, block)
+    return store

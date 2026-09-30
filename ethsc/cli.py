@@ -1,19 +1,23 @@
 """Command line interface of ETHSmartChecker.
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
-clusters top, cluster, similar, seed add, seed list, recheck. Output is
-plain text, one record per line, tab-separated, fully ordered; ALERT
-lines are printed from the on_alerts sink of follow_chain as each block
-ends and flushed at once, so an alert reaches the log before the next
-block is fetched and survives a pass that never returns. The summary
-alerts are not printed a second time: each alert appears exactly once.
-recheck prints the alerts of recheck_watchlist over the whole database
--- including the copies already stored when the seed was added, which
-no listen or backfill will ever report -- and seed add, after a
+clusters top, cluster, similar, seed add, seed list, recheck, report.
+Output is plain text, one record per line, tab-separated, fully ordered;
+ALERT lines are printed from the on_alerts sink of follow_chain as each
+block ends and flushed at once, so an alert reaches the log before the
+next block is fetched and survives a pass that never returns. The
+summary alerts are not printed a second time: each alert appears exactly
+once. recheck prints the alerts of recheck_watchlist over the whole
+database -- including the copies already stored when the seed was added,
+which no listen or backfill will ever report -- and seed add, after a
 successful add_seed, prints the alerts for the new seed alone. Neither
 makes an rpc call: both print through the same _print_alerts sink.
-Exit codes: 0 success, 1 a failed RPC call, 2 usage error, 3 a budget
-or cap stop that left work undone -- then one line goes to stderr:
+report writes build_report(store, --out) and prints exactly two lines:
+the html path, then the json path; without matplotlib it writes no file
+and exits 2 with one stderr line naming matplotlib.
+Exit codes: 0 success, 1 a failed RPC call, 2 usage error (or a report
+without matplotlib), 3 a budget or cap stop that left work undone --
+then one line goes to stderr:
 "stopped: <budget|cap>, spent <N> credits, progress <P>", where <N> is
 the ledger of summary["day"], the day the pass last charged, and <P> is
 "none" when no block has ever completed. The day is left to follow_chain
@@ -27,10 +31,13 @@ SystemExit: argparse failures are caught and returned as the int code
 2, so tests calling main() directly see the same code sys.exit(main())
 produces in __main__.
 
-No network in this module: urllib, http and socket stay in ethsc.rpc.
-The rpc object is injected (tests) or built here from ethsc.rpc only;
-the store is used through its public methods, never its private
-attributes.
+The rpc client is built only on the paths that talk to the chain --
+listen and backfill -- and only when the caller passed rpc=None; every
+other subcommand runs without INFURA_API_KEY and infura_url() is never
+called on their path. No network in this module: urllib, http and socket
+stay in ethsc.rpc. The rpc object is injected (tests) or built here from
+ethsc.rpc only; the store is used through its public methods, never its
+private attributes.
 """
 
 import argparse
@@ -41,6 +48,7 @@ import time
 from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
 from ethsc.config import PRICES
 from ethsc.ingest import follow_chain
+from ethsc.report import ChartsUnavailable, build_report
 from ethsc.rpc import RpcClient, RpcError, infura_url
 from ethsc.store import Store
 
@@ -63,6 +71,11 @@ def _check_address(address):
     if not _ADDRESS_RE.match(address):
         raise _UsageError("invalid address: %s" % address)
     return address
+
+
+def _chain_rpc():
+    """The rpc client for the subcommands that talk to the chain."""
+    return RpcClient(infura_url())
 
 
 def _print_alerts(alerts):
@@ -216,6 +229,23 @@ def _run_recheck(args, store):
     return 0
 
 
+def _run_report(args, store):
+    """Write the report and print its two file paths, html then json.
+
+    Without matplotlib the write is refused by build_report through
+    ChartsUnavailable before any file is created: one stderr line
+    naming matplotlib, empty stdout, exit 2, no traceback.
+    """
+    try:
+        html_path, json_path = build_report(store, args.out)
+    except ChartsUnavailable as err:
+        sys.stderr.write("%s\n" % err)
+        return 2
+    sys.stdout.write("%s\n%s\n" % (html_path, json_path))
+    sys.stdout.flush()
+    return 0
+
+
 def _build_parser():
     parser = _Parser(prog="ethsc", description="ETHSmartChecker CLI")
     parser.add_argument("--db", default="ethsc.sqlite")
@@ -254,6 +284,9 @@ def _build_parser():
     recheck = sub.add_parser("recheck")
     recheck.add_argument("--min", type=float, default=0.8)
 
+    report = sub.add_parser("report")
+    report.add_argument("--out", default="ethsc-report")
+
     return parser
 
 
@@ -261,8 +294,6 @@ def main(argv=None, rpc=None, sleep=None) -> int:
     """Run one CLI invocation; returns the exit code, never raises."""
     if argv is None:
         argv = sys.argv[1:]
-    if rpc is None:
-        rpc = RpcClient(infura_url())
     if sleep is None:
         sleep = time.sleep
 
@@ -275,6 +306,12 @@ def main(argv=None, rpc=None, sleep=None) -> int:
     except SystemExit:
         # --help and --version print and exit(0); keep that exit code.
         return 0
+
+    # The rpc client is built only on the paths that talk to the chain;
+    # every other subcommand runs without a key and never calls
+    # infura_url().
+    if rpc is None and args.command in ("listen", "backfill"):
+        rpc = _chain_rpc()
 
     store = Store(args.db)
     try:
@@ -298,6 +335,8 @@ def main(argv=None, rpc=None, sleep=None) -> int:
             raise _UsageError("missing seed subcommand")
         if args.command == "recheck":
             return _run_recheck(args, store)
+        if args.command == "report":
+            return _run_report(args, store)
         raise _UsageError("missing command")
     except _UsageError as err:
         sys.stderr.write("%s\n" % err)

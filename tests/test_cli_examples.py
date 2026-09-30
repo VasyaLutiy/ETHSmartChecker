@@ -1,6 +1,8 @@
 """Judge tests for the cli card: one test per contour.yaml example of
 Command Line, plus the exit-code, stop-line and ALERT-line contracts of
-docs/TASK_PHASE5.md section 2.2 as amended by docs/TASK_PHASE6.md 2.2.
+docs/TASK_PHASE5.md section 2.2 as amended by docs/TASK_PHASE6.md 2.2,
+plus the three phase 7.2 examples (report determinism, lazy rpc, report
+without matplotlib) of docs/TASK_PHASE7_2.md section 3.6.
 
 Offline: every rpc is a tests.helpers.FakeRpc; no fixture loaders or
 fakes are written here. INFURA_API_KEY is set to TESTKEY-0000 and the
@@ -11,6 +13,7 @@ import contextlib
 import io
 import os
 import sqlite3
+import sys
 import tempfile
 import unittest
 
@@ -587,6 +590,142 @@ class CliExamplesTest(unittest.TestCase):
         self.assertEqual("", err,
                          msg="recheck --min 1.0 stderr: got %r, want empty"
                              % (err,))
+
+    # -- phase 7.2 examples (docs/TASK_PHASE7_2.md section 3.6) ---------
+
+    def test_report_twice_exit_0_two_lines_byte_identical_files(self):
+        """contour example: report --out run twice on the block db.
+
+        The db of block 26077729 and an empty output directory: exit 0
+        both times, stderr empty, stdout exactly two lines -- the html
+        path then the json path -- and both files byte-identical between
+        the two runs.
+        """
+        self._fill_block()
+        outdir = tempfile.mkdtemp(prefix="ethsc-report-judge-")
+        prefix = os.path.join(outdir, "r")
+        html_path = prefix + ".html"
+        json_path = prefix + ".json"
+        files = []
+        for run in (1, 2):
+            code, out, err = self.run_main(
+                ["--db", self.db, "report", "--out", prefix], None)
+            self.assertEqual(
+                0, code,
+                msg="report run %d exit code: got %r, want 0; stderr=%r"
+                    % (run, code, err))
+            self.assertEqual(
+                "", err,
+                msg="report run %d stderr: got %r, want empty" % (run, err))
+            self.assertEqual(
+                "%s\n%s\n" % (html_path, json_path),
+                out,
+                msg="report run %d stdout: got %r, want the html path then"
+                    " the json path" % (run, out))
+            with open(html_path, "rb") as handle:
+                html_bytes = handle.read()
+            with open(json_path, "rb") as handle:
+                json_bytes = handle.read()
+            files.append((html_bytes, json_bytes))
+        self.assertEqual(
+            files[0], files[1],
+            msg="report files not byte-identical between the two runs:"
+                " html %d vs %d bytes, json %d vs %d bytes"
+                % (len(files[0][0]), len(files[1][0]),
+                   len(files[0][1]), len(files[1][1])))
+
+    def test_report_clusters_recheck_run_without_infura_key(self):
+        """contour example: report, clusters top and recheck with no key.
+
+        INFURA_API_KEY removed from the environment, the working
+        directory changed to one holding no .env: each of report,
+        clusters top and recheck exits 0 with rpc=None and raises no
+        RpcError (no traceback in stdout or stderr).
+        """
+        self._fill_block()
+        saved_key = os.environ.pop("INFURA_API_KEY", None)
+        saved_cwd = os.getcwd()
+        nodir = tempfile.mkdtemp(prefix="ethsc-noenv-judge-")
+        os.chdir(nodir)
+        try:
+            code, out, err = self.run_main(
+                ["--db", self.db, "report", "--out",
+                 os.path.join(nodir, "r")], None)
+            self.assertEqual(0, code,
+                             msg="report without key exit code: got %r,"
+                                 " want 0; stderr=%r" % (code, err))
+            self.assertNotIn("Traceback", out + err,
+                             msg="report without key raised: stdout=%r"
+                                 " stderr=%r" % (out, err))
+            code, out, err = self.run_main(
+                ["--db", self.db, "clusters", "top"], None)
+            self.assertEqual(0, code,
+                             msg="clusters top without key exit code:"
+                                 " got %r, want 0; stderr=%r"
+                                 % (code, err))
+            self.assertNotIn("Traceback", out + err,
+                             msg="clusters top without key raised:"
+                                 " stdout=%r stderr=%r" % (out, err))
+            code, out, err = self.run_main(["--db", self.db, "recheck"],
+                                           None)
+            self.assertEqual(0, code,
+                             msg="recheck without key exit code: got %r,"
+                                 " want 0; stderr=%r" % (code, err))
+            self.assertNotIn("Traceback", out + err,
+                             msg="recheck without key raised: stdout=%r"
+                                 " stderr=%r" % (out, err))
+        finally:
+            os.chdir(saved_cwd)
+            if saved_key is not None:
+                os.environ["INFURA_API_KEY"] = saved_key
+
+    def test_report_without_matplotlib_exit_2_one_stderr_line(self):
+        """contour example: report with an unimportable ethsc.charts.
+
+        sys.modules["ethsc.charts"] = None (restored afterwards): exit
+        2, stdout empty, no file written, stderr exactly one line
+        containing the literal word matplotlib, and no traceback.
+        """
+        self._fill_block()
+        outdir = tempfile.mkdtemp(prefix="ethsc-nompl-judge-")
+        prefix = os.path.join(outdir, "r")
+        saved = sys.modules.get("ethsc.charts")
+        sys.modules["ethsc.charts"] = None
+        try:
+            code, out, err = self.run_main(
+                ["--db", self.db, "report", "--out", prefix], None)
+        finally:
+            if saved is None:
+                sys.modules.pop("ethsc.charts", None)
+            else:
+                sys.modules["ethsc.charts"] = saved
+        self.assertEqual(2, code,
+                         msg="report without matplotlib exit code: got %r,"
+                             " want 2" % (code,))
+        self.assertEqual("", out,
+                         msg="report without matplotlib stdout: got %r,"
+                             " want empty" % (out,))
+        err_lines = err.splitlines()
+        self.assertEqual(
+            1, len(err_lines),
+            msg="report without matplotlib stderr: got %r, want exactly"
+                " one line" % (err,))
+        self.assertIn(
+            "matplotlib", err_lines[0],
+            msg="report without matplotlib stderr line: got %r, want the"
+                " literal word matplotlib" % (err_lines[0],))
+        self.assertNotIn(
+            "Traceback", out + err,
+            msg="report without matplotlib printed a traceback:"
+                " stdout=%r stderr=%r" % (out, err))
+        self.assertFalse(
+            os.path.exists(prefix + ".html"),
+            msg="html file written despite missing matplotlib: %s"
+                % (prefix + ".html",))
+        self.assertFalse(
+            os.path.exists(prefix + ".json"),
+            msg="json file written despite missing matplotlib: %s"
+                % (prefix + ".json",))
 
 
 if __name__ == "__main__":
