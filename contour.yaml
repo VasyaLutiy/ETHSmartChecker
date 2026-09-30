@@ -973,16 +973,21 @@ System:
             subcommand that needs matplotlib: with matplotlib absent it
             writes neither file, leaves stdout empty, prints one line on
             stderr naming matplotlib and exits 2 with no traceback. It makes
-            no rpc call. risk prints one "<address>\t<flags>" record for every
-            stored address whose code carries at least one risk flag (an
-            address stored without code is never printed, and neither is a
-            code whose flags are both False), sorted by address ascending;
-            --flag NAME restricts the listing to the addresses whose code has
-            that one flag and prints only that name in the <flags> field.
-            risk reads flags with risk_flags over the code of each address,
-            makes no rpc call, exits 0 -- also with an empty database, where
-            stdout stays empty -- and two runs on an unchanged database print
-            byte-identical stdout. Nothing printed ever contains the key.
+            no rpc call. risk is a filter, not an annotation: it prints one
+            "<address>\t<flags>" record ONLY for a stored address whose code
+            carries at least one risk flag. An address whose code has neither
+            flag does not appear at all -- it is never printed with a "-", and
+            an address stored without code is never printed either. The "-"
+            placeholder belongs only to the fixed cluster and similar column;
+            risk has no such placeholder, because a flagless address is simply
+            absent. So on the 206-address base of block 26077729 (147 with
+            code) risk prints 34 lines, not 147. The listing is sorted by
+            address ascending; --flag NAME restricts it to the addresses whose
+            code has that one flag and prints only that name in the <flags>
+            field. risk reads flags with risk_flags over the code of each
+            address, makes no rpc call, exits 0 -- also with an empty database,
+            where stdout stays empty -- and two runs on an unchanged database
+            print byte-identical stdout. Nothing printed ever contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
