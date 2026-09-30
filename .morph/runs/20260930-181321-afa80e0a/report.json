@@ -1,0 +1,213 @@
+{
+  "deck_id": "20260930-181321-afa80e0a",
+  "completed_at": "2026-09-30T18:29:49.340",
+  "branch": "morph/20260930-181321-afa80e0a",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "cluster-judge",
+      "report-judge",
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-c3a682259c33496bb337cb6655951324",
+    "local-df6a6c0682c94e20879189f4ebf91abb",
+    "local-b5addf6f57234160953e0709795505f6"
+  ],
+  "outcomes": {
+    "report-judge": {
+      "custom_id": "report-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_report_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "report-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\n......F...                                                               [100%]\n=================================== FAILURES ===================================\n_______________ TestSpearmanMatrix.test_10_zero_variance_feature _______________\ntests/test_report_examples.py:300: in test_10_zero_variance_feature\n    self.assertIsNone(m[i][ip],\nE   AssertionError: -0.4929979393677273 is not None : matrix[0][is_proxy] is null\n=========================== short test summary info ============================\nFAILED tests/test_report_examples.py::TestSpearmanMatrix::test_10_zero_variance_feature\n1 failed, 9 passed in 12.36s\n",
+      "commit": "4cfaf5fb02b861737f862f4db17c46ace1198a62",
+      "diffstat": [
+        {
+          "path": "tests/test_report_examples.py",
+          "insertions": 284,
+          "deletions": 328
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cli-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "e45d555911a18de2af7ccac10755a02fa6f07fe5",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 89,
+          "deletions": 16
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster-judge": {
+      "custom_id": "cluster-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cluster_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "cluster-judge.r2",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\nF............                                                            [100%]\n=================================== FAILURES ===================================\nE   AssertionError: 50 != 48 : the key carries the FULL 40-hex target, not an ellipsis\n/usr/lib/python3.12/unittest/case.py:878: AssertionError: 50 != 48 : the key carries the FULL 40-hex target, not an ellipsis\n=========================== short test summary info ============================\nFAILED tests/test_cluster_examples.py::TestBuildClustersExamples::test_build_clusters_example_1_counts\n1 failed, 12 passed in 10.20s\n",
+      "commit": "04a445e29db2fe35a278f5ace48575cc4e3a2886",
+      "diffstat": [
+        {
+          "path": "tests/test_cluster_examples.py",
+          "insertions": 101,
+          "deletions": 21
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "cluster-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788402-fhpfvT9vVPicvnhCAsow",
+      "input_tokens": 39142,
+      "output_tokens": 4414,
+      "cost": 0.00484698,
+      "finish_reason": "stop"
+    },
+    "report-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788402-gyUCC8lOJLIZDv94JiJb",
+      "input_tokens": 37655,
+      "output_tokens": 4520,
+      "cost": 0.00474495,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788402-s9iq6Iu7kuqcMhUfnxOw",
+      "input_tokens": 42138,
+      "output_tokens": 17058,
+      "cost": 0,
+      "finish_reason": "error"
+    },
+    "cluster-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788773-iMopi8nfiBzEU0em1yec",
+      "input_tokens": 42826,
+      "output_tokens": 4578,
+      "cost": 0.00522774,
+      "finish_reason": "stop"
+    },
+    "report-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788774-qW0xoabFZVRAFpAktFon",
+      "input_tokens": 42045,
+      "output_tokens": 5297,
+      "cost": 0.00537315,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790788773-cUE0TH1qlr1OHD2nrQuj",
+      "input_tokens": 42364,
+      "output_tokens": 26002,
+      "cost": 0.01161336,
+      "finish_reason": "stop"
+    },
+    "cluster-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790789270-4ib0WCxXbmxxKTqDwn8S",
+      "input_tokens": 42924,
+      "output_tokens": 5123,
+      "cost": 0.00540006,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 289094,
+    "output_tokens": 66992,
+    "cost": 0.03720624,
+    "requests": 7,
+    "requests_with_usage": 7
+  },
+  "orchestrator_usage": {}
+}
