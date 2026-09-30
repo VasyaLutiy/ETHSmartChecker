@@ -81,7 +81,11 @@ the cli group. New stderr lines are single-line usage errors (exit 2) and the te
 ### 2.4. What must not break
 
 All 265 existing tests stay green and **no existing test file changes**: this phase
-adds files, it does not rewrite them. Infura without `--source` behaves byte for byte as
+adds files, it does not rewrite them. **One exception, decided at the operator gate
+after run 1 (30.09):** `tests/test_rpc_examples.py` example 5 fed `eth_getBlockReceipts`
+`ok_body(None)` — a null result — as a success, which requirement (4) makes a failure; its
+first answer becomes `ok_body([])`, at most 2 lines, all five test names kept (owner:
+rpc-judge). Recon missed it: the grep looked for a literal null, not `ok_body(None)`. Infura without `--source` behaves byte for byte as
 before. Inherited decisions this phase keeps (reviewed at the operator gate, 30.09):
 
 | # | decision | where recorded |
