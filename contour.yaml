@@ -162,6 +162,46 @@ System:
               when: 'detect_proxy is called on each'
               then: 'all three give None'
               ref: 'Tolerant Parser'
+        - name: Standard Proxy
+          description: >
+            is_std_proxy(code: bytes) -> bool: True when the code is a
+            standard, audited upgradeable proxy -- EIP-1967 transparent,
+            UUPS, or Beacon -- whose implementation address is read from a
+            well-known constant storage slot. Recognized purely from the
+            bytecode, no storage read (eth_getStorageAt is out of scope).
+          behavior: >
+            True when a PUSH32 immediate of the disassembled body from
+            strip_metadata equals one of the audited slot constants: the
+            EIP-1967 (and UUPS) implementation slot
+            0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
+            (keccak256("eip1967.proxy.implementation") - 1), or the EIP-1967
+            beacon slot
+            0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50
+            (keccak256("eip1967.proxy.beacon") - 1). The constant must appear
+            as a real PUSH32 immediate, not as a substring of the raw bytes,
+            so a coincidental byte run or a metadata trailer never counts.
+            Never raises: is_std_proxy(b"") is False.
+          guardrails: [Tolerant Parser]
+          steps:
+            - calls: Disassemble
+            - calls: Strip Metadata
+          examples:
+            - given: 'code_proxy_seed_0c010533.hex (the TransparentUpgradeableProxy seed of the live 30.09 base, 2059 bytes)'
+              when: 'is_std_proxy is called'
+              then: 'True; the EIP-1967 implementation slot appears as a PUSH32 immediate'
+              ref: 'the seed 0x0c0105334a50db16b51b2911c9956539753a2cf8; keccak of "eip1967.proxy.implementation" - 1'
+            - given: 'code_proxy_046eee2c.hex (a second, distinct standard proxy from the live base, 2227 bytes)'
+              when: 'is_std_proxy is called'
+              then: 'True'
+              ref: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d; different bytecode, same audited slot'
+            - given: 'a constructed body PUSH32 <beacon slot> then SLOAD then DELEGATECALL (0x7f + 32 bytes of the beacon slot + 0x54 0xf4)'
+              when: 'is_std_proxy is called'
+              then: 'True -- the beacon slot is recognized as well'
+              ref: 'EIP-1967 beacon slot constant'
+            - given: 'code_weth9.hex, the EIP-1167 clone code_clone_270df012.hex, and empty code b""'
+              when: 'is_std_proxy is called on each'
+              then: 'all three False -- no audited slot immediate, and an eip1167 clone bakes its target into the code, not a slot'
+              ref: 'neither carries an EIP-1967/UUPS/Beacon slot constant'
         - name: Build Skeleton
           description: >
             build_skeleton(code: bytes) -> bytes: the body from strip_metadata
@@ -212,13 +252,17 @@ System:
             an opcode SELFDESTRUCT (0xFF) appears in that body: it marks the
             opcode present as an executable instruction, not a proof that some
             path reaches it (there is no CFG here, only disassembly).
-            mutable_delegatecall is True when three conditions hold together:
+            mutable_delegatecall is True when four conditions hold together:
             an opcode DELEGATECALL (0xF4) appears in the body, detect_proxy(code)
             is not "eip1167" (an EIP-1167 clone bakes its implementation address
-            into the code and is excluded, however it is reached), and an opcode
+            into the code and is excluded, however it is reached), an opcode
             SLOAD (0x54) appears in the body -- the cheap syntactic stand-in,
             since data-flow is out of scope, for an implementation address that
-            comes from storage rather than hardcoded. Order and position of the
+            comes from storage rather than hardcoded -- and is_std_proxy(code)
+            is False: a standard EIP-1967/UUPS/Beacon proxy reads its
+            implementation from an audited, well-known slot and is upgradeable
+            by design, not a suspicious mutable delegatecall, so it is excluded
+            even though it has DELEGATECALL and SLOAD. Order and position of the
             opcodes do not matter, only their presence. Never raises on empty or
             garbage bytes: risk_flags(b"") is both False.
           guardrails: [Tolerant Parser]
@@ -227,6 +271,7 @@ System:
             - calls: Disassemble
             - calls: Strip Metadata
             - calls: Detect Proxy
+            - calls: Standard Proxy
             - produces: Risk Flags
           examples:
             - given: 'code_weth9.hex'
@@ -241,13 +286,17 @@ System:
               when: 'risk_flags is called on each'
               then: 'selfdestruct is True for b"\xff" and False for b"\x60\xff"; both mutable_delegatecall False'
               ref: 'Tolerant Parser: 0xff as an opcode versus 0xff as PUSH data'
+            - given: 'code_proxy_seed_0c010533.hex (a standard EIP-1967 proxy: DELEGATECALL and SLOAD present, is_std_proxy True)'
+              when: 'risk_flags is called'
+              then: 'both flags False -- a standard upgradeable proxy is not mutable_delegatecall, though it delegatecalls to a storage-loaded implementation'
+              ref: 'is_std_proxy excludes the audited EIP-1967/UUPS/Beacon slot; the false positive found on the live 30.09 base'
             - given: 'a store filled from codes_26077729.json, risk_flags read over every distinct code'
               when: 'the codes with each flag are counted'
               then: >
                 exactly 1 code has selfdestruct (address
-                0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc) and 29 codes have
-                mutable_delegatecall (over 33 addresses); no code has both
-              ref: 'counted over codes_26077729.json, 2026-09-30'
+                0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc) and 12 codes have
+                mutable_delegatecall (over 13 addresses); no code has both
+              ref: 'counted over codes_26077729.json after excluding standard proxies (17 std proxies in the block), 2026-09-30; was 29 codes / 33 addresses before is_std_proxy'
             - given: 'empty code b""'
               when: 'risk_flags is called'
               then: 'both flags are False and nothing raises'
@@ -277,7 +326,7 @@ System:
             in this fixed key order.
           schema:
             selfdestruct: 'bool -- a SELFDESTRUCT (0xFF) opcode in the stripped body'
-            mutable_delegatecall: 'bool -- a DELEGATECALL (0xF4) opcode in a non-eip1167 code whose body also has SLOAD (0x54)'
+            mutable_delegatecall: 'bool -- a DELEGATECALL (0xF4) opcode in a non-eip1167, non-standard-proxy code whose body also has SLOAD (0x54); a standard EIP-1967/UUPS/Beacon proxy (is_std_proxy) is excluded'
     - name: fingerprint
       description: >
         One fingerprint per distinct code, and the L2 similarity between two
@@ -316,16 +365,33 @@ System:
               ref: 'Tolerant Parser'
         - name: Similarity Score
           description: >
-            similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: the
-            Jaccard index of the selector sets when both are non-empty,
-            otherwise the Jaccard index of the sets of opcode 3-grams (op
-            bytes only, args dropped) of the two stripped bodies.
+            similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: a
+            comparison that means something only when there is a real surface
+            to compare. When neither code is an opaque proxy, it is the
+            Jaccard index of the two selector sets. Recognized delegations
+            (EIP-1167 clones, EIP-7702 designators) and opaque codes are
+            compared by identity, not by shape: two proxies never look alike
+            just because their proxy bytecode is boilerplate.
           behavior: >
-            Jaccard = |A & B| / |A | B|, and 0.0 when both sets are empty:
-            similarity(b"", b"") == 0.0, no exception on empty or garbage
-            bytes. Symmetric. Identical code gives 1.0. The score is the float
-            of the division, never rounded: 13/15, 26/32, 9/16 compare exactly
-            downstream.
+            The rule, in order:
+            (1) if either code is a recognized delegation (detect_proxy not
+            None), the score is 1.0 when both are the same detect_proxy kind
+            AND target, else 0.0 -- a clone or a 7702 designator matches only
+            the same implementation/target, never any other proxy;
+            (2) otherwise, if either code is a standard upgradeable proxy
+            (is_std_proxy) or either selector set is empty, the score is 0.0 --
+            an opaque proxy or a selector-less code carries no distinguishing
+            surface, and its implementation lives in storage we do not read
+            (eth_getStorageAt is out of scope), so two of them must not score
+            1.0;
+            (3) otherwise the Jaccard index of the two non-empty selector sets.
+            Symmetric; similarity(b"", b"") == 0.0; no exception on empty or
+            garbage bytes. Two codes with the same non-empty selector set score
+            1.0; the score is the float of the division, never rounded: 13/15,
+            26/32, 9/16 compare exactly downstream. The opcode-3gram fallback of
+            earlier phases is gone: on the live 30.09 base it made every
+            selector-poor proxy match the TransparentUpgradeableProxy seed
+            (380 of 572 recheck alerts at 1.0), all false.
           steps:
             - uses: evm
           examples:
@@ -341,10 +407,22 @@ System:
               when: 'similarity is called'
               then: '13/15 (0.8667 to 4 places); the copy has 0x8f5db675 BotBlacklist(address,bool) instead of 0xf7e58a63 Blacklist(address,bool)'
               ref: 'selector diff of the fixtures; keccak of the two signatures'
-            - given: 'code_clone_270df012.hex and code_clone_2ca7b61b.hex (no selectors, different targets)'
+            - given: 'code_clone_270df012.hex and code_clone_2ca7b61b.hex (both EIP-1167 clones, no selectors, different targets)'
               when: 'similarity is called'
-              then: '1.0 (the same 22 opcode 3-grams)'
-              ref: 'hand count over the 45-byte clone'
+              then: '0.0 -- different targets, so different implementations, however alike the 45-byte proxy bytecode is'
+              ref: 'rule (1); was 1.0 by opcode 3-grams before this phase, a false positive'
+            - given: 'code_clone_270df012.hex against itself (same EIP-1167 target)'
+              when: 'similarity is called'
+              then: '1.0 -- same kind and same target'
+              ref: 'rule (1)'
+            - given: 'code_proxy_seed_0c010533.hex and code_proxy_046eee2c.hex (two distinct standard EIP-1967 proxies of the live base)'
+              when: 'similarity is called'
+              then: '0.0 -- both opaque standard proxies, no comparable surface; a standard proxy never matches another'
+              ref: 'rule (2), is_std_proxy True on both; the 380-alert false positive of the live 30.09 base'
+            - given: 'code_proxy_seed_0c010533.hex (a standard proxy) and code_weth9.hex (a real contract with 11 selectors)'
+              when: 'similarity is called'
+              then: '0.0 -- one side is an opaque standard proxy'
+              ref: 'rule (2)'
       dataObjects:
         - name: Fingerprint
           description: The analysed identity of one distinct code.
@@ -506,20 +584,26 @@ System:
           description: >
             build_clusters(store) -> list of Cluster: L0 per code_id with >= 2
             addresses; L1 per skeleton_hash with >= 2 distinct code_id; proxy
-            per (kind, target) with >= 2 addresses. Proxy codes (eip1167,
-            eip7702) enter only proxy clusters.
+            per eip1167 (kind, target) with >= 2 addresses; eip7702 per
+            (kind, target) of the EIP-7702 delegations with >= 2 addresses.
+            Proxy codes enter only their proxy/eip7702 clusters.
           behavior: >
-            Cluster = {level: "L0" | "L1" | "proxy", key, members: sorted
-            lowercase addresses}; key is the code_id, the skeleton_hash, or
-            "<kind>:<target>". L0 and L1 are built from non-proxy codes only;
-            a proxy code never enters L0 or L1, however many addresses it
+            Cluster = {level: "L0" | "L1" | "proxy" | "eip7702", key, members:
+            sorted lowercase addresses}; key is the code_id, the skeleton_hash,
+            or "<kind>:<target>". L0 and L1 are built from non-proxy codes
+            only; a proxy code never enters L0 or L1, however many addresses it
             has. L1 members are the addresses of all the codes sharing the
-            skeleton_hash; a proxy cluster counts the addresses of every code
-            with that (kind, target) pair. Addresses without code are never
-            members. The list is sorted by member count descending, then
-            level (L0, L1, proxy), then key; insertion order does not matter.
-            Reads the store through fingerprints(), code_by_id() and
-            addresses_of() only.
+            skeleton_hash. An EIP-1167 clone goes to a "proxy" cluster; an
+            EIP-7702 delegation goes to its own "eip7702" cluster, kept apart
+            from contract proxies -- a 7702 designator is a delegating EOA, a
+            wallet, not a deployed contract, and on the live 30.09 base the
+            largest clusters were 7702 delegations (800, 450, 176 addresses)
+            that drowned out the contract clusters. Each cluster counts the
+            addresses of every code with that (kind, target) pair. Addresses
+            without code are never members. The list is sorted by member count
+            descending, then level (L0, L1, proxy, eip7702), then key;
+            insertion order does not matter. Reads the store through
+            fingerprints(), code_by_id() and addresses_of() only.
           guardrails: [Deterministic Output]
           steps:
             - uses: store
@@ -529,10 +613,11 @@ System:
               when: 'build_clusters is called'
               then: >
                 7 L0 clusters (sizes 4, 2, 2, 2, 2, 2, 2), 2 L1 clusters (8
-                UniswapV3Pool deployments, 5 LaunchToken deployments) and 6
-                proxy clusters (eip1167 0x4181f370… with 3, eip1167 0x8b72b9b8…
-                with 2, eip7702 0xd2e28229… with 3, and three eip7702 with 2)
-              ref: 'counted over codes_26077729.json'
+                UniswapV3Pool deployments, 5 LaunchToken deployments), 2 proxy
+                clusters (eip1167 0x4181f370… with 3, eip1167 0x8b72b9b8… with
+                2) and 4 eip7702 clusters (0xd2e28229… with 3, and 0x0000fb7702…,
+                0x490aac77… and 0x63c0c19a… each with 2)
+              ref: 'counted over codes_26077729.json; the 7702 delegations are now a level of their own'
             - given: 'the same store'
               when: 'build_clusters is called'
               then: 'the first cluster is L1 with 8 members including 0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640; the first L0 cluster has key 8b5db55f… and 4 members'
@@ -613,8 +698,15 @@ System:
             cost is distinct codes times seeds, never addresses times seeds.
             A seed never alerts on itself -- the single pair address ==
             seed_address is dropped -- while every other address of the
-            seed's own code alerts with score 1.0. Addresses stored without
-            code are never checked. The list is sorted by address ascending,
+            seed's own code alerts with score 1.0, unless that code is an
+            opaque proxy: a standard EIP-1967/UUPS/Beacon proxy or a
+            selector-less code scores 0.0 even against its own byte-identical
+            copies (similarity rule 2), so such a seed alerts on nothing. This
+            is by design: on the live 30.09 base the TransparentUpgradeableProxy
+            seed produced 380 false alerts at 1.0 against unrelated proxies;
+            after this phase it produces none, while byte-identical proxies are
+            still grouped by their code_id in an L0 cluster. Addresses stored
+            without code are never checked. The list is sorted by address ascending,
             then score descending, then seed_address ascending; it does not
             depend on insertion order, and two calls on the same store give
             equal lists. No seeds, an empty store, or seed_addresses naming
@@ -646,11 +738,15 @@ System:
             - given: 'that store with no seeds at all, and then with seed_addresses=["0x1111111111111111111111111111111111111111"]'
               when: 'recheck_watchlist is called'
               then: '[] both times'
+            - given: 'a store holding code_proxy_seed_0c010533.hex at two addresses A and B, seeded at A as "TransparentUpgradeableProxy", plus code_proxy_046eee2c.hex at a third address'
+              when: 'recheck_watchlist(store) is called'
+              then: '[] -- a standard-proxy seed matches nothing: not the other stored copy of its own bytecode (B), not the distinct standard proxy'
+              ref: 'similarity rule 2; the live 30.09 false positive, reduced to zero'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
           schema:
-            level: '"L0" | "L1" | "proxy"'
+            level: '"L0" | "L1" | "proxy" | "eip7702"'
             key: code_id, skeleton_hash, or "<kind>:<target>"
             members: sorted lowercase addresses
         - name: Alert
@@ -981,7 +1077,8 @@ System:
             placeholder belongs only to the fixed cluster and similar column;
             risk has no such placeholder, because a flagless address is simply
             absent. So on the 206-address base of block 26077729 (147 with
-            code) risk prints 34 lines, not 147. The listing is sorted by
+            code) risk prints 14 lines, not 147 (it was 34 before is_std_proxy
+            dropped the standard proxies from mutable_delegatecall). The listing is sorted by
             address ascending; --flag NAME restricts it to the addresses whose
             code has that one flag and prints only that name in the <flags>
             field. risk reads flags with risk_flags over the code of each
@@ -1013,6 +1110,22 @@ System:
               when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--daily-budget", "79"])'
               then: 'exit 3, stdout empty, stderr exactly one line starting "stopped: budget"'
               ref: 'eth_blockNumber costs 80 > 79; the cli acceptance of phase 5'
+            - given: 'a db holding code_belle.hex seeded "BELLE honeypot", progress 26077728, and a fake rpc over block 26077729 whose two candidates are the BELLE copy 0x1807090dd15a6f58e00fd769e32ebf20ee610385 (code_belle_copy_1807090d.hex) and the UniV2 pair'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--max-calls-per-block", "1"]) is run'
+              then: >
+                exit 3; stdout is exactly the one ALERT line for
+                0x1807090dd15a6f58e00fd769e32ebf20ee610385 at 0.8667; stderr is
+                exactly "stopped: cap, spent 1160 credits, progress none"; the
+                alert is printed before the stop line
+              ref: 'phase 5/6 contract lost when the phase 8 judge rewrote tests/test_cli_examples.py; the alert of a block stopped by the per-block cap still reaches stdout, ahead of the stderr stop line'
+            - given: 'a db with progress 26077728 and the fake rpc over block 26077729'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--daily-budget", "10000"]) is run'
+              then: >
+                exit 3, stdout empty, stderr exactly "stopped: budget, spent
+                9960 credits, progress 26077728" -- the budget cut the block
+                mid-way (80 + 1000 + 111 x 80 = 9960) and progress stayed at the
+                last complete block
+              ref: 'phase 6 table row restored: the budget stop line reports the real spend and the unchanged progress'
             - given: 'a fake rpc whose eth_getCode raises KeyboardInterrupt on its first call, progress 26077728'
               when: 'main(["--db", db, "listen"], rpc=fake, sleep=fake_sleep)'
               then: 'exit 0, no traceback, progress still 26077728, sleep never called'
@@ -1072,24 +1185,24 @@ System:
             - given: 'the db of the backfill above (206 addresses of block 26077729)'
               when: 'main(["--db", db, "risk"]) is run twice'
               then: >
-                exit 0 both times and byte-identical stdout: 34 lines, the
-                first "0x07696dcab55e62cfef953666b29fe1970518cb00
+                exit 0 both times and byte-identical stdout: 14 lines, the
+                first "0x11b74d6995904232ad5cdf78b421f7bba1e8e646
                 mutable_delegatecall" and the last
                 "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc selfdestruct";
                 stderr empty
-              ref: 'counted over codes_26077729.json: 33 addresses mutable_delegatecall + 1 selfdestruct, no overlap; Deterministic Output'
+              ref: 'counted over codes_26077729.json after is_std_proxy: 13 addresses mutable_delegatecall + 1 selfdestruct, no overlap; was 34 lines / first 0x07696dcab55e… before, a standard proxy now excluded; Deterministic Output'
             - given: 'the same db'
               when: 'main(["--db", db, "risk", "--flag", "selfdestruct"]) is run'
               then: 'exit 0 and exactly one line, "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct"'
               ref: 'the one code with a SELFDESTRUCT opcode in the block'
             - given: 'the same db'
-              when: 'main(["--db", db, "cluster", "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"]) is run'
+              when: 'main(["--db", db, "cluster", "0xe6b738da243e8fa2a0ed5915645789add5de5152"]) is run'
               then: >
                 exit 0 and one line whose fourth tab field is
                 "mutable_delegatecall": an L0 cluster of two addresses
-                0x28b5a0e9c621a5badaa536219b3a228c8168cf5d and
-                0x81d40f21f12a8f0e3252bccb954d722d4c464b64 sharing one code
-              ref: 'two addresses of one code that has DELEGATECALL, SLOAD and is no eip1167'
+                0xe6b738da243e8fa2a0ed5915645789add5de5152 and
+                0xf40bcc0845528873784f36e5c105e62a93ff7021 sharing one code
+              ref: 'two addresses of one non-proxy code that has DELEGATECALL, SLOAD, is no eip1167 and is no standard proxy; the old example 0x28b5a0e9… is now a standard proxy, no longer mutable_delegatecall'
             - given: 'the same db'
               when: 'main(["--db", db, "similar", "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", "--min", "0.8"]) is run'
               then: >
@@ -1163,10 +1276,11 @@ System:
             - given: 'a store filled from codes_26077729.json (206 addresses, 147 with code, 130 codes)'
               when: 'collect(store)["levels"] is read'
               then: >
-                L0 7 clusters over 16 addresses, L1 2 over 13, proxy 6 over
-                14; the shares 16/147, 13/147 and 14/147; proxy_codes 12 and
-                proxy_code_share 12/130
-              ref: 'counted over codes_26077729.json; cluster counts match Build Clusters'
+                L0 7 clusters over 16 addresses, L1 2 over 13, proxy 2 over 5,
+                eip7702 4 over 9; the shares 16/147, 13/147, 5/147 and 9/147;
+                proxy_codes 5 and proxy_code_share 5/130; eip7702_codes 7 and
+                eip7702_code_share 7/130
+              ref: 'counted over codes_26077729.json; cluster counts match Build Clusters; proxy now counts eip1167 only, the 7702 delegations are a level of their own'
             - given: 'the same store'
               when: 'collect(store)["skeletons"] is read'
               then: >
@@ -1189,9 +1303,9 @@ System:
               when: 'collect(store)["risk"] is read'
               then: >
                 selfdestruct codes 1, addresses 1, code_share 1/130 and
-                address_share 1/147; mutable_delegatecall codes 29,
-                addresses 33, code_share 29/130 and address_share 33/147
-              ref: 'counted over codes_26077729.json, 2026-09-30'
+                address_share 1/147; mutable_delegatecall codes 12,
+                addresses 13, code_share 12/130 and address_share 13/147
+              ref: 'counted over codes_26077729.json after excluding standard proxies, 2026-09-30; was 29 codes / 33 addresses before is_std_proxy'
             - given: 'an empty database'
               when: 'collect(store) is called'
               then: >
@@ -1267,7 +1381,9 @@ System:
             tag and no http:// or https:// reference of any kind -- the five
             SVGs are inlined verbatim, each stripped of its XML declaration
             and its DOCTYPE, so nothing is ever fetched. It carries the
-            summary, the level and skeleton shares, the top clusters, the
+            summary, the level and skeleton shares -- the level table has a
+            row for each of L0, L1, proxy and eip7702, and the proxy-code and
+            eip7702-code shares beside it -- the top clusters, the
             ledger, the alerts per seed, the Spearman coefficients as a
             table beside the heat map, and the risk flags as a small table --
             per flag its code count, code share, address count and address
@@ -1301,8 +1417,9 @@ System:
             render_html and render_charts.
           schema: >
             summary{addresses, addresses_with_code, addresses_without_code,
-            codes, blocks}; levels{L0|L1|proxy -> {clusters, addresses,
-            share}, proxy_codes, proxy_code_share};
+            codes, blocks}; levels{L0|L1|proxy|eip7702 -> {clusters,
+            addresses, share}, proxy_codes, proxy_code_share, eip7702_codes,
+            eip7702_code_share};
             skeletons{non_proxy_codes, unique_codes, unique_share,
             non_proxy_addresses, unique_addresses, unique_address_share};
             clusters{top[{level, key, size}], histogram{edges, counts}};

@@ -20,6 +20,8 @@ newline). Decode with `bytes.fromhex(text.strip()[2:])`.
 | `code_clone_3b2fac8e.hex` | 0x3b2fac8e18e9d354cf1f4770ad0e80b797095a2d | EIP-1167 clone of the same implementation |
 | `code_clone_2ca7b61b.hex` | 0x2ca7b61b23b15e75ac7ab60dd6f627895d64a46e | EIP-1167 clone of 0x8b72b9b8… (LaunchToken) |
 | `code_7702_04cfab85.hex` | 0x04cfab854b82159745eead5ed4ad148645e1173b | EIP-7702 delegated EOA, `ef0100` + delegate |
+| `code_proxy_seed_0c010533.hex` | 0x0c0105334a50db16b51b2911c9956539753a2cf8 | TransparentUpgradeableProxy seed of the live 30.09 base (2059 bytes, 5 admin selectors); `is_std_proxy` True (EIP-1967 impl slot); not `mutable_delegatecall`; caused 380 false recheck alerts before phase 9 |
+| `code_proxy_046eee2c.hex` | 0x046eee2cc3188071c02bfc1745a6b17c656e3f3d | a second, distinct standard EIP-1967 proxy of the live base (2227 bytes, 0 selectors); `is_std_proxy` True; `similarity` to the seed proxy is 0.0 |
 | `code_belle.hex` | 0x34c6211621f2763c60eb007dc2ae91090a2d22f6 | Security seed: BELLE. Etherscan: "This token is reported to be a honeypot token"; creator tagged "BELLE Honeypot Rug Pull" |
 | `code_belle_copy_46cadea5.hex` | 0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a | same deployer 0xf80f6fa4…, nonce 0 (WHALE) |
 | `code_belle_copy_2141be5f.hex` | 0x2141be5f2afa674c94167ab167a478a56cb539f5 | same deployer, nonce 1 |
