@@ -1,6 +1,6 @@
 """Smoke tests for ethsc/report.py: at most five test functions.
 
-The full contract is judged by the acceptance probe of phase 7.2 §3.3;
+The full contract is judged by the acceptance probe of phase 9 §3.3;
 these tests cover one happy path per public function, one tolerant
 case, and the import surface. No Fake classes: the store helpers come
 from tests.helpers and the charts layer is stubbed with plain strings
@@ -29,8 +29,8 @@ def test_import_surface():
 
 
 def test_collect_block_store():
-    """Collect Report Data examples 1-5: the fixture store's numbers,
-    the risk section included."""
+    """Collect Report Data examples 1-6: the fixture store's numbers,
+    the risk section included, and the empty database."""
     store = block_store()
     data = report.collect(store)
     assert sorted(data.keys()) == sorted(
@@ -44,14 +44,22 @@ def test_collect_block_store():
     assert levels["L0"]["addresses"] == 16, "L0 address count"
     assert levels["L1"]["clusters"] == 2, "L1 cluster count"
     assert levels["L1"]["addresses"] == 13, "L1 address count"
-    assert levels["proxy"]["clusters"] == 6, "proxy cluster count"
-    assert levels["proxy"]["addresses"] == 14, "proxy address count"
+    assert levels["proxy"]["clusters"] == 2, "eip1167 cluster count"
+    assert levels["proxy"]["addresses"] == 5, "eip1167 address count"
+    assert levels["eip7702"]["clusters"] == 4, "eip7702 cluster count"
+    assert levels["eip7702"]["addresses"] == 9, "eip7702 address count"
     assert abs(levels["L0"]["share"] - 16.0 / 147.0) < 1e-12, "L0 share"
     assert abs(levels["L1"]["share"] - 13.0 / 147.0) < 1e-12, "L1 share"
-    assert abs(levels["proxy"]["share"] - 14.0 / 147.0) < 1e-12, "proxy share"
-    assert levels["proxy_codes"] == 12, "proxy_codes"
-    assert abs(levels["proxy_code_share"] - 12.0 / 130.0) < 1e-12, \
+    assert abs(levels["proxy"]["share"] - 5.0 / 147.0) < 1e-12, \
+        "eip1167 share"
+    assert abs(levels["eip7702"]["share"] - 9.0 / 147.0) < 1e-12, \
+        "eip7702 share"
+    assert levels["proxy_codes"] == 5, "proxy_codes counts eip1167 only"
+    assert abs(levels["proxy_code_share"] - 5.0 / 130.0) < 1e-12, \
         "proxy_code_share"
+    assert levels["eip7702_codes"] == 7, "eip7702_codes"
+    assert abs(levels["eip7702_code_share"] - 7.0 / 130.0) < 1e-12, \
+        "eip7702_code_share"
     skeletons = data["skeletons"]
     assert skeletons["non_proxy_codes"] == 118, "non_proxy_codes"
     assert skeletons["unique_codes"] == 105, "unique_codes"
@@ -97,12 +105,13 @@ def test_collect_block_store():
         "selfdestruct code_share"
     assert abs(risk["selfdestruct"]["address_share"] - 1.0 / 147.0) < 1e-12, \
         "selfdestruct address_share"
-    assert risk["mutable_delegatecall"]["codes"] == 29, "mut dc codes"
-    assert risk["mutable_delegatecall"]["addresses"] == 33, "mut dc addresses"
+    assert risk["mutable_delegatecall"]["codes"] == 12, "mut dc codes"
+    assert risk["mutable_delegatecall"]["addresses"] == 13, \
+        "mut dc addresses"
     assert abs(risk["mutable_delegatecall"]["code_share"]
-               - 29.0 / 130.0) < 1e-12, "mut dc code_share"
+               - 12.0 / 130.0) < 1e-12, "mut dc code_share"
     assert abs(risk["mutable_delegatecall"]["address_share"]
-               - 33.0 / 147.0) < 1e-12, "mut dc address_share"
+               - 13.0 / 147.0) < 1e-12, "mut dc address_share"
     # empty database (example 6)
     from tests.helpers import temp_store
     empty = report.collect(temp_store())
@@ -158,6 +167,7 @@ def test_render_html_deterministic():
     assert "1.0000" in first, "the fixture matrix has no degenerate cell"
     assert "selfdestruct" in first, "risk table present"
     assert "mutable_delegatecall" in first, "risk table present"
+    assert "eip7702" in first, "level table holds the eip7702 row"
 
 
 def test_build_report_files_and_no_matplotlib():

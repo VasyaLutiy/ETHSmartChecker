@@ -198,9 +198,10 @@ def collect(store) -> dict:
 
     clusters = build_clusters(store)
 
-    # levels
+    # levels: the proxy level counts eip1167 clones only; the eip7702
+    # delegations are a level of their own.
     levels = {}
-    for level in ("L0", "L1", "proxy"):
+    for level in ("L0", "L1", "proxy", "eip7702"):
         members = set()
         count = 0
         for cluster in clusters:
@@ -213,9 +214,16 @@ def collect(store) -> dict:
             "addresses": addresses,
             "share": _share(addresses, summary["addresses_with_code"]),
         }
-    proxy_codes = sum(1 for fp in fps if fp["proxy"] is not None)
+    proxy_codes = sum(1 for fp in fps
+                      if fp["proxy"] is not None
+                      and fp["proxy"]["kind"] == "eip1167")
+    eip7702_codes = sum(1 for fp in fps
+                        if fp["proxy"] is not None
+                        and fp["proxy"]["kind"] == "eip7702")
     levels["proxy_codes"] = proxy_codes
     levels["proxy_code_share"] = _share(proxy_codes, summary["codes"])
+    levels["eip7702_codes"] = eip7702_codes
+    levels["eip7702_code_share"] = _share(eip7702_codes, summary["codes"])
 
     # skeletons, over non-proxy codes only
     non_proxy = [fp for fp in fps if fp["proxy"] is None]
@@ -397,7 +405,7 @@ def render_html(data, svgs) -> str:
     parts.append("<h2>Cluster levels</h2>\n<table>\n")
     parts.append("<tr><th>level</th><th>clusters</th><th>addresses</th>"
                  "<th>share</th></tr>\n")
-    for level in ("L0", "L1", "proxy"):
+    for level in ("L0", "L1", "proxy", "eip7702"):
         entry = levels[level]
         parts.append("<tr><th>%s</th><td>%s</td><td>%s</td><td>%s</td></tr>\n"
                      % (_esc(level), _fmt(entry["clusters"]),
@@ -406,6 +414,9 @@ def render_html(data, svgs) -> str:
     parts.append("<p>proxy codes: %s (share %s)</p>\n"
                  % (_fmt(levels["proxy_codes"]),
                     _fmt(levels["proxy_code_share"])))
+    parts.append("<p>eip7702 codes: %s (share %s)</p>\n"
+                 % (_fmt(levels["eip7702_codes"]),
+                    _fmt(levels["eip7702_code_share"])))
 
     skeletons = data["skeletons"]
     parts.append("<h2>Unique skeletons</h2>\n<table>\n")
