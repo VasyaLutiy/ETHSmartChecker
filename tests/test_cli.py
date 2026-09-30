@@ -2,9 +2,11 @@
 
 Completeness lives in the acceptance probe and the judge card; this
 file only checks imports, one happy path per subcommand family, one
-usage/tolerant case, and the phase 8 additions (the risk filter and the
-fixed <flags> column of cluster and similar). Fakes and fixture loaders
-come from tests.helpers; no network is opened.
+usage/tolerant case, and the phase 8/9 additions (the risk filter and
+the fixed <flags> column of cluster and similar; the risk counts after
+is_std_proxy dropped the standard proxies, and the cluster example on a
+non-proxy L0 pair). Fakes and fixture loaders come from tests.helpers;
+no network is opened.
 """
 
 import contextlib
@@ -115,7 +117,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(len(out.strip().splitlines()), 15,
                          msg="clusters top lines")
         code, out, err = _run(
-            ["--db", path, "cluster", "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"],
+            ["--db", path, "cluster", "0xe6b738da243e8fa2a0ed5915645789add5de5152"],
             FakeRpc(),
         )
         self.assertEqual(code, 0, msg="cluster exit")
@@ -123,7 +125,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(len(fields), 4, msg="cluster field count")
         self.assertEqual(fields[-1], "mutable_delegatecall",
                          msg="cluster flags field")
-        self.assertIn("0x81d40f21f12a8f0e3252bccb954d722d4c464b64", fields[2],
+        self.assertIn("0xf40bcc0845528873784f36e5c105e62a93ff7021", fields[2],
                       msg="cluster members")
         code, out, err = _run(
             ["--db", path, "similar", _PAIR, "--min", "0.8"], FakeRpc()
@@ -139,15 +141,15 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(err, "", msg="stderr not empty")
 
     def test_risk_filter(self):
-        """Examples 15/16: risk prints 34 lines; --flag selfdestruct one."""
+        """Examples 15/16: risk prints 14 lines; --flag filters to one."""
         path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
         _fill(path)
         code, out, err = _run(["--db", path, "risk"], FakeRpc())
         self.assertEqual(code, 0, msg="risk exit")
         lines = out.strip().splitlines()
-        self.assertEqual(len(lines), 34, msg="risk line count")
+        self.assertEqual(len(lines), 14, msg="risk line count")
         self.assertEqual(lines[0],
-                         "0x07696dcab55e62cfef953666b29fe1970518cb00"
+                         "0x11b74d6995904232ad5cdf78b421f7bba1e8e646"
                          "\tmutable_delegatecall",
                          msg="risk first line")
         self.assertEqual(lines[-1],
@@ -165,6 +167,16 @@ class CliSmoke(unittest.TestCase):
             "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct\n",
             msg="risk --flag output",
         )
+        code, out, err = _run(
+            ["--db", path, "risk", "--flag", "mutable_delegatecall"], FakeRpc()
+        )
+        self.assertEqual(code, 0, msg="risk --flag mutable exit")
+        self.assertEqual(len(out.strip().splitlines()), 13,
+                         msg="risk --flag mutable line count")
+        for line in out.strip().splitlines():
+            self.assertEqual(line.split("\t")[-1], "mutable_delegatecall",
+                             msg="risk --flag mutable field: %r" % line)
+        self.assertEqual(err, "", msg="risk stderr")
 
     def test_usage_and_tolerant(self):
         """Usage errors exit 2; unknown cluster address prints nothing."""
