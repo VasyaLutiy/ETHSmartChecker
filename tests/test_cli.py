@@ -11,6 +11,7 @@ import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from ethsc.cli import main
 from ethsc.rpc import RpcError
@@ -277,3 +278,62 @@ class CliSmoke(unittest.TestCase):
                          "unknown address or no code: 0x%s" % ("11" * 20),
                          msg="failed seed add stderr")
 
+    def test_report_writes_two_files(self):
+        """report prints the html path then the json path, exit 0."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        prefix = os.path.join(tempfile.mkdtemp(), "r")
+        code, out, err = _run(["--db", path, "report", "--out", prefix],
+                              None)
+        self.assertEqual(code, 0, msg="report exit %d, err=%r" % (code, err))
+        self.assertEqual(err, "", msg="report stderr")
+        self.assertEqual(
+            out, "%s.html\n%s.json\n" % (prefix, prefix),
+            msg="report stdout lines",
+        )
+        self.assertTrue(os.path.exists(prefix + ".html"),
+                        msg="html file missing")
+        self.assertTrue(os.path.exists(prefix + ".json"),
+                        msg="json file missing")
+
+    def test_report_default_prefix_and_empty_db(self):
+        """--out defaults to the relative name ethsc-report; empty db ok."""
+        workdir = tempfile.mkdtemp()
+        path = os.path.join(workdir, "ethsc.sqlite")
+        here = os.getcwd()
+        os.chdir(workdir)
+        try:
+            code, out, err = _run(["--db", path, "report"], None)
+            self.assertEqual(code, 0, msg="report default exit %d, err=%r"
+                             % (code, err))
+            self.assertEqual(err, "", msg="report default stderr")
+            self.assertEqual(
+                out, "ethsc-report.html\nethsc-report.json\n",
+                msg="report default stdout",
+            )
+            self.assertTrue(os.path.exists("ethsc-report.html"),
+                            msg="default html file missing")
+            self.assertTrue(os.path.exists("ethsc-report.json"),
+                            msg="default json file missing")
+        finally:
+            os.chdir(here)
+
+    def test_report_without_matplotlib(self):
+        """No matplotlib: exit 2, empty stdout, no file, one stderr line."""
+        path = os.path.join(tempfile.mkdtemp(), "ethsc.sqlite")
+        _fill(path)
+        prefix = os.path.join(tempfile.mkdtemp(), "r")
+        with mock.patch("ethsc.report.importlib.import_module",
+                        side_effect=ImportError("no matplotlib")):
+            code, out, err = _run(
+                ["--db", path, "report", "--out", prefix], None
+            )
+        self.assertEqual(code, 2, msg="report no-matplotlib exit")
+        self.assertEqual(out, "", msg="report no-matplotlib stdout")
+        self.assertEqual(len(err.strip().splitlines()), 1,
+                         msg="one stderr line expected")
+        self.assertIn("matplotlib", err, msg="stderr must name matplotlib")
+        self.assertFalse(os.path.exists(prefix + ".html"),
+                         msg="no html file without matplotlib")
+        self.assertFalse(os.path.exists(prefix + ".json"),
+                         msg="no json file without matplotlib")
