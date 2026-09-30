@@ -2,10 +2,18 @@
 
 No I/O: the module reads no files, no environment and no network.
 Every function is a Tolerant Parser: on truncated, garbage or empty
-input it returns [] or None or keeps the bytes, and never raises.
+input it returns [] or None or False or keeps the bytes, and never raises.
 """
 
 from typing import List, Optional, Tuple
+
+# The audited EIP-1967 storage-slot constants, as bytes: implementation
+# (and UUPS) slot keccak256("eip1967.proxy.implementation") - 1, and the
+# beacon slot keccak256("eip1967.proxy.beacon") - 1.
+_IMPL_SLOT = bytes.fromhex(
+    "360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
+_BEACON_SLOT = bytes.fromhex(
+    "a3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50")
 
 
 def disassemble(code: bytes) -> List[Tuple[int, int, bytes]]:
@@ -94,6 +102,23 @@ def detect_proxy(code: bytes) -> Optional[dict]:
     return None
 
 
+def is_std_proxy(code: bytes) -> bool:
+    """True when the code is a standard upgradeable proxy.
+
+    True when a PUSH32 immediate of the disassembled body from
+    strip_metadata equals one of the audited slot constants: the EIP-1967
+    (and UUPS) implementation slot, or the EIP-1967 beacon slot. The
+    constant must appear as a real PUSH32 immediate, not as a substring
+    of the raw bytes, so a coincidental byte run or a metadata trailer
+    never counts. Never raises: is_std_proxy(b"") is False.
+    """
+    body, _ = strip_metadata(code)
+    for _, op, arg in disassemble(body):
+        if op == 0x7F and (arg == _IMPL_SLOT or arg == _BEACON_SLOT):
+            return True
+    return False
+
+
 def build_skeleton(code: bytes) -> bytes:
     """Re-serialize the stripped body with PUSH20/PUSH32 immediates zeroed.
 
@@ -128,14 +153,18 @@ def risk_flags(code: bytes) -> dict:
     counts. selfdestruct: a SELFDESTRUCT (0xFF) opcode appears in the
     body (opcode present, not path-reachable -- no CFG here).
     mutable_delegatecall: DELEGATECALL (0xF4) appears, detect_proxy(code)
-    is not eip1167 (a clone bakes its implementation address in), and
+    is not eip1167 (a clone bakes its implementation address in),
     SLOAD (0x54) appears -- the syntactic stand-in for a storage-loaded
-    implementation address. Order and position do not matter. Never
-    raises: risk_flags(b"") is both False.
+    implementation address -- and is_std_proxy(code) is False: a standard
+    EIP-1967/UUPS/Beacon proxy reads its implementation from an audited,
+    well-known slot and is upgradeable by design, so it is excluded.
+    Order and position do not matter. Never raises: risk_flags(b"") is
+    both False.
     """
     body, _ = strip_metadata(code)
     ops = set(op for _, op, _ in disassemble(body))
     selfdestruct = 0xFF in ops
     mutable = (0xF4 in ops and 0x54 in ops
-               and not (detect_proxy(code) or {}).get("kind") == "eip1167")
+               and not (detect_proxy(code) or {}).get("kind") == "eip1167"
+               and not is_std_proxy(code))
     return {"selfdestruct": selfdestruct, "mutable_delegatecall": mutable}

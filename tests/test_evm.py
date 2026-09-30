@@ -42,9 +42,16 @@ CLONE_A = code_of("code_clone_270df012.hex")
 CLONE_B = code_of("code_clone_3b2fac8e.hex")
 CLONE_C = code_of("code_clone_2ca7b61b.hex")
 DELEGATED = code_of("code_7702_04cfab85.hex")
+PROXY_SEED = code_of("code_proxy_seed_0c010533.hex")
+PROXY_046 = code_of("code_proxy_046eee2c.hex")
 BELLE = code_of("code_belle.hex")
 
 TRUNCATED_CLONE = CLONE_A[:44]
+
+IMPL_SLOT = bytes.fromhex(
+    "360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
+BEACON_SLOT = bytes.fromhex(
+    "a3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50")
 
 
 class DisassembleTests(unittest.TestCase):
@@ -214,6 +221,42 @@ class DetectProxyTests(unittest.TestCase):
         self.assertIsNone(evm.detect_proxy(b""), msg="empty code")
 
 
+class IsStdProxyTests(unittest.TestCase):
+    maxDiff = None
+
+    def test_proxy_seed_0c010533_true(self):
+        """Example 1: the TransparentUpgradeableProxy seed is a std proxy."""
+        self.assertEqual(len(PROXY_SEED), 2059, msg="fixture size 2059")
+        self.assertTrue(evm.is_std_proxy(PROXY_SEED),
+                        msg="EIP-1967 implementation slot as PUSH32 immediate")
+
+    def test_proxy_046eee2c_true(self):
+        """Example 2: the second distinct standard proxy is True too."""
+        self.assertEqual(len(PROXY_046), 2227, msg="fixture size 2227")
+        self.assertTrue(evm.is_std_proxy(PROXY_046),
+                        msg="different bytecode, same audited slot")
+
+    def test_constructed_beacon_slot_true(self):
+        """Example 3: a constructed body with the beacon slot is True."""
+        body = b"\x7f" + BEACON_SLOT + b"\x54\xf4"
+        self.assertTrue(evm.is_std_proxy(body),
+                        msg="EIP-1967 beacon slot constant recognized")
+
+    def test_weth9_clone_empty_false(self):
+        """Example 4: WETH9, the eip1167 clone and b"" are all False."""
+        self.assertFalse(evm.is_std_proxy(WETH9), msg="WETH9")
+        self.assertFalse(evm.is_std_proxy(CLONE_A),
+                         msg="eip1167 bakes the target in the code")
+        self.assertFalse(evm.is_std_proxy(b""), msg="empty code")
+
+    def test_slot_in_trailer_never_counts(self):
+        """Rule: the slot must be a PUSH32 immediate, not a raw substring."""
+        # a fake metadata trailer carrying the impl slot must not count
+        fake = b"\x00\x43" + IMPL_SLOT + bytes.fromhex("a200")
+        self.assertFalse(evm.is_std_proxy(fake),
+                         msg="slot inside the trailer is not a PUSH32 immediate")
+
+
 class BuildSkeletonTests(unittest.TestCase):
     maxDiff = None
 
@@ -287,9 +330,16 @@ class RiskFlagsTests(unittest.TestCase):
         self.assertFalse(flags["mutable_delegatecall"],
                          msg="PUSH1 0xff mutable_delegatecall False")
 
+    def test_standard_proxy_both_false(self):
+        """Example 4: the standard EIP-1967 proxy seed has both flags False."""
+        flags = evm.risk_flags(PROXY_SEED)
+        self.assertFalse(flags["selfdestruct"], msg="seed selfdestruct False")
+        self.assertFalse(flags["mutable_delegatecall"],
+                         msg="a standard proxy is never mutable_delegatecall")
+
     def test_block_26077729_counts(self):
-        """Example 4: over codes_26077729.json, 1 selfdestruct code and
-        29 mutable_delegatecall codes over 33 addresses, no code with both."""
+        """Example 5: over codes_26077729.json, 1 selfdestruct code and
+        12 mutable_delegatecall codes over 13 addresses, no code with both."""
         codes = block_codes()
         # group every address by its code: several addresses may share one code
         by_code = {}  # type: dict
@@ -311,14 +361,14 @@ class RiskFlagsTests(unittest.TestCase):
                          msg="1 selfdestruct address: %r" % (sorted(selfdestruct_codes),))
         self.assertIn("0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc",
                       selfdestruct_codes, msg="the selfdestruct address")
-        self.assertEqual(len(mutable_codes), 29, msg="29 mutable_delegatecall codes")
-        self.assertEqual(len(mutable_addrs), 33,
-                         msg="33 mutable_delegatecall addresses: %d" % len(mutable_addrs))
+        self.assertEqual(len(mutable_codes), 12, msg="12 mutable_delegatecall codes")
+        self.assertEqual(len(mutable_addrs), 13,
+                         msg="13 mutable_delegatecall addresses: %d" % len(mutable_addrs))
         self.assertFalse(selfdestruct_codes & mutable_addrs,
                          msg="no code has both flags")
 
     def test_empty_code_both_false(self):
-        """Example 5: risk_flags(b"") is both False and never raises."""
+        """Example 6: risk_flags(b"") is both False and never raises."""
         self.assertEqual(evm.risk_flags(b""),
                          {"selfdestruct": False, "mutable_delegatecall": False},
                          msg="empty code")
