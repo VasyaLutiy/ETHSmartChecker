@@ -1,9 +1,10 @@
-"""Judge tests: the examples of TASK_PHASE3.md as acceptance criterion.
+"""Judge tests: the examples of the cluster group in contour.yaml.
 
 This file does not touch the implementation: it only builds stores from
 the fixtures and compares what ethsc.cluster returns against the
 examples given for Build Clusters, Find Similar, Match Watchlist and
-Recheck Watchlist.
+Recheck Watchlist (phase-9 shapes: level "eip7702", proxy = eip1167
+only, a standard-proxy seed alerts on nothing).
 """
 
 import json
@@ -30,6 +31,19 @@ UNIV2_ADDRESSES = [
     "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
     "0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c",
     "0x3041cbd36888becc7bbcbc0045e3b1f144466f5f",
+]
+
+PROXY_SEED = "0x0c0105334a50db16b51b2911c9956539753a2cf8"
+
+EIP1167_KEYS = [
+    "eip1167:0x4181f37093e3a21a4e0d5ef355c5b1938cba5bfb",
+    "eip1167:0x8b72b9b8e544f944cdcdf0cdb6194f917ac1eba5",
+]
+EIP7702_BIG = "eip7702:0xd2e28229f6f2c235e57de2ebc727025a1d0530fb"
+EIP7702_SMALL = [
+    "eip7702:0x0000fb7702036ff9f76044a501ac1aa74cbab16b",
+    "eip7702:0x490aac77c960b0569c8e446ac7e12490bd44ca1d",
+    "eip7702:0x63c0c19a282a1b52b07dd5a65b58948a07dae32b",
 ]
 
 
@@ -76,6 +90,17 @@ def _belle_store():
     return store
 
 
+def _proxy_seed_store():
+    """Store holding code_proxy_seed_0c010533.hex at two addresses."""
+    store = Store(_temp_db())
+    code_id = store.put_code(_read_hex("code_proxy_seed_0c010533.hex"))
+    store.put_address(PROXY_SEED, code_id, 26077729)
+    store.put_address(
+        "0x1111111111111111111111111111111111111111", code_id, 26077729
+    )
+    return store
+
+
 def _find_cluster(clusters, level, key_prefix):
     """The cluster with the given level and key prefix, or None."""
     for cluster in clusters:
@@ -88,18 +113,23 @@ class TestBuildClustersExamples(unittest.TestCase):
     maxDiff = None
 
     def test_build_clusters_example_1_counts(self):
-        """Build Clusters example 1: cluster counts and sizes."""
+        """Build Clusters example 1: counts, sizes and full keys."""
         store = _block_store()
         clusters = build_clusters(store)
         self.assertEqual(len(clusters), 15, "total clusters must be 15")
         l0 = [c for c in clusters if c["level"] == "L0"]
         l1 = [c for c in clusters if c["level"] == "L1"]
         proxy = [c for c in clusters if c["level"] == "proxy"]
+        eip7702 = [c for c in clusters if c["level"] == "eip7702"]
         self.assertEqual(len(l0), 7, "seven L0 clusters")
         self.assertEqual(
             sorted((len(c["members"]) for c in l0), reverse=True),
             [4, 2, 2, 2, 2, 2, 2],
             "L0 sizes 4,2,2,2,2,2,2",
+        )
+        self.assertEqual(
+            sum(len(c["members"]) for c in l0), 16,
+            "L0 clusters cover 16 addresses",
         )
         self.assertEqual(len(l1), 2, "two L1 clusters")
         self.assertEqual(
@@ -107,40 +137,75 @@ class TestBuildClustersExamples(unittest.TestCase):
             [8, 5],
             "L1 clusters: 8 UniswapV3Pool and 5 LaunchToken addresses",
         )
-        self.assertEqual(len(proxy), 6, "six proxy clusters")
-        eip1167 = [c for c in proxy if c["key"].startswith("eip1167:")]
-        eip7702 = [c for c in proxy if c["key"].startswith("eip7702:")]
-        self.assertEqual(len(eip1167), 2, "two eip1167 proxy clusters")
-        self.assertEqual(len(eip7702), 4, "four eip7702 proxy clusters")
         self.assertEqual(
-            sorted(len(c["members"]) for c in eip1167), [2, 3],
-            "eip1167 sizes: 3 (target 0x4181f370...) and 2 (0x8b72b9b8...)",
+            sum(len(c["members"]) for c in l1), 13,
+            "L1 clusters cover 13 addresses",
+        )
+        self.assertEqual(len(proxy), 2, "two proxy clusters (eip1167 only)")
+        self.assertEqual(len(eip7702), 4, "four eip7702 clusters")
+        self.assertEqual(
+            sorted(c["key"] for c in proxy), EIP1167_KEYS,
+            "the proxy keys carry the FULL 40-hex targets",
         )
         self.assertEqual(
-            sorted(len(c["members"]) for c in eip7702), [2, 2, 2, 3],
-            "eip7702 sizes: one 3 (target 0xd2e28229...) and three 2",
+            sorted(len(c["members"]) for c in proxy), [2, 3],
+            "proxy sizes: 3 (eip1167:0x4181f370...) and 2 (0x8b72b9b8...)",
         )
-        for cluster in proxy:
+        self.assertEqual(
+            sum(len(c["members"]) for c in proxy), 5,
+            "proxy clusters cover 5 addresses",
+        )
+        # every proxy/eip7702 key is "<kind>:0x" + 40 lowercase hex
+        for cluster in proxy + eip7702:
             self.assertEqual(
                 sorted(cluster.keys()), ["key", "level", "members"],
-                "proxy cluster has exactly the keys level/key/members",
+                "cluster has exactly the keys level/key/members",
+            )
+            kind, _, target = cluster["key"].partition(":")
+            self.assertEqual(
+                (len(cluster["key"]), kind, len(target)),
+                (50, kind, 42),
+                "the key carries the FULL 40-hex target, not an ellipsis",
             )
             self.assertEqual(
-                cluster["members"],
-                sorted(cluster["members"]),
-                "proxy cluster members sorted",
+                target, target.lower(), "proxy key target lowercase"
+            )
+            self.assertEqual(
+                cluster["members"], sorted(cluster["members"]),
+                "cluster members sorted",
             )
             for member in cluster["members"]:
                 self.assertEqual(
                     member, member.lower(), "members lowercase"
                 )
-        big1167 = _find_cluster(clusters, "proxy", "eip1167:0x4181f370")
+        big1167 = _find_cluster(clusters, "proxy", EIP1167_KEYS[0])
         self.assertIsNotNone(
             big1167, "eip1167 proxy cluster of target 0x4181f370... exists"
         )
         self.assertEqual(
             len(big1167["members"]), 3,
             "eip1167:0x4181f370... has 3 members",
+        )
+        big7702 = _find_cluster(clusters, "eip7702", EIP7702_BIG)
+        self.assertIsNotNone(
+            big7702, "eip7702 cluster of target 0xd2e28229... exists"
+        )
+        self.assertEqual(
+            len(big7702["members"]), 3,
+            "eip7702:0xd2e28229... has 3 members",
+        )
+        for target in EIP7702_SMALL:
+            small = _find_cluster(clusters, "eip7702", target)
+            self.assertIsNotNone(
+                small, "eip7702 cluster %s exists" % target
+            )
+            self.assertEqual(
+                len(small["members"]), 2,
+                "%s has 2 members" % target,
+            )
+        self.assertEqual(
+            sum(len(c["members"]) for c in eip7702), 9,
+            "eip7702 clusters cover 9 addresses",
         )
 
     def test_build_clusters_example_2_order(self):
@@ -160,7 +225,6 @@ class TestBuildClustersExamples(unittest.TestCase):
             first["members"],
             "the UniswapV3Pool USDC/WETH 0.05% is in the first cluster",
         )
-        l0 = [c for c in clusters if c["level"] == "L0"]
         first_l0 = _find_cluster(clusters, "L0", "8b5db55f")
         self.assertIsNotNone(
             first_l0, "L0 cluster with key 8b5db55f... exists"
@@ -168,6 +232,7 @@ class TestBuildClustersExamples(unittest.TestCase):
         self.assertEqual(
             len(first_l0["members"]), 4, "that L0 cluster has 4 members"
         )
+        l0 = [c for c in clusters if c["level"] == "L0"]
         self.assertEqual(
             len(l0[0]["members"]), 4, "the first L0 in the list has 4 members"
         )
@@ -241,7 +306,7 @@ class TestMatchWatchlistExamples(unittest.TestCase):
         )
 
     def test_match_watchlist_example_3_tolerant(self):
-        """Match Watchlist example 3: no seeds and b\"\" both give []."""
+        """Match Watchlist example 3: no seeds and b"" both give []."""
         store = _belle_store()
         self.assertEqual(
             match_watchlist(store, b""), [], "no seeds -> []"
@@ -350,7 +415,22 @@ class TestRecheckWatchlistExamples(unittest.TestCase):
             "seed_addresses naming nothing known -> []",
         )
 
+    def test_recheck_example_5_std_proxy_seed_matches_nothing(self):
+        """Recheck Watchlist example 5: a standard-proxy seed alerts on [].
+
+        The seed's own bytecode sits at a second address too, and even
+        that byte-identical copy must not alert: similarity rule 2
+        scores an opaque standard proxy 0.0 against everything.
+        """
+        store = _proxy_seed_store()
+        store.add_seed(PROXY_SEED, "TransparentUpgradeableProxy")
+        alerts = recheck_watchlist(store)
+        self.assertEqual(
+            alerts, [],
+            "a standard-proxy seed matches nothing: not the other stored "
+            "copy of its own bytecode, not anything else in the store",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-
