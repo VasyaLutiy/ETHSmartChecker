@@ -43,6 +43,15 @@ SystemExit: argparse failures are caught and returned as the int code
 2, so tests calling main() directly see the same code sys.exit(main())
 produces in __main__.
 
+Data source (phase 10): listen and backfill take --source
+{infura,publicnode} (default infura) and --workers K. Infura keeps
+prices=PRICES, code_tag None and workers --workers or 1; publicnode
+builds RpcClient(PUBLICNODE_URL, prices={}, max_retries=5) without ever
+calling infura_url(), and follow_chain gets prices={}, code_tag
+"latest" and workers --workers or 8, so the credit ledger stays as it
+was. A --daily-budget with publicnode, and --workers below 1, are usage
+errors: exit 2, one stderr line, no rpc call.
+
 The rpc client is built only on the paths that talk to the chain --
 listen and backfill -- and only when the caller passed rpc=None; every
 other subcommand runs without INFURA_API_KEY and infura_url() is never
@@ -58,7 +67,7 @@ import sys
 import time
 
 from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
-from ethsc.config import PRICES
+from ethsc.config import PRICES, PUBLICNODE_URL
 from ethsc.evm import risk_flags
 from ethsc.ingest import follow_chain
 from ethsc.report import ChartsUnavailable, build_report
@@ -121,7 +130,7 @@ def _print_alerts(alerts):
 
 
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
-            max_calls=None):
+            max_calls=None, prices=PRICES, code_tag=None, workers=None):
     """One follow_chain call with the CLI's error and exit-code policy.
 
     Returns the exit code, or None when the pass was interrupted by
@@ -129,7 +138,8 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
     lines of every block -- a complete one included -- are printed by
     the on_alerts sink as the block ends. The stop line reports the
     ledger of summary["day"], the day the pass last charged, not the
-    day it started on.
+    day it started on. prices, code_tag and workers come from the
+    --source resolution in main.
     """
     try:
         summary = follow_chain(
@@ -139,7 +149,9 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             stop=stop,
             max_calls_per_block=max_calls,
             daily_budget=daily_budget,
-            prices=PRICES,
+            prices=prices,
+            code_tag=code_tag,
+            workers=workers,
             on_alerts=_print_alerts,
         )
     except KeyboardInterrupt:
@@ -164,7 +176,7 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
     return 3
 
 
-def _run_backfill(args, rpc, store):
+def _run_backfill(args, rpc, store, prices, code_tag, workers):
     try:
         code = _follow(
             rpc,
@@ -173,6 +185,9 @@ def _run_backfill(args, rpc, store):
             stop=args.to_block,
             daily_budget=args.daily_budget,
             max_calls=args.max_calls_per_block,
+            prices=prices,
+            code_tag=code_tag,
+            workers=workers,
         )
     except KeyboardInterrupt:
         # Ctrl-C in the gap between the pass and the return.
@@ -180,7 +195,7 @@ def _run_backfill(args, rpc, store):
     return 0 if code is None else code
 
 
-def _run_listen(args, rpc, store, sleep):
+def _run_listen(args, rpc, store, sleep, prices, code_tag, workers):
     try:
         while True:
             code = _follow(
@@ -188,6 +203,9 @@ def _run_listen(args, rpc, store, sleep):
                 store,
                 daily_budget=args.daily_budget,
                 max_calls=args.max_calls_per_block,
+                prices=prices,
+                code_tag=code_tag,
+                workers=workers,
             )
             if code is None:
                 # Ctrl-C inside the pass: a clean stop, no pause, no loop.
@@ -315,11 +333,17 @@ def _build_parser():
     backfill.add_argument("--to", dest="to_block", type=int, required=True)
     backfill.add_argument("--daily-budget", type=int, default=None)
     backfill.add_argument("--max-calls-per-block", type=int, default=None)
+    backfill.add_argument("--source", choices=["infura", "publicnode"],
+                          default="infura")
+    backfill.add_argument("--workers", type=int, default=None)
 
     listen = sub.add_parser("listen")
     listen.add_argument("--daily-budget", type=int, default=None)
     listen.add_argument("--max-calls-per-block", type=int, default=None)
     listen.add_argument("--interval", type=float, default=12)
+    listen.add_argument("--source", choices=["infura", "publicnode"],
+                        default="infura")
+    listen.add_argument("--workers", type=int, default=None)
 
     clusters = sub.add_parser("clusters")
     clusters_sub = clusters.add_subparsers(dest="subcommand")
@@ -356,6 +380,26 @@ def _build_parser():
     return parser
 
 
+def _resolve_source(args):
+    """The (prices, code_tag, workers) of --source/--workers, or None.
+
+    Validates first: --workers below 1, and --daily-budget together
+    with --source publicnode, are usage errors (None). Returns
+    (PRICES, None, workers or 1) for infura and ({}, "latest",
+    workers or 8) for publicnode. Only called for listen and backfill.
+    """
+    workers = args.workers
+    if workers is not None and workers < 1:
+        raise _UsageError("--workers must be at least 1")
+    if args.source == "publicnode" and args.daily_budget is not None:
+        raise _UsageError(
+            "--daily-budget applies to infura only, not to publicnode"
+        )
+    if args.source == "publicnode":
+        return {}, "latest", (workers or 8)
+    return PRICES, None, (workers or 1)
+
+
 def main(argv=None, rpc=None, sleep=None) -> int:
     """Run one CLI invocation; returns the exit code, never raises."""
     if argv is None:
@@ -376,15 +420,25 @@ def main(argv=None, rpc=None, sleep=None) -> int:
     # The rpc client is built only on the paths that talk to the chain;
     # every other subcommand runs without a key and never calls
     # infura_url().
-    if rpc is None and args.command in ("listen", "backfill"):
-        rpc = _chain_rpc()
+    if args.command in ("listen", "backfill"):
+        try:
+            prices, code_tag, workers = _resolve_source(args)
+        except _UsageError as err:
+            sys.stderr.write("%s\n" % err)
+            return 2
+        if rpc is None:
+            if args.source == "publicnode":
+                rpc = RpcClient(PUBLICNODE_URL, prices={}, max_retries=5)
+            else:
+                rpc = _chain_rpc()
 
     store = Store(args.db)
     try:
         if args.command == "backfill":
-            return _run_backfill(args, rpc, store)
+            return _run_backfill(args, rpc, store, prices, code_tag, workers)
         if args.command == "listen":
-            return _run_listen(args, rpc, store, sleep)
+            return _run_listen(args, rpc, store, sleep,
+                               prices, code_tag, workers)
         if args.command == "clusters":
             if args.subcommand == "top":
                 return _run_clusters_top(args, store)

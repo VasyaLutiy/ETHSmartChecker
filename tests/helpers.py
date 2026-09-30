@@ -10,6 +10,8 @@ tests never open the network.
 import json
 import os
 import tempfile
+import threading
+import time
 
 from ethsc.store import Store
 
@@ -91,32 +93,40 @@ class FakeTransport(object):
 class FakeRpc(object):
     """A duck-typed rpc for ethsc.ingest.follow_chain, offline.
 
-    FakeRpc(codes=None, receipts=None, head="0x18dea21", fail=None) --
-    .call(method, params) answers from the fixture data: codes=None
-    defaults to block_codes(), receipts=None to block_receipts();
-    eth_blockNumber returns head; eth_getBlockReceipts returns the
-    receipt list; eth_getCode returns codes[params[0]] (KeyError for an
-    address outside the fixture map, which ingest_block counts as a
-    failed call). If fail is not None, every call raises it instead of
-    answering. Every call, answered or not, is recorded in self.calls
-    as a (method, list(params)) pair.
+    FakeRpc(codes=None, receipts=None, head="0x18dea21", fail=None,
+    null_receipts=False) -- .call(method, params) answers from the
+    fixture data: codes=None defaults to block_codes(), receipts=None
+    to block_receipts(); eth_blockNumber returns head;
+    eth_getBlockReceipts returns the receipt list, or None when
+    null_receipts is True (the call is still recorded); eth_getCode
+    returns codes[params[0]] (KeyError for an address outside the
+    fixture map, which ingest_block counts as a failed call). If fail
+    is not None, every call raises it instead of answering. Every
+    call, answered or not, is recorded in self.calls as a
+    (method, list(params)) pair, appended under a lock, because
+    phase-10 code calls this object from worker threads.
     """
 
     def __init__(self, codes=None, receipts=None, head="0x18dea21",
-                 fail=None):
+                 fail=None, null_receipts=False):
         self._codes = codes
         self._receipts = receipts
         self._head = head
         self._fail = fail
+        self._null_receipts = null_receipts
         self.calls = []
+        self._lock = threading.Lock()
 
     def call(self, method, params):
-        self.calls.append((method, list(params)))
+        with self._lock:
+            self.calls.append((method, list(params)))
         if self._fail is not None:
             raise self._fail
         if method == "eth_blockNumber":
             return self._head
         if method == "eth_getBlockReceipts":
+            if self._null_receipts:
+                return None
             if self._receipts is None:
                 return block_receipts()
             return self._receipts
@@ -168,3 +178,91 @@ def block_store():
             code_id = store.put_code(bytes.fromhex(text[2:]))
             store.put_address(address, code_id, block)
     return store
+
+
+class CodeServer(object):
+    """A get_code(address, block) callable with concurrency bookkeeping.
+
+    CodeServer(codes=None, hold=0.0, raises=None) -- __call__(address,
+    block) serves codes (None means block_codes(), loaded once in
+    __init__): when address is a key of raises (None meaning {}), the
+    mapped exception instance is raised (it may be KeyboardInterrupt),
+    after the call is recorded; otherwise it sleeps hold seconds when
+    hold > 0 and returns codes[address] (KeyError for an unknown
+    address is fine). All bookkeeping lives under one lock: calls, the
+    list of (address, block) in call order; peak, the largest number
+    of calls in flight at once; threads, the set of
+    threading.get_ident() of every caller.
+    """
+
+    def __init__(self, codes=None, hold=0.0, raises=None):
+        self._codes = codes
+        self._hold = hold
+        self._raises = raises if raises is not None else {}
+        self.calls = []
+        self.peak = 0
+        self.threads = set()
+        self._lock = threading.Lock()
+        self._in_flight = 0
+
+    def __call__(self, address, block):
+        with self._lock:
+            self.calls.append((address, block))
+            self.threads.add(threading.get_ident())
+            self._in_flight += 1
+            if self._in_flight > self.peak:
+                self.peak = self._in_flight
+        try:
+            if address in self._raises:
+                raise self._raises[address]
+            if self._hold > 0:
+                time.sleep(self._hold)
+            if self._codes is None:
+                return block_codes()[address]
+            return self._codes[address]
+        finally:
+            with self._lock:
+                self._in_flight -= 1
+
+
+class FakeUrlopen(object):
+    """A stand-in for urllib.request.urlopen: records, never opens.
+
+    FakeUrlopen(status=200, body=b'{"jsonrpc":"2.0","id":1,
+    "result":"0x1"}') -- a callable object: __call__(request, *args,
+    **kwargs) appends request to self.requests and returns a response
+    object usable in a with statement (__enter__ returns itself,
+    __exit__ returns False) whose getcode() is status and read() is
+    body. The module imports neither urllib, http nor socket, so this
+    stub never touches the network.
+    """
+
+    def __init__(self, status=200,
+                 body=b'{"jsonrpc":"2.0","id":1,"result":"0x1"}'):
+        self.status = status
+        self.body = body
+        self.requests = []
+
+    def __call__(self, request, *args, **kwargs):
+        self.requests.append(request)
+        return _FakeResponse(self.status, self.body)
+
+
+class _FakeResponse(object):
+    """The with-able response returned by FakeUrlopen."""
+
+    def __init__(self, status, body):
+        self._status = status
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def getcode(self):
+        return self._status
+
+    def read(self):
+        return self._body

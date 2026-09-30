@@ -137,7 +137,7 @@ class RpcClientExamples(unittest.TestCase):
             spent.append((method, price))
 
         transport = FakeTransport([
-            (200, ok_body(None)),
+            (200, ok_body([])),
             (200, ok_body(None)),
             (200, ok_body(None)),
         ])

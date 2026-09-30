@@ -8,3 +8,6 @@ PRICES = {
     "eth_getBlockReceipts": 1000,
     "eth_getCode": 80,
 }
+
+# The keyless second data source (phase 10).
+PUBLICNODE_URL = "https://ethereum-rpc.publicnode.com"

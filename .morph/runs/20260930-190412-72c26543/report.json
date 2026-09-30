@@ -1,0 +1,374 @@
+{
+  "deck_id": "20260930-190412-72c26543",
+  "completed_at": "2026-09-30T19:32:46.009",
+  "branch": "morph/20260930-190412-72c26543",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "helpers-p10"
+    ],
+    [
+      "ingest",
+      "rpc"
+    ],
+    [
+      "cli",
+      "ingest-judge",
+      "rpc-judge"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-2a811124097f49bdb7d3e001da059488",
+    "local-b91c7dafbeda491b9d2b924904e15950",
+    "local-08f73c7f73204727ad00c31ef0d1c896",
+    "local-a8e5626133524fdc9cb0f425b703eec2",
+    "local-eaa0a77983a74082bd7cae5e3f5f7f4a"
+  ],
+  "outcomes": {
+    "helpers-p10": {
+      "custom_id": "helpers-p10",
+      "status": "written",
+      "paths": [
+        "./tests/helpers.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "helpers-p10",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "7af56646e367c4ed08b091c6144cf97434b386da",
+      "diffstat": [
+        {
+          "path": "tests/helpers.py",
+          "insertions": 109,
+          "deletions": 11
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/helpers.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "ingest": {
+      "custom_id": "ingest",
+      "status": "written",
+      "paths": [
+        "./ethsc/ingest.py",
+        "./tests/test_ingest_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "b1901c379060ce39b1de2afec2ca7a0bc480a324",
+      "diffstat": [
+        {
+          "path": "ethsc/ingest.py",
+          "insertions": 153,
+          "deletions": 52
+        },
+        {
+          "path": "tests/test_ingest_p10.py",
+          "insertions": 104,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_ingest_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "rpc": {
+      "custom_id": "rpc",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard OK\nprobe OK: rpc\n.....                                                                    [100%]\n5 passed in 0.03s\n........................................................................ [ 27%]\n........................................................................ [ 54%]\n........................................................................ [ 81%]\n...............F.................................                        [100%]\n=================================== FAILURES ===================================\nE   IndexError: pop from empty list\n/home/john/Documents/Work2026/ETHSmartChecker/tests/test_rpc_examples.py:43: IndexError: pop from empty list\n=========================== short test summary info ============================\nFAILED tests/test_rpc_examples.py::RpcClientExamples::test_rpc_client_example_5_on_spend_sums_to_1160\n1 failed, 264 passed in 116.63s (0:01:56)\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/rpc.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/rpc.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/config.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_rpc_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_rpc_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "skipped",
+      "paths": [],
+      "reason": "rpc",
+      "finish_reason": null,
+      "attempts": 0,
+      "winning_variant": null,
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": null
+    },
+    "rpc-judge": {
+      "custom_id": "rpc-judge",
+      "status": "skipped",
+      "paths": [],
+      "reason": "rpc",
+      "finish_reason": null,
+      "attempts": 0,
+      "winning_variant": null,
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": null
+    },
+    "ingest-judge": {
+      "custom_id": "ingest-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_ingest_examples_p10.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "975f70cc49b92f2b31f33033b6e0b44f402b0fa5",
+      "diffstat": [
+        {
+          "path": "tests/test_ingest_examples_p10.py",
+          "insertions": 252,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_ingest_examples_p10.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_examples_p10.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "skipped",
+      "paths": [],
+      "reason": "cli",
+      "finish_reason": null,
+      "attempts": 0,
+      "winning_variant": null,
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": null
+    }
+  },
+  "usage": {
+    "helpers-p10": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790791454-5ic4OGUrLkP8vX35ozyh",
+      "input_tokens": 8226,
+      "output_tokens": 2383,
+      "cost": 0.00145524,
+      "finish_reason": "stop"
+    },
+    "rpc.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790791631-OOvfwFzeKRhggiVdBbR8",
+      "input_tokens": 37654,
+      "output_tokens": 2437,
+      "cost": 0.00411996,
+      "finish_reason": "stop"
+    },
+    "rpc.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790791631-MT9RXjlinG2t3eXPWpFu",
+      "input_tokens": 37654,
+      "output_tokens": 3103,
+      "cost": 0.00431976,
+      "finish_reason": "stop"
+    },
+    "ingest.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790791642-Nm1zH2HyBEaoohZ8jLPd",
+      "input_tokens": 39029,
+      "output_tokens": 5882,
+      "cost": 0.00527721,
+      "finish_reason": "stop"
+    },
+    "ingest.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790791631-MYS2RUkTDlkRZtkWDnQx",
+      "input_tokens": 39029,
+      "output_tokens": 9602,
+      "cost": 0.00639321,
+      "finish_reason": "stop"
+    },
+    "rpc.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790792088-qiCXmlaR4q2YdV0iXagC",
+      "input_tokens": 52892,
+      "output_tokens": 27306,
+      "cost": 0,
+      "finish_reason": "error"
+    },
+    "rpc.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790792088-ffqZvgVhV9FCIMbvuFRC",
+      "input_tokens": 52892,
+      "output_tokens": 27010,
+      "cost": 0,
+      "finish_reason": "error"
+    },
+    "rpc.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790792694-aQeY1Xz9ad9xuuT2I13v",
+      "input_tokens": 37687,
+      "output_tokens": 2601,
+      "cost": 0.001831266,
+      "finish_reason": "stop"
+    },
+    "rpc.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790792694-N0M5Q59Qk0FJu4lJj5jH",
+      "input_tokens": 37687,
+      "output_tokens": 2759,
+      "cost": 0.00421953,
+      "finish_reason": "stop"
+    },
+    "ingest-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790792968-4E8Qk42G5cuYukchWuWf",
+      "input_tokens": 16393,
+      "output_tokens": 3569,
+      "cost": 0.00254607,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 359143,
+    "output_tokens": 86652,
+    "cost": 0.030162246,
+    "requests": 10,
+    "requests_with_usage": 10
+  },
+  "orchestrator_usage": {}
+}
