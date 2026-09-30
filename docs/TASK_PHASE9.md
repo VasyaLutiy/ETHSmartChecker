@@ -239,4 +239,34 @@ the two recon numbers (scout targets named vs deck's final targets; roles moved)
 
 ## 11. Actual
 
-_Filled after the run._
+Two glm runs. Run 1 `20260930-171538-970690b1` (45 min, $0.149): 7 written, 3
+failed — all five code cards + evm-judge + fingerprint-judge landed; the three
+example-judges failed. Run 2 `20260930-181321-afa80e0a` (16 min, $0.037): the
+three re-cut judges all written.
+
+| quantity | prediction | actual |
+|---|---|---|
+| cards in the deck | 10 | 10 (then a 3-card re-cut) |
+| generations | 5–6 | 6 (run 1) + 1 (re-cut) |
+| executor bill | $0.06–0.12 | **$0.186** (0.149 + 0.037), + scout $0.021 |
+| cards with regeneration | 2–3 | cluster r1; run 2: report-judge r1, cli-judge r1, cluster-judge r2 |
+| write-write conflicts | 0 | **0** |
+| tests | > 248 | **265** |
+
+**Falsifiable claim — CONFIRMED exactly** against `smoke/20260930/ethsc.sqlite`
+with the merged code: recheck alerts **572 → 192** (LaunchToken family only,
+TransparentUpgradeableProxy seed 380 → 0); `mutable_delegatecall` **1449 → 585**
+codes.
+
+The three judge failures split as gated: cli-judge = output truncation (glm hit
+the 22000-token cap on the ~780-line file → raised to 32000); report-judge =
+acceptance-guard criterion faults (stale count floor 14→10 after scoping to the
+10 numeric examples; the no-matplotlib guard was correct and stayed); cluster-judge
+= judge-vs-code where the code was right (the contour abbreviated the eip7702
+targets with an ellipsis → handed the full 40-hex keys to the judge). No coverage
+threshold was lowered without that analysis. Recon: scout named the 4 code modules
+dead-on and reasoned cli.py needs no edit; I promoted 7 test files context→target
+and added 3.
+
+Merged to master (`45f7eaf`), not pushed. Ready for the external VERIFY_RUNBOOK
+pass before push.
