@@ -1,9 +1,10 @@
 """Clusters and similarity search over the store.
 
-L0 identical code, L1 identical skeleton, proxy by target, L2 similarity
-by full scan over code_id, and the security watchlist check for a new
-code. Pure orchestration: the module does no I/O of its own -- it reads
-the Store only through its public methods (fingerprints, code_by_id,
+L0 identical code, L1 identical skeleton, proxy by target (EIP-1167
+clones only), eip7702 per delegation target, L2 similarity by full scan
+over code_id, and the security watchlist check for a new code. Pure
+orchestration: the module does no I/O of its own -- it reads the Store
+only through its public methods (fingerprints, code_by_id,
 addresses_of, code_of, seeds) and never imports sqlite3, urllib, http
 or socket.
 
@@ -15,8 +16,10 @@ from typing import List, Tuple
 
 from ethsc.fingerprint import similarity
 
-# Sort rank of the cluster levels: L0 first, then L1, then proxy.
-_LEVEL_RANK = {"L0": 0, "L1": 1, "proxy": 2}
+# Sort rank of the cluster levels: L0 first, then L1, then proxy, then
+# eip7702 last -- the 7702 delegating EOAs must not drown out the
+# contract clusters.
+_LEVEL_RANK = {"L0": 0, "L1": 1, "proxy": 2, "eip7702": 3}
 
 
 def build_clusters(store) -> List[dict]:
@@ -25,22 +28,29 @@ def build_clusters(store) -> List[dict]:
     L0: one cluster per non-proxy code_id with >= 2 addresses.
     L1: one cluster per skeleton_hash shared by >= 2 distinct non-proxy
     code_id; its members are all addresses of all those codes.
-    proxy: one cluster per (kind, target) pair of proxy codes with
-    >= 2 addresses over all codes carrying that pair. A proxy code
-    (fingerprint proxy not None) enters only proxy clusters.
+    proxy: one cluster per (kind, target) pair of EIP-1167 clones with
+    >= 2 addresses over all codes carrying that pair.
+    eip7702: one cluster per (kind, target) pair of EIP-7702 delegations
+    with >= 2 addresses; a 7702 designator is a delegating EOA, a
+    wallet, not a deployed contract, so it is kept apart from the
+    contract proxy clusters.
+
+    A proxy code (fingerprint proxy not None) enters only its proxy or
+    eip7702 cluster, never L0 or L1.
 
     Each cluster is a dict with exactly the keys level, key and members
     (sorted lowercase addresses); key is the code_id, the skeleton_hash
     or "<kind>:<target>". The list is sorted by member count descending,
-    then level (L0, L1, proxy), then key ascending. An empty store gives
-    [].
+    then level (L0, L1, proxy, eip7702), then key ascending. An empty
+    store gives [].
     """
     fps = store.fingerprints()
 
-    l0_members = {}      # code_id -> set of addresses
-    l1_groups = {}       # skeleton_hash -> list of code_id
-    l1_members = {}      # skeleton_hash -> set of addresses
-    proxy_members = {}   # (kind, target) -> set of addresses
+    l0_members = {}       # code_id -> set of addresses
+    l1_groups = {}        # skeleton_hash -> list of code_id
+    l1_members = {}       # skeleton_hash -> set of addresses
+    proxy_members = {}    # (kind, target) -> set of addresses, eip1167 only
+    eip7702_members = {}  # (kind, target) -> set of addresses
 
     for fp in fps:
         code_id = fp["code_id"]
@@ -49,7 +59,10 @@ def build_clusters(store) -> List[dict]:
             continue
         if fp["proxy"] is not None:
             pair = (fp["proxy"]["kind"], fp["proxy"]["target"])
-            proxy_members.setdefault(pair, set()).update(addresses)
+            if pair[0] == "eip7702":
+                eip7702_members.setdefault(pair, set()).update(addresses)
+            else:
+                proxy_members.setdefault(pair, set()).update(addresses)
         else:
             l0_members[code_id] = set(addresses)
             key = fp["skeleton_hash"]
@@ -79,6 +92,16 @@ def build_clusters(store) -> List[dict]:
             clusters.append(
                 {
                     "level": "proxy",
+                    "key": "%s:%s" % (pair[0], pair[1]),
+                    "members": sorted(members),
+                }
+            )
+
+    for pair, members in sorted(eip7702_members.items()):
+        if len(members) >= 2:
+            clusters.append(
+                {
+                    "level": "eip7702",
                     "key": "%s:%s" % (pair[0], pair[1]),
                     "members": sorted(members),
                 }

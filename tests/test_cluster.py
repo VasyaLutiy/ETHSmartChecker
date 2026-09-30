@@ -100,13 +100,13 @@ def as_triple(cluster):
 
 
 # The exact expected cluster list of block 26077729, in sort order:
-# member count descending, level L0 < L1 < proxy, key ascending.
+# member count descending, level L0 < L1 < proxy < eip7702, key ascending.
 EXPECTED_TRIPLES = [
     ("L1", "29ec9639b8fa8f759c993d77fe43ccfb471dd596d23b3b098965ebb64e56235f", 8),
     ("L1", "7ce24a99dd96320ff172118ca968fe518c7236b6b1d9e563f8f781135e8c5fa3", 5),
     ("L0", "8b5db55fa9ab3b9527508d4abe0b39eb588bf310270c8e04b3f38214e8ba63b4", 4),
     ("proxy", "eip1167:0x4181f37093e3a21a4e0d5ef355c5b1938cba5bfb", 3),
-    ("proxy", "eip7702:0xd2e28229f6f2c235e57de2ebc727025a1d0530fb", 3),
+    ("eip7702", "eip7702:0xd2e28229f6f2c235e57de2ebc727025a1d0530fb", 3),
     ("L0", "501b4a60e24ea82032b7442d75995dee3bdbfc17b25caffc3c955eadc8c2a418", 2),
     ("L0", "5b8bff324e02136edb0775bd77aa0fe773c1e23092305fe63f50a9e92f5b8faf", 2),
     ("L0", "6060dd38da4f6b8a88c46c019ee34a863b3db7b0df25ecdf7af71d0339fdb314", 2),
@@ -114,19 +114,18 @@ EXPECTED_TRIPLES = [
     ("L0", "e518057ee9772b6d5ad104f0c0cbae96d42e5543dcaaff3b39257089ab5fe699", 2),
     ("L0", "ef82dac27e8156885d056a57c71e69cbdd4a1f345095161053df92240f0350f3", 2),
     ("proxy", "eip1167:0x8b72b9b8e544f944cdcdf0cdb6194f917ac1eba5", 2),
-    ("proxy", "eip7702:0x0000fb7702036ff9f76044a501ac1aa74cbab16b", 2),
-    ("proxy", "eip7702:0x490aac77c960b0569c8e446ac7e12490bd44ca1d", 2),
-    ("proxy", "eip7702:0x63c0c19a282a1b52b07dd5a65b58948a07dae32b", 2),
+    ("eip7702", "eip7702:0x0000fb7702036ff9f76044a501ac1aa74cbab16b", 2),
+    ("eip7702", "eip7702:0x490aac77c960b0569c8e446ac7e12490bd44ca1d", 2),
+    ("eip7702", "eip7702:0x63c0c19a282a1b52b07dd5a65b58948a07dae32b", 2),
 ]
 
 
 class BuildClustersBlockTest(unittest.TestCase):
     """Build Clusters over the full block 26077729 store."""
 
-    maxDiff = None
-
     def test_block_example_1(self):
-        """Example 1: 7 L0 (4,2,2,2,2,2,2), 2 L1 (8, 5), 6 proxy."""
+        """Example 1: 7 L0 (4,2,2,2,2,2,2), 2 L1 (8, 5), 2 eip1167 proxy
+        clusters (3, 2) and 4 eip7702 clusters (3, 2, 2, 2)."""
         store = make_block_store()
         try:
             clusters = build_clusters(store)
@@ -150,7 +149,15 @@ class BuildClustersBlockTest(unittest.TestCase):
                 len(c["members"]) for c in clusters if c["level"] == "proxy"
             ]
             self.assertEqual(
-                proxy_sizes, [3, 3, 2, 2, 2, 2], "proxy sizes"
+                proxy_sizes, [3, 2], "proxy sizes (eip1167 only)"
+            )
+            eip7702_sizes = [
+                len(c["members"])
+                for c in clusters
+                if c["level"] == "eip7702"
+            ]
+            self.assertEqual(
+                eip7702_sizes, [3, 2, 2, 2], "eip7702 sizes"
             )
         finally:
             store.close()
@@ -290,8 +297,6 @@ class BuildClustersBlockTest(unittest.TestCase):
 class FindSimilarTest(unittest.TestCase):
     """Find Similar over the block store and the BELLE store."""
 
-    maxDiff = None
-
     def test_block_example_1(self):
         """Example 1: from the USDC/WETH pair, the three same-code
         addresses with 1.0, then 0xcf6daab9... with 26/32."""
@@ -425,8 +430,6 @@ class FindSimilarTest(unittest.TestCase):
 
 class MatchWatchlistTest(unittest.TestCase):
     """Match Watchlist over the BELLE store and its seeds."""
-
-    maxDiff = None
 
     def test_example_1(self):
         """Example 1: the BELLE seed alerts on the ALPHA copy with
