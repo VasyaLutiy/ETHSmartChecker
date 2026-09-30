@@ -338,11 +338,14 @@ System:
             fingerprint(code: bytes) -> Fingerprint dict or None for empty
             code: code_id (sha256 hex of the raw code), size, skeleton_hash
             (sha256 hex of build_skeleton), selectors (extract_selectors),
-            proxy (detect_proxy).
+            proxy (detect_proxy), std_proxy (is_std_proxy, a bool; phase 11).
           behavior: >
             code_id is sha256, not keccak: stdlib has no keccak and the
             clustering does not need the chain's codeHash. Never raises on
-            garbage bytes.
+            garbage bytes. std_proxy is the one input of the Similarity Score
+            rules that selectors and proxy do not already carry; it is in the
+            dict so that two stored fingerprints can be scored without their
+            code (phase 11).
           guardrails: [Tolerant Parser]
           steps:
             - uses: evm
@@ -364,6 +367,53 @@ System:
               when: 'fingerprint is called'
               then: 'the result is None'
               ref: 'Tolerant Parser'
+            - given: 'code_proxy_seed_0c010533.hex, code_proxy_046eee2c.hex and code_weth9.hex'
+              when: 'fingerprint is called on each'
+              then: 'std_proxy is True, True and False; the dict has exactly the six keys code_id, size, skeleton_hash, selectors, proxy, std_proxy'
+              ref: 'is_std_proxy on the fixtures (phase 11)'
+        - name: Score Fingerprints
+          description: >
+            score_fingerprints(fp_a, fp_b) -> float in [0, 1]: the Similarity
+            Score of two codes computed from their Fingerprint dicts alone,
+            without their bytes. Each argument is a Fingerprint dict (as
+            fingerprint() or Store.fingerprints() gives it) or None (the
+            fingerprint of empty code).
+          behavior: >
+            The same three rules as Similarity Score, in the same order, each
+            read from the dict: (1) proxy -- if either proxy is not None, 1.0
+            when both are not None with equal kind AND equal target, else 0.0;
+            (2) otherwise 0.0 if either std_proxy is true or either selectors
+            list is empty; (3) otherwise the Jaccard index of the two selector
+            sets, float(len(intersection)) / float(len(union)), never rounded.
+            None on either side scores 0.0 (it has no proxy, no std_proxy and
+            no selectors, so rule (2) applies). Rule (2) reads the key
+            std_proxy of the dict, never the code. Symmetric; never raises on
+            two dicts of the Fingerprint schema or None. For every pair of
+            codes a, b: score_fingerprints(fingerprint(a), fingerprint(b)) ==
+            similarity(a, b), the same float.
+          steps:
+            - uses: Fingerprint
+          examples:
+            - given: 'fingerprint(code_belle.hex) and fingerprint(code_belle_copy_1807090d.hex)'
+              when: 'score_fingerprints is called'
+              then: '13/15 (0.8666666666666667), equal to similarity of the two codes'
+              ref: 'Similarity Score example 3'
+            - given: 'fingerprint(code_proxy_seed_0c010533.hex) against fingerprint(code_proxy_046eee2c.hex), and against fingerprint(code_weth9.hex)'
+              when: 'score_fingerprints is called'
+              then: '0.0 both times'
+              ref: 'rule (2); Similarity Score examples 6 and 7'
+            - given: 'fingerprint(code_weth9.hex) against a copy of it with std_proxy set to True; and fingerprint(code_proxy_seed_0c010533.hex) against a copy of itself with std_proxy set to False on both sides'
+              when: 'score_fingerprints is called'
+              then: '0.0 for the first (rule 2 reads the dict); 1.0 for the second (5 equal admin selectors, rule 3)'
+              ref: 'the seed proxy has 5 selectors, fixtures README'
+            - given: 'None against fingerprint(code_weth9.hex), fingerprint(code_weth9.hex) against None, and None against None'
+              when: 'score_fingerprints is called'
+              then: '0.0 all three times'
+              ref: 'similarity(b"", code) == 0.0'
+            - given: 'the 19 fixtures tests/fixtures/code_*.hex'
+              when: 'score_fingerprints(fingerprint(a), fingerprint(b)) and similarity(a, b) are called for all 361 ordered pairs (a, b), a == b included'
+              then: 'the two floats are equal (==) on all 361 pairs'
+              ref: 'on the live 30.09 base: 15018 recheck pairs, 0 mismatches (measured 30.09)'
         - name: Similarity Score
           description: >
             similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: a
@@ -393,6 +443,9 @@ System:
             earlier phases is gone: on the live 30.09 base it made every
             selector-poor proxy match the TransparentUpgradeableProxy seed
             (380 of 572 recheck alerts at 1.0), all false.
+            Since phase 11 similarity(code_a, code_b) keeps this signature and
+            this contract and is computed as score_fingerprints(fingerprint(
+            code_a), fingerprint(code_b)): the rules live in one place.
           steps:
             - uses: evm
           examples:
@@ -433,6 +486,7 @@ System:
             skeleton_hash: sha256 hex of build_skeleton(code)
             selectors: sorted list of "0x…" 8-hex strings
             proxy: Proxy Info or None
+            std_proxy: bool, is_std_proxy(code) (phase 11)
     - name: store
       description: >
         SQLite persistence: distinct codes with their fingerprints, addresses
@@ -449,7 +503,10 @@ System:
             addresses_of(code_id) -> sorted list. Bulk reads for cluster:
             fingerprints() -> list of Fingerprint dicts, one per row of codes,
             sorted by code_id; code_by_id(code_id) -> bytes or None for an
-            unknown code_id. close() closes the connection.
+            unknown code_id. close() closes the connection. Phase 11: the
+            schema holds the index addresses_code_id on addresses(code_id),
+            and the codes table the column std_proxy INTEGER (0 or 1), written
+            by put_code from fingerprint(code)["std_proxy"].
           behavior: >
             Addresses are lowercased on the way in: every method accepts an
             address in any case and stores or looks it up lowercase. Every
@@ -458,10 +515,26 @@ System:
             not raise. Every list the store returns is sorted. Each element of
             fingerprints() equals fingerprint(code) of that code, with exactly
             the keys code_id, size, skeleton_hash, selectors (a list, from
-            json.loads of the stored text) and proxy ({kind, target} or None
-            when proxy_kind is NULL); an empty database gives []. Other
+            json.loads of the stored text), proxy ({kind, target} or None
+            when proxy_kind is NULL) and std_proxy (a bool, from the stored
+            column); an empty database gives []. Other
             modules read the store only through these methods, never through
             its SQLite connection.
+            Opening a database migrates it in place, once, with no flag: the
+            index is created by CREATE INDEX IF NOT EXISTS in the schema
+            script (after the addresses table); a codes table without the
+            column std_proxy gets ALTER TABLE codes ADD COLUMN std_proxy
+            INTEGER, so the column is the last one, after code, in a fresh
+            and in a migrated database alike; then every row whose std_proxy
+            IS NULL is filled with is_std_proxy of its stored code and
+            committed. The NULL fill runs on every open, not only after the
+            ALTER: a process killed between the ALTER and the fill, or a row
+            written by an older ethsc, is repaired on the next open instead of
+            scoring as a non-proxy forever. On the live 30.09 base (7509
+            codes, 48413 addresses) the first open takes about 9 s (the fill),
+            every later open well under 1 s; addresses_of went from a scan of
+            48413 rows to an index lookup (build_clusters 200 s -> 0.12 s,
+            measured 30.09).
           guardrails: [No Network In Core, Deterministic Output]
           steps:
             - uses: fingerprint
@@ -488,6 +561,30 @@ System:
               when: 'fingerprints() is called'
               then: '130 fingerprints, 12 of them with proxy not None'
               ref: 'counted over codes_26077729.json (store-read acceptance of phase 3)'
+            - given: 'a fresh temp db'
+              when: 'PRAGMA table_info(codes) and PRAGMA index_list(addresses) are read'
+              then: 'the columns are code_id, size, skeleton_hash, selectors, proxy_kind, proxy_target, code, std_proxy in that order; addresses has an index named addresses_code_id on the one column code_id'
+              ref: 'phase 11 schema'
+            - given: 'a store filled from codes_26077729.json'
+              when: 'fingerprints() is called'
+              then: '130 fingerprints, 17 of them with std_proxy True; each equals fingerprint(code) of its stored code, all six keys'
+              ref: 'is_std_proxy counted over the 130 distinct codes of codes_26077729.json (phase 11)'
+            - given: >
+                a phase-10 database: a file made with the phase-10 schema (codes
+                with the seven columns code_id .. code, no std_proxy, no index
+                on addresses) holding the 130 codes and 147 addresses with code
+                of codes_26077729.json, written by plain INSERTs
+              when: 'Store(path) opens it, and fingerprints() is called; then the same codes go through put_code into a fresh db'
+              then: >
+                after the open the codes table has the column std_proxy last
+                and addresses the index addresses_code_id; fingerprints() of
+                the migrated db equals fingerprints() of the fresh db, 130
+                dicts, 17 with std_proxy True; no row has std_proxy NULL
+              ref: 'phase 11 migration; on the live 30.09 copy: 7509 codes, 864 std_proxy True'
+            - given: 'a phase-11 db of the 130 codes whose std_proxy was set back to NULL on every row (a fill interrupted after the ALTER)'
+              when: 'the db is reopened with Store(path) and fingerprints() is called'
+              then: 'no row has std_proxy NULL and fingerprints() equals that of a fresh db of the same codes'
+              ref: 'the NULL fill runs on every open (phase 11)'
         - name: Track Progress
           description: >
             get_progress() -> int or None, the last fully ingested block;
@@ -571,8 +668,9 @@ System:
           schema: >
             codes(code_id TEXT PRIMARY KEY, size INTEGER, skeleton_hash TEXT,
             selectors TEXT (JSON list), proxy_kind TEXT, proxy_target TEXT,
-            code BLOB); addresses(address TEXT PRIMARY KEY, code_id TEXT NULL,
-            block INTEGER); progress(key TEXT PRIMARY KEY, block INTEGER);
+            code BLOB, std_proxy INTEGER); addresses(address TEXT PRIMARY KEY,
+            code_id TEXT NULL, block INTEGER), index addresses_code_id on
+            addresses(code_id); progress(key TEXT PRIMARY KEY, block INTEGER);
             seeds(address TEXT PRIMARY KEY, code_id TEXT, label TEXT);
             ledger(day TEXT, method TEXT, credits INTEGER)
     - name: cluster
@@ -633,9 +731,13 @@ System:
             to address's code is >= min_score; sorted by score descending,
             then address.
           behavior: >
-            Full scan: one similarity per distinct code_id, fanned out to its
+            Full scan: one score per distinct code_id, fanned out to its
             addresses. Returns tuples (address, score) with score the float
-            from similarity, unrounded. The queried address itself is
+            from similarity, unrounded. Since phase 11 the score is
+            score_fingerprints(query fingerprint, fp) over store.fingerprints():
+            the query fingerprint is fingerprint(store.code_of(address)), and
+            the stored codes are never loaded -- no code_by_id, no similarity
+            (live 30.09 copy: 241 s -> under 2 s, same output). The queried address itself is
             excluded; the other addresses of the same code come back with
             1.0. The query address may be in any case. Unknown address or one
             without code gives [].
@@ -665,7 +767,13 @@ System:
           behavior: >
             One similarity per seed from store.seeds(); score is the float
             from similarity, unrounded. With no seeds, on b"" and on garbage
-            bytes it returns [] or a list, never an exception.
+            bytes it returns [] or a list, never an exception. Since phase 11
+            the code is fingerprinted once, and each seed is scored by
+            score_fingerprints against the element of store.fingerprints()
+            with the seed's code_id; no code_by_id, no similarity. A seed
+            whose code_id has no fingerprint is skipped. fingerprint(b"") is
+            None and scores 0.0 like similarity(b"", code): at min_score 0.0
+            empty code still gives one 0.0 alert per seed, as before.
           guardrails: [Deterministic Output, Tolerant Parser]
           steps:
             - uses: store
@@ -697,6 +805,10 @@ System:
             score is the float from similarity, unrounded. One similarity per
             (code_id, seed) pair, fanned out to addresses_of(code_id): the
             cost is distinct codes times seeds, never addresses times seeds.
+            Since phase 11 each (code_id, seed) pair is scored by
+            score_fingerprints over two elements of store.fingerprints(); no
+            code is loaded (live 30.09 copy: 29 s -> under 2 s, 15018 pairs,
+            0 mismatches against similarity).
             A seed never alerts on itself -- the single pair address ==
             seed_address is dropped -- while every other address of the
             seed's own code alerts with score 1.0, unless that code is an
@@ -712,7 +824,7 @@ System:
             depend on insertion order, and two calls on the same store give
             equal lists. No seeds, an empty store, or seed_addresses naming
             nothing known give []. Reads the store through seeds(),
-            fingerprints(), code_by_id() and addresses_of() only.
+            fingerprints() and addresses_of() only (phase 11: no code_by_id).
           guardrails: [Deterministic Output, No Network In Core]
           steps:
             - uses: store
@@ -743,6 +855,25 @@ System:
               when: 'recheck_watchlist(store) is called'
               then: '[] -- a standard-proxy seed matches nothing: not the other stored copy of its own bytecode (B), not the distinct standard proxy'
               ref: 'similarity rule 2; the live 30.09 false positive, reduced to zero'
+            - given: >
+                the store from codes_26077729.json with seed
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc "UniV2 pair seed", its
+                code_by_id replaced by a stub that raises, and
+                ethsc.cluster.similarity replaced by a stub that raises
+              when: 'recheck_watchlist(store), find_similar(store, "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc") and match_watchlist(store, bytes of code_univ2_usdc_weth.hex) are called'
+              then: >
+                the same 4 alerts as example 1; the same 4 results as Find
+                Similar example 1 (0x22052a1a0f5a3d2839d71c458f177e68b0e73963,
+                0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c,
+                0x3041cbd36888becc7bbcbc0045e3b1f144466f5f with 1.0, then
+                0xcf6daab95c476106eca715d48de4b13287ffdeaa with 0.8125); one
+                alert, seed 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc, score
+                1.0 -- no stub is ever called
+              ref: 'phase 11: scores come from fingerprints() and score_fingerprints only'
+            - given: 'a store with seed BELLE (0x34c6211621f2763c60eb007dc2ae91090a2d22f6, "BELLE honeypot")'
+              when: 'match_watchlist(store, b"", min_score=0.0)'
+              then: 'one alert, seed 0x34c6211621f2763c60eb007dc2ae91090a2d22f6, score 0.0 -- unchanged from before phase 11'
+              ref: 'score_fingerprints(None, fp) == 0.0 == similarity(b"", code)'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
