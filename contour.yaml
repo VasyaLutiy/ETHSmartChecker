@@ -199,6 +199,59 @@ System:
             - given: 'code_weth9.hex and code_usdt.hex'
               when: 'build_skeleton is called on each'
               then: 'the skeletons differ'
+        - name: Flag Risk
+          description: >
+            risk_flags(code: bytes) -> {"selfdestruct": bool,
+            "mutable_delegatecall": bool}: two per-code security flags read
+            from the runtime bytecode alone -- no source, no data-flow, no
+            control-flow graph.
+          behavior: >
+            Both flags are read from the disassembly of the body from
+            strip_metadata, so a 0xFF or 0xF4 byte inside a PUSH immediate or
+            inside the metadata trailer never counts. selfdestruct is True when
+            an opcode SELFDESTRUCT (0xFF) appears in that body: it marks the
+            opcode present as an executable instruction, not a proof that some
+            path reaches it (there is no CFG here, only disassembly).
+            mutable_delegatecall is True when three conditions hold together:
+            an opcode DELEGATECALL (0xF4) appears in the body, detect_proxy(code)
+            is not "eip1167" (an EIP-1167 clone bakes its implementation address
+            into the code and is excluded, however it is reached), and an opcode
+            SLOAD (0x54) appears in the body -- the cheap syntactic stand-in,
+            since data-flow is out of scope, for an implementation address that
+            comes from storage rather than hardcoded. Order and position of the
+            opcodes do not matter, only their presence. Never raises on empty or
+            garbage bytes: risk_flags(b"") is both False.
+          guardrails: [Tolerant Parser]
+          steps:
+            - reads: Runtime Code
+            - calls: Disassemble
+            - calls: Strip Metadata
+            - calls: Detect Proxy
+            - produces: Risk Flags
+          examples:
+            - given: 'code_weth9.hex'
+              when: 'risk_flags is called'
+              then: 'both flags are False'
+              ref: 'no SELFDESTRUCT and no DELEGATECALL opcode in the WETH9 body'
+            - given: 'the EIP-1167 clone code_clone_270df012.hex (one DELEGATECALL, target baked as a PUSH20 immediate)'
+              when: 'risk_flags is called'
+              then: 'both flags are False -- an eip1167 clone is never mutable_delegatecall'
+              ref: 'detect_proxy is eip1167; Detect Proxy example 1'
+            - given: 'the single byte b"\xff", then the two bytes b"\x60\xff" (PUSH1 0xff)'
+              when: 'risk_flags is called on each'
+              then: 'selfdestruct is True for b"\xff" and False for b"\x60\xff"; both mutable_delegatecall False'
+              ref: 'Tolerant Parser: 0xff as an opcode versus 0xff as PUSH data'
+            - given: 'a store filled from codes_26077729.json, risk_flags read over every distinct code'
+              when: 'the codes with each flag are counted'
+              then: >
+                exactly 1 code has selfdestruct (address
+                0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc) and 29 codes have
+                mutable_delegatecall (over 33 addresses); no code has both
+              ref: 'counted over codes_26077729.json, 2026-09-30'
+            - given: 'empty code b""'
+              when: 'risk_flags is called'
+              then: 'both flags are False and nothing raises'
+              ref: 'Tolerant Parser'
       dataObjects:
         - name: Runtime Code
           description: >
@@ -218,6 +271,13 @@ System:
           schema:
             kind: '"eip1167" or "eip7702"'
             target: '"0x" + 40 lowercase hex'
+        - name: Risk Flags
+          description: >
+            The two per-code security flags risk_flags reads from bytecode,
+            in this fixed key order.
+          schema:
+            selfdestruct: 'bool -- a SELFDESTRUCT (0xFF) opcode in the stripped body'
+            mutable_delegatecall: 'bool -- a DELEGATECALL (0xF4) opcode in a non-eip1167 code whose body also has SLOAD (0x54)'
     - name: fingerprint
       description: >
         One fingerprint per distinct code, and the L2 similarity between two
@@ -841,7 +901,8 @@ System:
             [--interval S], backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K], clusters top [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L, seed list,
-            recheck [--min 0.8], report [--out PREFIX].
+            recheck [--min 0.8], report [--out PREFIX],
+            risk [--flag {selfdestruct,mutable_delegatecall}].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
             Without rpc, builds RpcClient(infura_url()), but only on the way
             into a subcommand that talks to the chain -- listen and
@@ -857,8 +918,16 @@ System:
             "ALERT\t<address>\t<seed_address>\t<label>\t<score>" from
             backfill, listen, recheck and seed add; clusters top (K default 20):
             "<level>\t<key>\t<member count>"; cluster <addr>:
-            "<level>\t<key>\t<members comma-joined>", 0 or 1 line; similar:
-            "<address>\t<score>"; seed list: "<address>\t<label>". stdout
+            "<level>\t<key>\t<members comma-joined>\t<flags>", 0 or 1 line,
+            where <flags> is the risk flags of the queried address's code;
+            similar: "<address>\t<score>\t<flags>"; risk: "<address>\t<flags>",
+            one line per stored address whose code has at least one flag;
+            seed list: "<address>\t<label>". A <flags> field is the set risk
+            flags of that address's code as risk_flags gives them, the names
+            that are True joined by "," in the fixed order selfdestruct then
+            mutable_delegatecall, or "-" when neither is set (never an empty
+            field); on cluster and similar it is always present, "-" included,
+            so the record keeps a fixed column count. stdout
             holds only these records; stderr only one-line messages. Exit
             codes: 0 success; 1 RpcError out of follow_chain (stderr is
             str(err), no traceback); 2 usage error (argparse, a positional
@@ -904,13 +973,23 @@ System:
             subcommand that needs matplotlib: with matplotlib absent it
             writes neither file, leaves stdout empty, prints one line on
             stderr naming matplotlib and exits 2 with no traceback. It makes
-            no rpc call. Nothing printed ever contains the key.
+            no rpc call. risk prints one "<address>\t<flags>" record for every
+            stored address whose code carries at least one risk flag (an
+            address stored without code is never printed, and neither is a
+            code whose flags are both False), sorted by address ascending;
+            --flag NAME restricts the listing to the addresses whose code has
+            that one flag and prints only that name in the <flags> field.
+            risk reads flags with risk_flags over the code of each address,
+            makes no rpc call, exits 0 -- also with an empty database, where
+            stdout stays empty -- and two runs on an unchanged database print
+            byte-identical stdout. Nothing printed ever contains the key.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
             - uses: ingest
             - uses: cluster
             - uses: store
+            - uses: evm
           examples:
             - given: 'a fake rpc over receipts_26077729.json and codes_26077729.json'
               when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake)'
@@ -985,6 +1064,34 @@ System:
             - given: 'the same db and an import of ethsc.charts that raises ImportError'
               when: 'main(["--db", db, "report", "--out", tmp + "/r"]) is run'
               then: 'exit 2, stdout empty, no file written, and stderr exactly one line naming matplotlib, with no traceback'
+            - given: 'the db of the backfill above (206 addresses of block 26077729)'
+              when: 'main(["--db", db, "risk"]) is run twice'
+              then: >
+                exit 0 both times and byte-identical stdout: 34 lines, the
+                first "0x07696dcab55e62cfef953666b29fe1970518cb00
+                mutable_delegatecall" and the last
+                "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc selfdestruct";
+                stderr empty
+              ref: 'counted over codes_26077729.json: 33 addresses mutable_delegatecall + 1 selfdestruct, no overlap; Deterministic Output'
+            - given: 'the same db'
+              when: 'main(["--db", db, "risk", "--flag", "selfdestruct"]) is run'
+              then: 'exit 0 and exactly one line, "0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\tselfdestruct"'
+              ref: 'the one code with a SELFDESTRUCT opcode in the block'
+            - given: 'the same db'
+              when: 'main(["--db", db, "cluster", "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"]) is run'
+              then: >
+                exit 0 and one line whose fourth tab field is
+                "mutable_delegatecall": an L0 cluster of two addresses
+                0x28b5a0e9c621a5badaa536219b3a228c8168cf5d and
+                0x81d40f21f12a8f0e3252bccb954d722d4c464b64 sharing one code
+              ref: 'two addresses of one code that has DELEGATECALL, SLOAD and is no eip1167'
+            - given: 'the same db'
+              when: 'main(["--db", db, "similar", "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc", "--min", "0.8"]) is run'
+              then: >
+                exit 0 and 4 lines, each ending in a "-" field (the three
+                UniswapV2Pair matches at 1.0000 and 0xcf6daab9... at 0.8125
+                all carry no risk flag), the score still the field before it
+              ref: 'the flag column is always present; UniswapV2Pair has no SELFDESTRUCT and no DELEGATECALL opcode'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
@@ -1003,8 +1110,8 @@ System:
             seeds() only, and calls build_clusters and recheck_watchlist for
             the cluster and alert sections.
           behavior: >
-            The eight sections, under exactly the keys summary, levels,
-            skeletons, clusters, codes, ledger, alerts, spearman.
+            The nine sections, under exactly the keys summary, levels,
+            skeletons, clusters, codes, ledger, alerts, spearman, risk.
             summary is store.counts() verbatim. levels holds, per level
             "L0", "L1" and "proxy", the number of clusters, the number of
             distinct member addresses and that number over
@@ -1029,7 +1136,14 @@ System:
             base. min and max stay ints. ledger is
             store.ledger_days() plus their total. alerts is
             recheck_watchlist(store) folded per seed into {address, label,
-            count}, sorted by address, plus the total. The whole structure
+            count}, sorted by address, plus the total. risk carries, under
+            the two keys selfdestruct and mutable_delegatecall, the reach of
+            each flag over the base as risk_flags(code) gives it: codes (the
+            number of distinct codes with the flag), code_share over
+            summary["codes"], addresses (the number of addresses with code
+            whose code has the flag) and address_share over
+            summary["addresses_with_code"]. Both shares are 0.0 when the
+            denominator is 0. The whole structure
             is built of ints, floats, strings, lists and dicts only, holds
             no path, no date and no object address, and two calls on the
             same store give equal structures.
@@ -1066,9 +1180,19 @@ System:
               when: 'collect(store)["alerts"] is read'
               then: 'total 4 and one seed entry, that address, label "UniV2 pair seed", count 4'
               ref: 'the four alerts of Recheck Watchlist in the cluster group'
+            - given: 'a store filled from codes_26077729.json (130 codes, 147 addresses with code)'
+              when: 'collect(store)["risk"] is read'
+              then: >
+                selfdestruct codes 1, addresses 1, code_share 1/130 and
+                address_share 1/147; mutable_delegatecall codes 29,
+                addresses 33, code_share 29/130 and address_share 33/147
+              ref: 'counted over codes_26077729.json, 2026-09-30'
             - given: 'an empty database'
               when: 'collect(store) is called'
-              then: 'all eight keys present, summary all zeros, clusters, ledger and alert lists empty, and no exception'
+              then: >
+                all nine keys present, summary all zeros, clusters, ledger and
+                alert lists empty, both risk flags 0 codes and 0.0 shares, and
+                no exception
         - name: Spearman Matrix
           description: >
             spearman(rows) -> {"features": [...], "n": int, "matrix":
@@ -1139,8 +1263,11 @@ System:
             SVGs are inlined verbatim, each stripped of its XML declaration
             and its DOCTYPE, so nothing is ever fetched. It carries the
             summary, the level and skeleton shares, the top clusters, the
-            ledger, the alerts per seed and the Spearman coefficients as a
-            table beside the heat map, every float printed "%.4f" and every
+            ledger, the alerts per seed, the Spearman coefficients as a
+            table beside the heat map, and the risk flags as a small table --
+            per flag its code count, code share, address count and address
+            share, every share "%.4f" -- with no chart of its own; every
+            float printed "%.4f" and every
             null cell printed as the literal "n/a" -- never as an empty
             cell, which would read as a coefficient of zero. Two runs on the same store
             in the same environment give byte-identical html and json. The
@@ -1178,7 +1305,9 @@ System:
             selectors{min, median, max, histogram{edges, counts}}};
             ledger{days[{day, credits}], total};
             alerts{seeds[{address, label, count}], total};
-            spearman{features[6], n, matrix[6][6] of float or null}
+            spearman{features[6], n, matrix[6][6] of float or null};
+            risk{selfdestruct|mutable_delegatecall -> {codes, code_share,
+            addresses, address_share}}
     - name: charts
       description: >
         The drawing layer, and the only module of the package allowed a
