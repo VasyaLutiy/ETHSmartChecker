@@ -249,6 +249,22 @@ class Store(object):
             for row in rows
         ]
 
+    def remove_seed(self, address: str) -> bool:
+        """Delete the seed of address; True iff a row was deleted.
+
+        Takes the address in any case. Never raises for an address the
+        db does not know or one that is stored but not a seed: both
+        give False and change nothing. The codes and addresses rows of
+        that address stay as they were, so the address can be seeded
+        again with add_seed and no rpc call.
+        """
+        address = address.lower()
+        cursor = self._conn.execute(
+            "DELETE FROM seeds WHERE address = ?", (address,)
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
     # -- Budget Ledger ------------------------------------------------------
 
     def spend(self, day: str, method: str, credits: int) -> None:

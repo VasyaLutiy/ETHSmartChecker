@@ -59,6 +59,14 @@ called on their path. No network in this module: urllib, http and socket
 stay in ethsc.rpc. The rpc object is injected (tests) or built here from
 ethsc.rpc only; the store is used through its public methods, never its
 private attributes.
+
+seed add --fetch (phase 12) fetches the code of an address no listen or
+backfill ever stored: keyless, over the public node, and only when the
+address is not already in the store -- a known address, EOA included,
+takes the old path and never builds a client or calls the chain. seed
+remove <address> deletes one seed (exit 2, "not a seed: <address>",
+when it was not one) and leaves the code and address rows untouched, so
+the address can be seeded again without a new fetch.
 """
 
 import argparse
@@ -78,6 +86,8 @@ _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 # The fixed order of the flags field and of the --flag choices.
 _FLAG_NAMES = ("selfdestruct", "mutable_delegatecall")
+
+_HEX_DIGITS = "0123456789abcdefABCDEF"
 
 
 class _UsageError(Exception):
@@ -101,6 +111,24 @@ def _check_address(address):
 def _chain_rpc():
     """The rpc client for the subcommands that talk to the chain."""
     return RpcClient(infura_url())
+
+
+def _is_hex_code(text):
+    """True iff text is "0x" + a (possibly empty) run of hex digits.
+
+    Copied from ethsc.ingest._is_hex_code, which is private: seed add
+    --fetch needs the same eth_getCode validation without reaching into
+    another module's private helper.
+    """
+    if not isinstance(text, str) or not text.startswith("0x"):
+        return False
+    body = text[2:]
+    if len(body) % 2 != 0:
+        return False
+    for char in body:
+        if char not in _HEX_DIGITS:
+            return False
+    return True
 
 
 def _flags_field(code):
@@ -284,8 +312,39 @@ def _run_risk(args, store):
     return 0
 
 
-def _run_seed_add(args, store):
+def _run_seed_add(args, rpc, store):
+    """seed add, with --fetch pulling the code of an address not stored.
+
+    --fetch is a no-op once store.has_address(args.address) is True (a
+    known EOA still falls through to add_seed's KeyError -> exit 2): no
+    client is built and no rpc call is made. Otherwise exactly two
+    calls are made, in order, on rpc (or a fresh keyless publicnode
+    client when rpc is None); a code answer is stored and seeded, an
+    "0x" answer is stored as an EOA and refused, any other answer or an
+    RpcError leaves nothing stored.
+    """
     _check_address(args.address)
+    if args.fetch and not store.has_address(args.address):
+        if rpc is None:
+            rpc = RpcClient(PUBLICNODE_URL, prices={}, max_retries=5)
+        try:
+            head = rpc.call("eth_blockNumber", [])
+            text = rpc.call("eth_getCode", [args.address.lower(), "latest"])
+        except RpcError as err:
+            sys.stderr.write(str(err) + "\n")
+            return 1
+        block = int(head, 16)
+        if text == "0x":
+            store.put_address(args.address, None, block)
+            sys.stderr.write(
+                "unknown address or no code: %s\n" % args.address)
+            return 2
+        if not _is_hex_code(text):
+            sys.stderr.write(
+                "eth_getCode returned no code: %s\n" % args.address)
+            return 1
+        code_id = store.put_code(bytes.fromhex(text[2:]))
+        store.put_address(args.address, code_id, block)
     try:
         store.add_seed(args.address, args.label)
     except KeyError:
@@ -293,6 +352,15 @@ def _run_seed_add(args, store):
         return 2
     _print_alerts(recheck_watchlist(store, seed_addresses=[args.address]))
     return 0
+
+
+def _run_seed_remove(args, store):
+    """seed remove: delete one seed, keeping its code and address rows."""
+    _check_address(args.address)
+    if store.remove_seed(args.address):
+        return 0
+    sys.stderr.write("not a seed: %s\n" % args.address)
+    return 2
 
 
 def _run_seed_list(args, store):
@@ -369,6 +437,9 @@ def _build_parser():
     seed_add = seed_sub.add_parser("add")
     seed_add.add_argument("address")
     seed_add.add_argument("--label", required=True)
+    seed_add.add_argument("--fetch", action="store_true")
+    seed_remove = seed_sub.add_parser("remove")
+    seed_remove.add_argument("address")
     seed_sub.add_parser("list")
 
     recheck = sub.add_parser("recheck")
@@ -451,7 +522,9 @@ def main(argv=None, rpc=None, sleep=None) -> int:
             return _run_risk(args, store)
         if args.command == "seed":
             if args.subcommand == "add":
-                return _run_seed_add(args, store)
+                return _run_seed_add(args, rpc, store)
+            if args.subcommand == "remove":
+                return _run_seed_remove(args, store)
             if args.subcommand == "list":
                 return _run_seed_list(args, store)
             raise _UsageError("missing seed subcommand")
