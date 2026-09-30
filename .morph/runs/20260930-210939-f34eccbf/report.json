@@ -1,0 +1,397 @@
+{
+  "deck_id": "20260930-210939-f34eccbf",
+  "completed_at": "2026-09-30T21:29:27.532",
+  "branch": "morph/20260930-210939-f34eccbf",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "store"
+    ],
+    [
+      "cluster",
+      "fingerprint-judge",
+      "store-judge"
+    ],
+    [
+      "cluster-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-0b441c9c61a84c75b93de057a8d4bb86",
+    "local-70f064abbc374345a7aa46d77725a462",
+    "local-0f1e0b291df04fcaa409e5ecfe1e1d92",
+    "local-84f391cfa3aa434fb12672f30621c6f4",
+    "local-5db1a0d260354c2e82d0f49a205f393e"
+  ],
+  "outcomes": {
+    "store": {
+      "custom_id": "store",
+      "status": "written",
+      "paths": [
+        "./ethsc/fingerprint.py",
+        "./ethsc/store.py",
+        "./tests/test_store_p11.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "c1bfbee1326283738747a0c9df54422d7a5ea8f0",
+      "diffstat": [
+        {
+          "path": "ethsc/fingerprint.py",
+          "insertions": 35,
+          "deletions": 21
+        },
+        {
+          "path": "ethsc/store.py",
+          "insertions": 41,
+          "deletions": 7
+        },
+        {
+          "path": "tests/test_store_p11.py",
+          "insertions": 72,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "ethsc/store.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/store.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_store_p11.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_p11.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "fingerprint-judge": {
+      "custom_id": "fingerprint-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_fingerprint_examples_p11.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "fingerprint-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "d93077815b46ea9b29a8a52bb39fabd658cb9832",
+      "diffstat": [
+        {
+          "path": "tests/test_fingerprint_examples_p11.py",
+          "insertions": 108,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_fingerprint_examples_p11.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_fingerprint_examples_p11.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster": {
+      "custom_id": "cluster",
+      "status": "written",
+      "paths": [
+        "./ethsc/cluster.py",
+        "./tests/test_cluster_p11.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cluster.r1.v2",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nprobe OK: cluster\nF.F.F                                                                    [100%]\n=================================== FAILURES ===================================\n_________ TestClusterP11.test_find_similar_stubbed_gives_four_results __________\ntests/test_cluster_p11.py:58: in test_find_similar_stubbed_gives_four_results\n    old = cluster.similarity\n          ^^^^^^^^^^^^^^^^^^\nE   AttributeError: module 'ethsc.cluster' has no attribute 'similarity'\n____________ TestClusterP11.test_match_watchlist_stubbed_one_alert _____________\ntests/test_cluster_p11.py:80: in test_match_watchlist_stubbed_one_alert\n    old = cluster.similarity\n          ^^^^^^^^^^^^^^^^^^\nE   AttributeError: module 'ethsc.cluster' has no attribute 'similarity'\n____________ TestClusterP11.test_recheck_stubbed_gives_four_alerts _____________\ntests/test_cluster_p11.py:40: in test_recheck_stubbed_gives_four_alerts\n    old = cluster.similarity\n          ^^^^^^^^^^^^^^^^^^\nE   AttributeError: module 'ethsc.cluster' has no attribute 'similarity'\n=========================== short test summary info ============================\nFAILED tests/test_cluster_p11.py::TestClusterP11::test_find_similar_stubbed_gives_four_results\nFAILED tests/test_cluster_p11.py::TestClusterP11::test_match_watchlist_stubbed_one_alert\nFAILED tests/test_cluster_p11.py::TestClusterP11::test_recheck_stubbed_gives_four_alerts\n3 failed, 2 passed in 4.92s\n",
+      "commit": "ec3d18d0bec1fd0c4c532b5041c66696f449ccef",
+      "diffstat": [
+        {
+          "path": "ethsc/cluster.py",
+          "insertions": 52,
+          "deletions": 43
+        },
+        {
+          "path": "tests/test_cluster_p11.py",
+          "insertions": 95,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cluster_p11.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_p11.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "store-judge": {
+      "custom_id": "store-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_store_examples_p11.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "store-judge.r2",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\n.FF.                                                                     [100%]\n=================================== FAILURES ===================================\n________ TestStoreExamplesP11.test_store_codes_and_contracts_example_7 _________\ntests/test_store_examples_p11.py:171: in test_store_codes_and_contracts_example_7\n    self.assertEqual(\nE   AssertionError: Lists differ: ['code_id', 'proxy', 'selectors', 'size', 'skeleton_hash', 'std_proxy'] != ['code_id', 'proxy', 'selectors', 'skeleton_hash', 'size', 'std_proxy']\nE   \nE   First differing element 3:\nE   'size'\nE   'skeleton_hash'\nE   \nE   - ['code_id', 'proxy', 'selectors', 'size', 'skeleton_hash', 'std_proxy']\nE   ?                                  --------\nE   \nE   + ['code_id', 'proxy', 'selectors', 'skeleton_hash', 'size', 'std_proxy']\nE   ?                                                    ++++++++\nE    : exactly the six keys of the Fingerprint schema\n________ TestStoreExamplesP11.test_store_codes_and_contracts_example_8 _________\ntests/test_store_examples_p11.py:202: in test_store_codes_and_contracts_example_8\n    self.assertEqual(\nE   AssertionError: Lists differ: [(0, 'sqlite_autoindex_addresses_1', 1, 'pk', 0)] != []\nE   \nE   First list contains 1 additional elements.\nE   First extra element 0:\nE   (0, 'sqlite_autoindex_addresses_1', 1, 'pk', 0)\nE   \nE   - [(0, 'sqlite_autoindex_addresses_1', 1, 'pk', 0)]\nE   + [] : the phase-10 db starts without the index\n=========================== short test summary info ============================\nFAILED tests/test_store_examples_p11.py::TestStoreExamplesP11::test_store_codes_and_contracts_example_7\nFAILED tests/test_store_examples_p11.py::TestStoreExamplesP11::test_store_codes_and_contracts_example_8\n2 failed, 2 passed in 3.91s\n",
+      "commit": "fe1a6fea3a9fa6bcb94a8219685fdd4917128075",
+      "diffstat": [
+        {
+          "path": "tests/test_store_examples_p11.py",
+          "insertions": 303,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_store_examples_p11.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_examples_p11.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster-judge": {
+      "custom_id": "cluster-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cluster_examples_p11.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cluster-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "971a39bea6e4119c516b29e99fa47258e18f7de7",
+      "diffstat": [
+        {
+          "path": "tests/test_cluster_examples_p11.py",
+          "insertions": 96,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cluster_examples_p11.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_examples_p11.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "store.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790798980-CwZUYa9yvsYImFLpOBJh",
+      "input_tokens": 44998,
+      "output_tokens": 4118,
+      "cost": 0.00528522,
+      "finish_reason": "stop"
+    },
+    "store.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790798980-mofJRGHtrS3xnlYZdqXX",
+      "input_tokens": 44998,
+      "output_tokens": 5735,
+      "cost": 0.00577032,
+      "finish_reason": "stop"
+    },
+    "fingerprint-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799231-FjQkJa6E23y4uvcAl45T",
+      "input_tokens": 40679,
+      "output_tokens": 1441,
+      "cost": 0.00409341,
+      "finish_reason": "stop"
+    },
+    "store-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799231-tYM6ZH7TLSTeSMCuTa9L",
+      "input_tokens": 43300,
+      "output_tokens": 2484,
+      "cost": 0.0046422,
+      "finish_reason": "stop"
+    },
+    "cluster.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799231-xbXxm8hoV1DMwQMRe3j4",
+      "input_tokens": 45615,
+      "output_tokens": 3856,
+      "cost": 0.00526215,
+      "finish_reason": "stop"
+    },
+    "cluster.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799231-CHDbBA5ShUIlvgag2I0j",
+      "input_tokens": 45615,
+      "output_tokens": 7358,
+      "cost": 0.00631275,
+      "finish_reason": "stop"
+    },
+    "store-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799516-5zL6R7Ky0YM1BtohLlFj",
+      "input_tokens": 46024,
+      "output_tokens": 2366,
+      "cost": 0.00485196,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799516-ulDz6bjo7cCZK2QGQ13Q",
+      "input_tokens": 52174,
+      "output_tokens": 3638,
+      "cost": 0.00203154,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799516-HS2qmQCsRQxbyQ8upDi4",
+      "input_tokens": 52174,
+      "output_tokens": 3853,
+      "cost": 0.002884008,
+      "finish_reason": "stop"
+    },
+    "store-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799753-hCSNpq4uZWirTwO0x2RF",
+      "input_tokens": 46368,
+      "output_tokens": 2723,
+      "cost": 0.00499002,
+      "finish_reason": "stop"
+    },
+    "cluster-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790799971-xFDlMvePogRQleUY63p3",
+      "input_tokens": 45802,
+      "output_tokens": 1166,
+      "cost": 0.00447198,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 507747,
+    "output_tokens": 38738,
+    "cost": 0.050595558,
+    "requests": 11,
+    "requests_with_usage": 11
+  },
+  "orchestrator_usage": {}
+}
