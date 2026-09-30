@@ -1,0 +1,455 @@
+{
+  "deck_id": "20260930-113104-c2064a93",
+  "completed_at": "2026-09-30T12:01:50.073",
+  "branch": "morph/20260930-113104-c2064a93",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "evm"
+    ],
+    [
+      "cli",
+      "evm-judge",
+      "report"
+    ],
+    [
+      "cli-judge",
+      "report-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-99494098951e453695c143a3fa845801",
+    "local-a5e583fd23bb47148b667bfd3dd6e099",
+    "local-283ef6ff55184fd6820e4100f4606f87",
+    "local-bd6f165fb1fe44abb82fbcb87c92940d",
+    "local-b88e96202353412c947bc4fed1d1dcdf",
+    "local-9d15f17493f448079ae2108d5a40cad0",
+    "local-22ec86ef407f45f7a42b3d3e618d2577",
+    "local-26ae20f503e64ce7ae53021b30326d26"
+  ],
+  "outcomes": {
+    "evm": {
+      "custom_id": "evm",
+      "status": "written",
+      "paths": [
+        "./ethsc/evm.py",
+        "./tests/test_evm.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "evm.r2.v1",
+      "acceptance_output": null,
+      "earlier_failures": "evm probe: 21 examples + risk + tolerance OK\n........................F.....                                           [100%]\n=================================== FAILURES ===================================\n__________________ RiskFlagsTests.test_block_26077729_counts ___________________\ntests/test_evm.py:316: in test_block_26077729_counts\n    self.assertEqual(len(mutable_addrs), 33, msg=\"33 mutable_delegatecall addresses\")\nE   AssertionError: 29 != 33 : 33 mutable_delegatecall addresses\n=========================== short test summary info ============================\nFAILED tests/test_evm.py::RiskFlagsTests::test_block_26077729_counts - Assert...\n1 failed, 29 passed in 0.22s\n",
+      "commit": "b4c765a5f61e67f17531b71aac8afed8ffbdfac4",
+      "diffstat": [
+        {
+          "path": "ethsc/evm.py",
+          "insertions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_evm.py",
+          "insertions": 83,
+          "deletions": 2
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/evm.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/evm.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_evm.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_evm.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "evm-judge": {
+      "custom_id": "evm-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_evm_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "evm-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "745b93b89a798e087af0c5c8873c5652b4af9f4e",
+      "diffstat": [
+        {
+          "path": "tests/test_evm_examples.py",
+          "insertions": 247,
+          "deletions": 245
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_evm_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_evm_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "report": {
+      "custom_id": "report",
+      "status": "written",
+      "paths": [
+        "./ethsc/report.py",
+        "./tests/test_report.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "report.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "d93a976c1c066b14255b672adfb9fb5028761cdc",
+      "diffstat": [
+        {
+          "path": "ethsc/report.py",
+          "insertions": 52,
+          "deletions": 10
+        },
+        {
+          "path": "tests/test_report.py",
+          "insertions": 125,
+          "deletions": 41
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/report.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/report.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_report.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_report.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard: ast OK\nP7 risk line count: got 147, want 34\nP7 risk first and last: got ('0x0000000000000068f116a894984e2db1123eb395\\t-', '0xff74317e948695297acb79cb2de06111f5cc16b3\\t-'), want ('0x07696dcab55e62cfef953666b29fe1970518cb00\\tmutable_delegatecall', '0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc\\tselfdestruct')\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "skipped",
+      "paths": [],
+      "reason": "cli",
+      "finish_reason": null,
+      "attempts": 0,
+      "winning_variant": null,
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": null
+    },
+    "report-judge": {
+      "custom_id": "report-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_report_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "report-judge.r1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: tests/test_report_examples.py has 13 test_* functions; the twelve that were there stay and the risk section arrives -- its counts on the base and its zeros on an empty base\n",
+      "commit": "c4cebe287fffccfb37b5c2ffe4fdf6b2337c9e9d",
+      "diffstat": [
+        {
+          "path": "tests/test_report_examples.py",
+          "insertions": 340,
+          "deletions": 293
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "evm.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764265-gHWKUD6bIhFWjSeoDaqv",
+      "input_tokens": 34721,
+      "output_tokens": 5649,
+      "cost": 0.00481959,
+      "finish_reason": "stop"
+    },
+    "evm.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764265-DxxkKsasd7z8rh3ukVoB",
+      "input_tokens": 34721,
+      "output_tokens": 5914,
+      "cost": 0.002816274,
+      "finish_reason": "stop"
+    },
+    "evm.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764345-KBqwx5c6q1jV9uPjJJKO",
+      "input_tokens": 38769,
+      "output_tokens": 5908,
+      "cost": 0.00526161,
+      "finish_reason": "stop"
+    },
+    "evm.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764345-tOZsSNAl4zSZqcES1wG7",
+      "input_tokens": 38769,
+      "output_tokens": 6082,
+      "cost": 0.003682578,
+      "finish_reason": "stop"
+    },
+    "evm.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764439-2VOZ8zzc4wjGIYqwMMKe",
+      "input_tokens": 38630,
+      "output_tokens": 5987,
+      "cost": 0.003623136,
+      "finish_reason": "stop"
+    },
+    "evm.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764439-8SugIDLAj3sXy1jLyqc0",
+      "input_tokens": 38630,
+      "output_tokens": 6135,
+      "cost": 0.0026676,
+      "finish_reason": "stop"
+    },
+    "evm-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764674-f7BlQdDRR9ExrQy1Vd4y",
+      "input_tokens": 29357,
+      "output_tokens": 3847,
+      "cost": 0.00379623,
+      "finish_reason": "stop"
+    },
+    "report.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764674-b7r4Kjdwu8yV8pp0yOhm",
+      "input_tokens": 40292,
+      "output_tokens": 7949,
+      "cost": 0.00601098,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764674-mG1J2IfWp9LOjSPEW7mh",
+      "input_tokens": 39459,
+      "output_tokens": 7986,
+      "cost": 0.00594711,
+      "finish_reason": "stop"
+    },
+    "report.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764731-YHRZJhOQunJkKQ160Lpq",
+      "input_tokens": 40292,
+      "output_tokens": 8659,
+      "cost": 0.00622398,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790764674-PcCUAinMZEg23Xm0ySQV",
+      "input_tokens": 39459,
+      "output_tokens": 9394,
+      "cost": 0.00636951,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765089-boNLm0VnbDUNs5QN5b0T",
+      "input_tokens": 47725,
+      "output_tokens": 8686,
+      "cost": 0.00690105,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765089-yMcepv2253GfzCTt1JIZ",
+      "input_tokens": 47725,
+      "output_tokens": 10107,
+      "cost": 0.003981942,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765259-mcMHimfAqBoAnDm9jsDO",
+      "input_tokens": 47784,
+      "output_tokens": 9554,
+      "cost": 0.00716676,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765259-6dHY6E3tDIZHpy11Dozd",
+      "input_tokens": 47784,
+      "output_tokens": 11663,
+      "cost": 0.005440164,
+      "finish_reason": "stop"
+    },
+    "report-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765469-AxbUJyCiEUOuIQlTP3tq",
+      "input_tokens": 35091,
+      "output_tokens": 5173,
+      "cost": 0.00471009,
+      "finish_reason": "stop"
+    },
+    "report-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790765911-jtp7K6iKNhAhNvGbGlJ2",
+      "input_tokens": 39238,
+      "output_tokens": 5930,
+      "cost": 0.00531042,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 678446,
+    "output_tokens": 124623,
+    "cost": 0.08472902399999999,
+    "requests": 17,
+    "requests_with_usage": 17
+  },
+  "orchestrator_usage": {}
+}

@@ -1,9 +1,11 @@
 """Tests for ethsc.evm: one test per example of the contour component evm.
 
-Offline: all chain data comes from tests/fixtures/*.hex, decoded verbatim
-from the eth_getCode result strings. unittest with msg= on every assert.
+Offline: all chain data comes from tests/fixtures/*.hex and
+codes_26077729.json, decoded verbatim from the eth_getCode result
+strings. unittest with msg= on every assert.
 """
 
+import json
 import os
 import unittest
 
@@ -19,6 +21,14 @@ def code_of(name):
     with open(path, "r") as fh:
         text = fh.read()
     return bytes.fromhex(text.strip()[2:])
+
+
+def block_codes():
+    """The address -> eth_getCode-result map of block 26077729."""
+    path = os.path.join(FIXTURES, "codes_26077729.json")
+    with open(path, "r") as fh:
+        return json.load(fh)
+
 
 WETH9 = code_of("code_weth9.hex")
 USDT = code_of("code_usdt.hex")
@@ -250,6 +260,77 @@ class BuildSkeletonTests(unittest.TestCase):
             except Exception as exc:
                 self.fail(msg="build_skeleton raised on %r: %r" % (garbage, exc))
             self.assertIsInstance(result, bytes, msg="result is bytes")
+
+
+class RiskFlagsTests(unittest.TestCase):
+    maxDiff = None
+
+    def test_weth9_both_false(self):
+        """Example 1: WETH9 has no SELFDESTRUCT and no DELEGATECALL opcode."""
+        self.assertEqual(evm.risk_flags(WETH9),
+                         {"selfdestruct": False, "mutable_delegatecall": False},
+                         msg="WETH9 flags both False")
+
+    def test_eip1167_clone_both_false(self):
+        """Example 2: an eip1167 clone is never mutable_delegatecall."""
+        flags = evm.risk_flags(CLONE_A)
+        self.assertFalse(flags["selfdestruct"], msg="clone selfdestruct False")
+        self.assertFalse(flags["mutable_delegatecall"],
+                         msg="clone mutable_delegatecall False")
+
+    def test_ff_opcode_versus_push_data(self):
+        """Example 3: b"\xff" True, b"\x60\xff" (PUSH1 0xff) False."""
+        self.assertTrue(evm.risk_flags(b"\xff")["selfdestruct"],
+                        msg="0xff as an opcode")
+        flags = evm.risk_flags(b"\x60\xff")
+        self.assertFalse(flags["selfdestruct"], msg="0xff as PUSH data")
+        self.assertFalse(flags["mutable_delegatecall"],
+                         msg="PUSH1 0xff mutable_delegatecall False")
+
+    def test_block_26077729_counts(self):
+        """Example 4: over codes_26077729.json, 1 selfdestruct code and
+        29 mutable_delegatecall codes over 33 addresses, no code with both."""
+        codes = block_codes()
+        # group every address by its code: several addresses may share one code
+        by_code = {}  # type: dict
+        for address, text in sorted(codes.items()):
+            if text == "0x":
+                continue
+            by_code.setdefault(bytes.fromhex(text[2:]), []).append(address.lower())
+        selfdestruct_codes = set()
+        mutable_codes = set()
+        mutable_addrs = set()
+        for code, addrs in sorted(by_code.items()):
+            flags = evm.risk_flags(code)
+            if flags["selfdestruct"]:
+                selfdestruct_codes.update(addrs)
+            if flags["mutable_delegatecall"]:
+                mutable_codes.add(code)
+                mutable_addrs.update(addrs)
+        self.assertEqual(len(selfdestruct_codes), 1,
+                         msg="1 selfdestruct address: %r" % (sorted(selfdestruct_codes),))
+        self.assertIn("0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc",
+                      selfdestruct_codes, msg="the selfdestruct address")
+        self.assertEqual(len(mutable_codes), 29, msg="29 mutable_delegatecall codes")
+        self.assertEqual(len(mutable_addrs), 33,
+                         msg="33 mutable_delegatecall addresses: %d" % len(mutable_addrs))
+        self.assertFalse(selfdestruct_codes & mutable_addrs,
+                         msg="no code has both flags")
+
+    def test_empty_code_both_false(self):
+        """Example 5: risk_flags(b"") is both False and never raises."""
+        self.assertEqual(evm.risk_flags(b""),
+                         {"selfdestruct": False, "mutable_delegatecall": False},
+                         msg="empty code")
+
+    def test_garbage_never_raises(self):
+        """Guardrail Tolerant Parser: garbage inputs never raise."""
+        for garbage in (bytes(range(256)), b"\xf4\x54", b"\x60\xf4"):
+            try:
+                result = evm.risk_flags(garbage)
+            except Exception as exc:
+                self.fail(msg="risk_flags raised on %r: %r" % (garbage, exc))
+            self.assertIsInstance(result, dict, msg="result is a dict")
 
 
 if __name__ == "__main__":

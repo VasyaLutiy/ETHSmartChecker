@@ -1,294 +1,296 @@
-"""Example-based tests for ethsc/evm.py, written as the independent judge.
+"""Example-based tests for ethsc/evm.py, one per example of the contour.
 
-Each test docstring names the Function and the example number it checks.
-The examples come from docs/TASK_PHASE1.md (contour.yaml examples), with
-fixtures described in tests/fixtures/README.md. The code under test is
-ethsc/evm.py; this file is written without touching it.
+Every test's docstring names the Function and the example number it
+checks. All data comes from tests/fixtures/; no test opens the network.
 """
 
 import unittest
 
-from ethsc import evm
+import ethsc.evm as evm
 
-FIXTURES_DIR = "tests/fixtures"
-
-
-def load_code(name):
-    """Read a code_*.hex fixture verbatim and decode to bytes."""
-    with open("{}/{}".format(FIXTURES_DIR, name), "r") as fh:
-        text = fh.read().strip()
-    return bytes.fromhex(text[2:])
+from helpers import block_codes, load_hex
 
 
-def count_diff_bytes(a, b):
-    assert len(a) == len(b)
-    return sum(1 for x, y in zip(a, b) if x != y)
+def distinct_block_codes():
+    """The distinct code byte strings of block 26077729 (130 of them)."""
+    seen = set()
+    out = []
+    for text in block_codes().values():
+        if text == "0x":
+            continue
+        code = bytes.fromhex(text[2:])
+        if code not in seen:
+            seen.add(code)
+            out.append(code)
+    return out
 
 
-class TestDisassemble(unittest.TestCase):
-    maxDiff = None
-
-    def test_disassemble_ex1_weth9_first_three(self):
-        """Disassemble example 1: first three instructions of code_weth9.hex."""
-        code = load_code("code_weth9.hex")
+class DisassembleTests(unittest.TestCase):
+    def test_example_1_weth9_first_instructions(self):
+        """Disassemble example 1: the first three instructions of WETH9."""
+        code = load_hex("code_weth9.hex")
         ins = evm.disassemble(code)
-        self.assertEqual(len(code), 3124, msg="WETH9 code must be 3124 bytes")
         self.assertEqual(
             ins[:3],
             [(0, 0x60, b"\x60"), (2, 0x60, b"\x40"), (4, 0x52, b"")],
-            msg="first three instructions must be (0,0x60,'60'), (2,0x60,'40'), (4,0x52,'')",
+            msg="first three instructions must be 0x6060604052",
         )
 
-    def test_disassemble_ex2_weth9_body_count(self):
-        """Disassemble example 2: 3081-byte WETH9 body disassembles to 1555 instructions."""
-        code = load_code("code_weth9.hex")
-        body = code[:-43]
-        self.assertEqual(len(body), 3081, msg="body after 43-byte trailer must be 3081 bytes")
-        ins = evm.disassemble(body)
-        self.assertEqual(len(ins), 1555, msg="3081-byte WETH9 body must give 1555 instructions")
+    def test_example_2_weth9_body_instruction_count(self):
+        """Disassemble example 2: 1555 instructions over the 3081-byte body."""
+        code = load_hex("code_weth9.hex")
+        body = code[:len(code) - 43]
+        self.assertEqual(len(body), 3081, msg="body must be 3081 bytes")
+        self.assertEqual(len(evm.disassemble(body)), 1555,
+                         msg="the body disassembles to 1555 instructions")
 
-    def test_disassemble_ex3_truncated_push2(self):
-        """Disassemble example 3: truncated PUSH2 0x600161ff gives two instructions."""
-        code = bytes.fromhex("600161ff")
-        ins = evm.disassemble(code)
+    def test_example_3_truncated_push2(self):
+        """Disassemble example 3: 0x600161ff, a PUSH2 with one byte left."""
+        result = evm.disassemble(bytes.fromhex("600161ff"))
         self.assertEqual(
-            ins,
+            result,
             [(0, 0x60, b"\x01"), (2, 0x61, b"\xff")],
-            msg="0x600161ff must give [(0,0x60,'\\x01'), (2,0x61,'\\xff')]",
+            msg="truncated PUSH2 takes the remaining byte and ends",
         )
 
-    def test_disassemble_ex4_empty_code(self):
+    def test_example_4_empty_code(self):
         """Disassemble example 4: empty code gives []."""
-        ins = evm.disassemble(b"")
-        self.assertEqual(ins, [], msg="empty code must disassemble to []")
+        self.assertEqual(evm.disassemble(b""), [],
+                         msg="empty code gives []")
 
 
-class TestStripMetadata(unittest.TestCase):
-    maxDiff = None
+class StripMetadataTests(unittest.TestCase):
+    def test_example_1_weth9_bzzr0(self):
+        """Strip Metadata example 1: WETH9 bzzr0 trailer of 43 bytes."""
+        body, trailer = evm.strip_metadata(load_hex("code_weth9.hex"))
+        self.assertEqual(len(body), 3081, msg="body is 3081 bytes")
+        self.assertEqual(len(trailer), 43, msg="trailer is 43 bytes")
+        self.assertTrue(trailer.startswith(bytes.fromhex(
+            "a165627a7a72305820")), msg="bzzr0 trailer header")
 
-    def test_strip_metadata_ex1_weth9_bzzr0(self):
-        """Strip Metadata example 1: WETH9 body 3081, 43-byte bzzr0 trailer."""
-        code = load_code("code_weth9.hex")
-        self.assertEqual(code[-2:], b"\x00\x29", msg="WETH9 code must end 0x0029")
-        body, trailer = evm.strip_metadata(code)
-        self.assertEqual(len(body), 3081, msg="WETH9 body must be 3081 bytes")
-        self.assertEqual(len(trailer), 43, msg="WETH9 trailer must be 43 bytes")
-        self.assertTrue(
-            trailer.hex().startswith("a165627a7a72305820"),
-            msg="WETH9 trailer must start with a165627a7a72305820 (bzzr0)",
-        )
+    def test_example_2_univ2_solc0516(self):
+        """Strip Metadata example 2: UniswapV2Pair solc 0.5.16 trailer."""
+        body, trailer = evm.strip_metadata(load_hex("code_univ2_usdc_weth.hex"))
+        self.assertEqual(len(body), 11241, msg="body is 11241 bytes")
+        self.assertEqual(len(trailer), 52, msg="trailer is 52 bytes")
+        self.assertTrue(trailer.startswith(bytes.fromhex(
+            "a265627a7a72315820")), msg="bzzr1 trailer header")
+        self.assertIn(bytes.fromhex("64736f6c6343000510"), trailer,
+                      msg="trailer contains solc 0.5.16")
 
-    def test_strip_metadata_ex2_univ2_solc0516(self):
-        """Strip Metadata example 2: UniswapV2Pair body 11241, 52-byte trailer with solc 0.5.16."""
-        code = load_code("code_univ2_usdc_weth.hex")
-        self.assertEqual(len(code), 11293, msg="univ2 pair code must be 11293 bytes")
-        body, trailer = evm.strip_metadata(code)
-        self.assertEqual(len(body), 11241, msg="univ2 pair body must be 11241 bytes")
-        self.assertEqual(len(trailer), 52, msg="univ2 pair trailer must be 52 bytes")
-        self.assertTrue(
-            trailer.hex().startswith("a265627a7a72315820"),
-            msg="univ2 pair trailer must start with a265627a7a72315820",
-        )
-        self.assertIn(
-            bytes.fromhex("64736f6c6343000510"),
-            trailer,
-            msg="univ2 pair trailer must contain solc 0.5.16 marker 64736f6c6343000510",
-        )
+    def test_example_3_univ3_bytecodehash_none(self):
+        """Strip Metadata example 3: UniswapV3Pool, 12-byte solc trailer."""
+        body, trailer = evm.strip_metadata(
+            load_hex("code_univ3_usdc_weth_005.hex"))
+        self.assertEqual(len(body), 22130, msg="body is 22130 bytes")
+        self.assertEqual(trailer, bytes.fromhex("a164736f6c6343000706000a"),
+                         msg="trailer is exactly 12 bytes, solc 0.7.6")
 
-    def test_strip_metadata_ex3_univ3_no_hash(self):
-        """Strip Metadata example 3: UniswapV3Pool body 22130, trailer a164736f6c6343000706000a."""
-        code = load_code("code_univ3_usdc_weth_005.hex")
-        self.assertEqual(len(code), 22142, msg="univ3 pool code must be 22142 bytes")
-        body, trailer = evm.strip_metadata(code)
-        self.assertEqual(len(body), 22130, msg="univ3 pool body must be 22130 bytes")
-        self.assertEqual(
-            trailer,
-            bytes.fromhex("a164736f6c6343000706000a"),
-            msg="univ3 pool trailer must be exactly a164736f6c6343000706000a (12 bytes)",
-        )
-
-    def test_strip_metadata_ex4_clone_and_empty(self):
-        """Strip Metadata example 4: 45-byte clone comes back whole; empty gives (b'', b'')."""
-        clone = load_code("code_clone_270df012.hex")
-        self.assertEqual(len(clone), 45, msg="clone fixture must be 45 bytes")
-        self.assertEqual(clone[-2:], bytes.fromhex("5bf3"), msg="clone must end 0x5bf3")
+    def test_example_4_clone_and_empty(self):
+        """Strip Metadata example 4: whole clone back, empty code."""
+        clone = load_hex("code_clone_270df012.hex")
+        self.assertEqual(len(clone), 45, msg="clone is 45 bytes")
         body, trailer = evm.strip_metadata(clone)
-        self.assertEqual(trailer, b"", msg="clone must have no recognized trailer")
-        self.assertEqual(body, clone, msg="clone body must be the whole 45 bytes")
-        body2, trailer2 = evm.strip_metadata(b"")
-        self.assertEqual((body2, trailer2), (b"", b""), msg="empty code must give (b'', b'')")
+        self.assertEqual((body, trailer), (clone, b""),
+                         msg="clone comes back whole with empty trailer")
+        self.assertEqual(evm.strip_metadata(b""), (b"", b""),
+                         msg="empty code gives (b\"\", b\"\")")
 
 
-class TestExtractSelectors(unittest.TestCase):
-    maxDiff = None
-
-    def test_extract_selectors_ex1_weth9_11(self):
-        """Extract Selectors example 1: WETH9 gives exactly its 11 published selectors."""
-        code = load_code("code_weth9.hex")
-        got = evm.extract_selectors(code)
-        want = sorted(
-            [
-                "0x06fdde03", "0x095ea7b3", "0x18160ddd", "0x23b872dd",
-                "0x2e1a7d4d", "0x313ce567", "0x70a08231", "0x95d89b41",
-                "0xa9059cbb", "0xd0e30db0", "0xdd62ed3e",
-            ]
-        )
-        self.assertEqual(got, want, msg="WETH9 selectors must equal the 11 ABI selectors")
-
-    def test_extract_selectors_ex2_usdt_32(self):
-        """Extract Selectors example 2: USDT gives exactly its 32 ABI selectors."""
-        code = load_code("code_usdt.hex")
-        got = evm.extract_selectors(code)
-        want = sorted(
-            [
-                "0x06fdde03", "0x0753c30c", "0x095ea7b3", "0x0e136b19",
-                "0x0ecb93c0", "0x18160ddd", "0x23b872dd", "0x26976e3f",
-                "0x27e235e3", "0x313ce567", "0x35390714", "0x3eaaf86b",
-                "0x3f4ba83a", "0x59bf1abe", "0x5c658165", "0x5c975abb",
-                "0x70a08231", "0x8456cb59", "0x893d20e8", "0x8da5cb5b",
-                "0x95d89b41", "0xa9059cbb", "0xc0324c77", "0xcc872b66",
-                "0xdb006a75", "0xdd62ed3e", "0xdd644f72", "0xe47d6060",
-                "0xe4997dc5", "0xe5b5019a", "0xf2fde38b", "0xf3bdc228",
-            ]
-        )
-        self.assertEqual(got, want, msg="USDT selectors must equal the 32 ABI selectors")
-
-    def test_extract_selectors_ex3_univ2_27(self):
-        """Extract Selectors example 3: UniswapV2Pair gives 27 selectors incl. swap and getReserves."""
-        code = load_code("code_univ2_usdc_weth.hex")
-        got = evm.extract_selectors(code)
-        self.assertEqual(len(got), 27, msg="univ2 pair must yield 27 selectors")
-        self.assertIn("0x022c0d9f", got, msg="univ2 pair must contain swap 0x022c0d9f")
-        self.assertIn("0x0902f1ac", got, msg="univ2 pair must contain getReserves 0x0902f1ac")
-
-    def test_extract_selectors_ex4_belle_14(self):
-        """Extract Selectors example 4: BELLE gives 14 selectors incl. Blacklist and RenounceOwnership."""
-        code = load_code("code_belle.hex")
-        got = evm.extract_selectors(code)
-        self.assertEqual(len(got), 14, msg="BELLE must yield 14 selectors")
-        self.assertIn("0xf7e58a63", got, msg="BELLE must contain Blacklist 0xf7e58a63")
-        self.assertIn("0x78051f4d", got, msg="BELLE must contain RenounceOwnership 0x78051f4d")
-
-    def test_extract_selectors_ex5_clone_and_empty(self):
-        """Extract Selectors example 5: clone code and empty code both give []."""
-        clone = load_code("code_clone_270df012.hex")
+class ExtractSelectorsTests(unittest.TestCase):
+    def test_example_1_weth9(self):
+        """Extract Selectors example 1: the 11 WETH9 selectors."""
         self.assertEqual(
-            evm.extract_selectors(clone),
-            [],
-            msg="EIP-1167 clone must give [] selectors",
+            evm.extract_selectors(load_hex("code_weth9.hex")),
+            ["0x06fdde03", "0x095ea7b3", "0x18160ddd", "0x23b872dd",
+             "0x2e1a7d4d", "0x313ce567", "0x70a08231", "0x95d89b41",
+             "0xa9059cbb", "0xd0e30db0", "0xdd62ed3e"],
+            msg="exactly the 11 published WETH9 selectors",
         )
+
+    def test_example_2_usdt(self):
+        """Extract Selectors example 2: the 32 TetherToken selectors."""
         self.assertEqual(
-            evm.extract_selectors(b""),
-            [],
-            msg="empty code must give [] selectors",
+            evm.extract_selectors(load_hex("code_usdt.hex")),
+            ["0x06fdde03", "0x0753c30c", "0x095ea7b3", "0x0e136b19",
+             "0x0ecb93c0", "0x18160ddd", "0x23b872dd", "0x26976e3f",
+             "0x27e235e3", "0x313ce567", "0x35390714", "0x3eaaf86b",
+             "0x3f4ba83a", "0x59bf1abe", "0x5c658165", "0x5c975abb",
+             "0x70a08231", "0x8456cb59", "0x893d20e8", "0x8da5cb5b",
+             "0x95d89b41", "0xa9059cbb", "0xc0324c77", "0xcc872b66",
+             "0xdb006a75", "0xdd62ed3e", "0xdd644f72", "0xe47d6060",
+             "0xe4997dc5", "0xe5b5019a", "0xf2fde38b", "0xf3bdc228"],
+            msg="exactly the 32 TetherToken selectors",
         )
 
+    def test_example_3_univ2(self):
+        """Extract Selectors example 3: 27 UniswapV2Pair selectors."""
+        sel = evm.extract_selectors(load_hex("code_univ2_usdc_weth.hex"))
+        self.assertEqual(len(sel), 27, msg="27 selectors")
+        self.assertIn("0x022c0d9f", sel, msg="swap selector present")
+        self.assertIn("0x0902f1ac", sel, msg="getReserves selector present")
 
-class TestDetectProxy(unittest.TestCase):
-    maxDiff = None
+    def test_example_4_belle(self):
+        """Extract Selectors example 4: 14 BELLE selectors."""
+        sel = evm.extract_selectors(load_hex("code_belle.hex"))
+        self.assertEqual(len(sel), 14, msg="14 selectors")
+        self.assertIn("0xf7e58a63", sel,
+                      msg="Blacklist(address,bool) selector present")
+        self.assertIn("0x78051f4d", sel,
+                      msg="RenounceOwnership(address) selector present")
 
-    def test_detect_proxy_ex1_two_clones_same_target(self):
-        """Detect Proxy example 1: two clones of block 26077729 point to 0x4181f370...."""
-        clone1 = load_code("code_clone_270df012.hex")
-        clone2 = load_code("code_clone_3b2fac8e.hex")
-        want = {"kind": "eip1167", "target": "0x4181f37093e3a21a4e0d5ef355c5b1938cba5bfb"}
-        got1 = evm.detect_proxy(clone1)
-        self.assertEqual(got1, want, msg="clone 0x270df012 must be eip1167 to 0x4181f370...")
-        got2 = evm.detect_proxy(clone2)
-        self.assertEqual(got2, want, msg="clone 0x3b2fac8e must be eip1167 to 0x4181f370...")
-
-    def test_detect_proxy_ex2_clone_launchtoken_target(self):
-        """Detect Proxy example 2: clone 0x2ca7b61b points to 0x8b72b9b8... (LaunchToken)."""
-        clone = load_code("code_clone_2ca7b61b.hex")
-        got = evm.detect_proxy(clone)
+    def test_example_5_clone_and_empty(self):
+        """Extract Selectors example 5: clone and empty code give []."""
         self.assertEqual(
-            got,
-            {"kind": "eip1167", "target": "0x8b72b9b8e544f944cdcdf0cdb6194f917ac1eba5"},
-            msg="clone 0x2ca7b61b must be eip1167 to 0x8b72b9b8...",
-        )
+            evm.extract_selectors(load_hex("code_clone_270df012.hex")), [],
+            msg="the EIP-1167 clone has no dispatcher")
+        self.assertEqual(evm.extract_selectors(b""), [],
+                         msg="empty code gives []")
 
-    def test_detect_proxy_ex3_eip7702(self):
-        """Detect Proxy example 3: 23-byte EIP-7702 designator gives ef0100 target."""
-        code = load_code("code_7702_04cfab85.hex")
-        self.assertEqual(len(code), 23, msg="7702 designator must be 23 bytes")
+
+class DetectProxyTests(unittest.TestCase):
+    def test_example_1_two_clones_same_target(self):
+        """Detect Proxy example 1: two clones of the same implementation."""
+        expected = {"kind": "eip1167",
+                    "target": "0x4181f37093e3a21a4e0d5ef355c5b1938cba5bfb"}
+        self.assertEqual(evm.detect_proxy(load_hex("code_clone_270df012.hex")),
+                         expected, msg="first clone target HolderDistributor")
+        self.assertEqual(evm.detect_proxy(load_hex("code_clone_3b2fac8e.hex")),
+                         expected, msg="second clone, same target")
+
+    def test_example_2_clone_of_launchtoken(self):
+        """Detect Proxy example 2: clone of a different implementation."""
         self.assertEqual(
-            code[:3],
-            bytes.fromhex("ef0100"),
-            msg="7702 designator must start with ef0100",
-        )
-        got = evm.detect_proxy(code)
+            evm.detect_proxy(load_hex("code_clone_2ca7b61b.hex")),
+            {"kind": "eip1167",
+             "target": "0x8b72b9b8e544f944cdcdf0cdb6194f917ac1eba5"},
+            msg="target is LaunchToken")
+
+    def test_example_3_eip7702(self):
+        """Detect Proxy example 3: the EIP-7702 delegated EOA."""
         self.assertEqual(
-            got,
-            {"kind": "eip7702", "target": "0x0000fb7702036ff9f76044a501ac1aa74cbab16b"},
-            msg="code_7702_04cfab85 must be eip7702 to 0x0000fb77...",
-        )
+            evm.detect_proxy(load_hex("code_7702_04cfab85.hex")),
+            {"kind": "eip7702",
+             "target": "0x0000fb7702036ff9f76044a501ac1aa74cbab16b"},
+            msg="ef0100 designator + delegate address")
 
-    def test_detect_proxy_ex4_non_proxies_give_none(self):
-        """Detect Proxy example 4: truncated clone, WETH9 and empty code all give None."""
-        clone = load_code("code_clone_270df012.hex")
-        weth = load_code("code_weth9.hex")
-        self.assertIsNone(
-            evm.detect_proxy(clone[:44]),
-            msg="44-byte truncated clone must give None",
-        )
-        self.assertIsNone(
-            evm.detect_proxy(weth),
-            msg="WETH9 runtime code must give None",
-        )
-        self.assertIsNone(
-            evm.detect_proxy(b""),
-            msg="empty code must give None",
-        )
+    def test_example_4_none_cases(self):
+        """Detect Proxy example 4: truncated clone, WETH9, empty code."""
+        clone = load_hex("code_clone_270df012.hex")
+        self.assertIsNone(evm.detect_proxy(clone[:44]),
+                          msg="truncated clone gives None")
+        self.assertIsNone(evm.detect_proxy(load_hex("code_weth9.hex")),
+                          msg="WETH9 is no proxy")
+        self.assertIsNone(evm.detect_proxy(b""),
+                          msg="empty code gives None")
 
 
-class TestBuildSkeleton(unittest.TestCase):
-    maxDiff = None
+class BuildSkeletonTests(unittest.TestCase):
+    def test_example_1_univ3_two_deployments(self):
+        """Build Skeleton example 1: two UniswapV3Pool deployments."""
+        a = load_hex("code_univ3_usdc_weth_005.hex")
+        b = load_hex("code_univ3_pool_e0554a47.hex")
+        self.assertEqual(len(a), 22142, msg="both are 22142 bytes")
+        self.assertEqual(len(b), 22142, msg="both are 22142 bytes")
+        diff = sum(1 for x, y in zip(a, b) if x != y)
+        self.assertEqual(diff, 74, msg="the raw codes differ in 74 bytes")
+        self.assertEqual(evm.build_skeleton(a), evm.build_skeleton(b),
+                         msg="the two skeletons are equal")
 
-    def test_build_skeleton_ex1_univ3_immutable_diff(self):
-        """Build Skeleton example 1: two UniswapV3Pool codes differ in 74 PUSH32 bytes; skeletons equal."""
-        code1 = load_code("code_univ3_usdc_weth_005.hex")
-        code2 = load_code("code_univ3_pool_e0554a47.hex")
-        self.assertEqual(len(code1), 22142, msg="first univ3 code must be 22142 bytes")
-        self.assertEqual(len(code2), 22142, msg="second univ3 code must be 22142 bytes")
-        self.assertEqual(
-            count_diff_bytes(code1, code2),
-            74,
-            msg="raw univ3 codes must differ in exactly 74 bytes",
-        )
-        sk1 = evm.build_skeleton(code1)
-        sk2 = evm.build_skeleton(code2)
-        self.assertEqual(sk1, sk2, msg="univ3 skeletons must be equal")
+    def test_example_2_launchtoken_two_deployments(self):
+        """Build Skeleton example 2: two LaunchToken deployments."""
+        a = load_hex("code_launchtoken_4e67db19.hex")
+        b = load_hex("code_launchtoken_40676634.hex")
+        self.assertEqual(len(a), 2383, msg="both are 2383 bytes")
+        self.assertEqual(len(b), 2383, msg="both are 2383 bytes")
+        diff = sum(1 for x, y in zip(a, b) if x != y)
+        self.assertEqual(diff, 58, msg="the raw codes differ in 58 bytes")
+        self.assertEqual(evm.build_skeleton(a), evm.build_skeleton(b),
+                         msg="the two skeletons are equal")
 
-    def test_build_skeleton_ex2_launchtoken_immutable_diff(self):
-        """Build Skeleton example 2: two LaunchToken codes differ in 58 bytes of 3 PUSH32; skeletons equal."""
-        code1 = load_code("code_launchtoken_4e67db19.hex")
-        code2 = load_code("code_launchtoken_40676634.hex")
-        self.assertEqual(len(code1), 2383, msg="first launchtoken code must be 2383 bytes")
-        self.assertEqual(len(code2), 2383, msg="second launchtoken code must be 2383 bytes")
-        self.assertEqual(
-            count_diff_bytes(code1, code2),
-            58,
-            msg="raw launchtoken codes must differ in exactly 58 bytes",
-        )
-        sk1 = evm.build_skeleton(code1)
-        sk2 = evm.build_skeleton(code2)
-        self.assertEqual(sk1, sk2, msg="launchtoken skeletons must be equal")
-
-    def test_build_skeleton_ex3_metadata_flip_irrelevant(self):
-        """Build Skeleton example 3: flipping a trailer byte does not change the WETH9 skeleton."""
-        code = load_code("code_weth9.hex")
-        mutated = bytearray(code)
-        mutated[-5] ^= 0xFF
+    def test_example_3_metadata_trailer_flip(self):
+        """Build Skeleton example 3: a flipped metadata byte changes nothing."""
+        code = load_hex("code_weth9.hex")
+        copy = bytearray(code)
+        copy[-5] ^= 0xFF
+        copy = bytes(copy)
         sk1 = evm.build_skeleton(code)
-        sk2 = evm.build_skeleton(bytes(mutated))
-        self.assertEqual(len(sk1), 3081, msg="WETH9 skeleton must be 3081 bytes")
-        self.assertEqual(sk1, sk2, msg="skeleton must ignore the flipped metadata byte")
+        sk2 = evm.build_skeleton(copy)
+        self.assertEqual(sk1, sk2, msg="both skeletons are equal")
+        self.assertEqual(len(sk1), 3081, msg="each skeleton is 3081 bytes")
+        self.assertEqual(len(sk2), 3081, msg="each skeleton is 3081 bytes")
 
-    def test_build_skeleton_ex4_weth_vs_usdt_differ(self):
+    def test_example_4_weth9_vs_usdt(self):
         """Build Skeleton example 4: WETH9 and USDT skeletons differ."""
-        sk_weth = evm.build_skeleton(load_code("code_weth9.hex"))
-        sk_usdt = evm.build_skeleton(load_code("code_usdt.hex"))
-        self.assertNotEqual(sk_weth, sk_usdt, msg="WETH9 and USDT skeletons must differ")
+        self.assertNotEqual(
+            evm.build_skeleton(load_hex("code_weth9.hex")),
+            evm.build_skeleton(load_hex("code_usdt.hex")),
+            msg="the skeletons differ")
+
+
+class FlagRiskTests(unittest.TestCase):
+    def test_example_1_weth9(self):
+        """Flag Risk example 1: WETH9 has no flag."""
+        self.assertEqual(
+            evm.risk_flags(load_hex("code_weth9.hex")),
+            {"selfdestruct": False, "mutable_delegatecall": False},
+            msg="both flags are False",
+        )
+
+    def test_example_2_eip1167_clone(self):
+        """Flag Risk example 2: an eip1167 clone is never mutable_delegatecall."""
+        self.assertEqual(
+            evm.risk_flags(load_hex("code_clone_270df012.hex")),
+            {"selfdestruct": False, "mutable_delegatecall": False},
+            msg="both flags are False",
+        )
+
+    def test_example_3_ff_opcode_vs_push_data(self):
+        """Flag Risk example 3: 0xff as opcode vs 0xff inside a PUSH."""
+        self.assertEqual(
+            evm.risk_flags(b"\xff"),
+            {"selfdestruct": True, "mutable_delegatecall": False},
+            msg="a lone 0xff opcode is selfdestruct",
+        )
+        self.assertEqual(
+            evm.risk_flags(b"\x60\xff"),
+            {"selfdestruct": False, "mutable_delegatecall": False},
+            msg="0xff inside a PUSH immediate never counts",
+        )
+
+    def test_example_4_block_26077729_counts(self):
+        """Flag Risk example 4: flag counts over block 26077729."""
+        codes = distinct_block_codes()
+        self.assertEqual(len(codes), 130, msg="130 distinct codes")
+        sd = [c for c in codes if evm.risk_flags(c)["selfdestruct"]]
+        md = [c for c in codes if evm.risk_flags(c)["mutable_delegatecall"]]
+        both = [c for c in codes if evm.risk_flags(c) ==
+                {"selfdestruct": True, "mutable_delegatecall": True}]
+        self.assertEqual(len(sd), 1, msg="exactly 1 code has selfdestruct")
+        self.assertEqual(len(md), 29, msg="29 codes have mutable_delegatecall")
+        self.assertEqual(len(both), 0, msg="no code has both")
+        addresses = {a: text for a, text in block_codes().items()
+                     if text != "0x"}
+        md_addresses = sum(1 for text in addresses.values()
+                           if evm.risk_flags(bytes.fromhex(text[2:]))
+                           ["mutable_delegatecall"])
+        self.assertEqual(md_addresses, 33,
+                         msg="33 addresses carry mutable_delegatecall")
+        self.assertIn("0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc", addresses,
+                      msg="the selfdestruct address is in the block")
+        self.assertTrue(
+            evm.risk_flags(bytes.fromhex(
+                addresses["0xfeeeeee44046c3f61a8cc081e0918ef0de0a7ffc"][2:]))
+            ["selfdestruct"],
+            msg="0xfeeeeee4… is the one selfdestruct code")
+
+    def test_example_5_empty_code(self):
+        """Flag Risk example 5: empty code gives both False, no exception."""
+        self.assertEqual(
+            evm.risk_flags(b""),
+            {"selfdestruct": False, "mutable_delegatecall": False},
+            msg="both flags are False and nothing raises",
+        )
 
 
 if __name__ == "__main__":

@@ -118,3 +118,24 @@ def build_skeleton(code: bytes) -> bytes:
         pos += len(arg)
     out.extend(body[pos:])
     return bytes(out)
+
+
+def risk_flags(code: bytes) -> dict:
+    """Two per-code security flags read from the runtime bytecode alone.
+
+    Both flags come from the disassembly of the stripped body, so a 0xFF
+    or 0xF4 byte inside a PUSH immediate or the metadata trailer never
+    counts. selfdestruct: a SELFDESTRUCT (0xFF) opcode appears in the
+    body (opcode present, not path-reachable -- no CFG here).
+    mutable_delegatecall: DELEGATECALL (0xF4) appears, detect_proxy(code)
+    is not eip1167 (a clone bakes its implementation address in), and
+    SLOAD (0x54) appears -- the syntactic stand-in for a storage-loaded
+    implementation address. Order and position do not matter. Never
+    raises: risk_flags(b"") is both False.
+    """
+    body, _ = strip_metadata(code)
+    ops = set(op for _, op, _ in disassemble(body))
+    selfdestruct = 0xFF in ops
+    mutable = (0xF4 in ops and 0x54 in ops
+               and not (detect_proxy(code) or {}).get("kind") == "eip1167")
+    return {"selfdestruct": selfdestruct, "mutable_delegatecall": mutable}
