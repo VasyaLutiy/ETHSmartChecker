@@ -3,7 +3,8 @@ System:
   name: ethsc
   description: >
     ETHSmartChecker proof: indexes the runtime bytecode of Ethereum mainnet
-    contracts seen in new blocks (Infura free tier, HTTPS polling), stores it
+    contracts seen in new blocks (Infura free tier or the keyless public node
+    ethereum-rpc.publicnode.com, HTTPS polling), stores it
     in SQLite by content hash, and clusters it by code on three levels (L0
     identical code, L1 identical skeleton or proxy target, L2 selector or
     opcode similarity). Security aim: from one known scam or vulnerable
@@ -792,7 +793,17 @@ System:
             "eth_getCode": 80}; the eth_blockNumber entry carries the comment
             "не подтверждено, сверить с дашбордом" (the other two are from the
             Infura method pages). RpcError text and repr never contain the URL
-            or the key.
+            or the key. ethsc/config.py also holds PUBLICNODE_URL =
+            "https://ethereum-rpc.publicnode.com", the keyless second source
+            (phase 10). The default transport sends the header "User-Agent:
+            ethsc/0.1" with every request, to both sources: the public node
+            answers the urllib default agent (Python-urllib) with HTTP 403
+            "error code: 1010" (measured 2026-09-30). A result of null for
+            eth_getBlockReceipts is not a block: it is retried on the same
+            schedule and under the same max_retries as a 429 or 5xx, is never
+            charged to on_spend, and once the retries are exhausted raises
+            RpcError(None, "eth_getBlockReceipts returned null"). A null
+            result of any other method is returned as is, with no retry.
           requirements: [Offline Tests]
           guardrails: [No Network In Core, Secret Hygiene, Budget Respected]
           steps:
@@ -820,6 +831,28 @@ System:
               when: 'one successful eth_getBlockReceipts and two eth_getCode'
               then: 'the collector sums to 1160'
               ref: 'Infura credit table (eth_getBlockReceipts 1000, eth_getCode 80)'
+            - given: 'the default transport with urllib.request.urlopen replaced by a recorder answering 200 {"jsonrpc":"2.0","id":1,"result":"0x1"}'
+              when: 'RpcClient("https://ethereum-rpc.publicnode.com").call("eth_chainId", [])'
+              then: 'the result is "0x1" and the recorded Request has get_header("User-agent") == "ethsc/0.1" and get_header("Content-type") == "application/json"'
+              ref: 'live 2026-09-30: no User-Agent header gives 403 "error code: 1010", "ethsc/0.1" gives 200'
+            - given: >
+                a fake transport answering status 200 with
+                {"jsonrpc":"2.0","id":1,"result":null} twice, then status 200 with the
+                text of tests/fixtures/receipts_26077729.json; prices {"eth_getBlockReceipts": 1000}
+                and an on_spend collector
+              when: 'call("eth_getBlockReceipts", ["0x18dea21"])'
+              then: 'a list of 218 receipts; 3 transport calls; sleeps [1, 2]; on_spend called once, with ("eth_getBlockReceipts", 1000)'
+              ref: 'live 2026-09-30: block 20000000 answered null 1 time in 10 requests, a block 3 past the head answered null'
+            - given: 'a fake transport that always answers 200 {"jsonrpc":"2.0","id":1,"result":null}, max_retries=5 and an on_spend collector'
+              when: 'call("eth_getBlockReceipts", ["0x1312d00"])'
+              then: 'RpcError with code None and message "eth_getBlockReceipts returned null" after 6 transport calls; sleeps [1, 2, 4, 8, 16]; on_spend never called'
+            - given: 'a fake transport answering 200 {"jsonrpc":"2.0","id":1,"result":null} once'
+              when: 'call("eth_getCode", ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "latest"])'
+              then: 'the result is None after 1 transport call and no sleep'
+              ref: 'only eth_getBlockReceipts treats null as a failure'
+            - given: 'the module ethsc.config'
+              when: 'PUBLICNODE_URL is read'
+              then: 'it equals "https://ethereum-rpc.publicnode.com" and PRICES is unchanged: {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000, "eth_getCode": 80}'
       dataObjects:
         - name: RPC Response
           description: >
@@ -857,7 +890,7 @@ System:
         - name: Ingest Block
           description: >
             ingest_block(block, receipts, get_code, store, max_calls=None,
-            watch=None, on_alerts=None) -> stats dict {candidates, known,
+            watch=None, on_alerts=None, workers=None) -> stats dict {candidates, known,
             fetched, contracts, eoas, failed, deferred, complete, alerts}.
             get_code(address, block) -> hex string is injected. watch is the
             min_score passed to match_watchlist; None means 0.8. on_alerts is
@@ -882,6 +915,27 @@ System:
             handed over, sorted by address, before the exception leaves. An
             alert reaches on_alerts exactly once, so a caller that prints
             from on_alerts must not print the returned list as well.
+            workers (phase 10): None or 1 is the sequential loop above, one
+            get_code at a time. With workers K > 1 the get_code calls of the
+            block -- the same candidates, the first max_calls unknown ones in
+            sorted order -- run in at most K threads at once
+            (concurrent.futures.ThreadPoolExecutor, standard library); only
+            get_code runs in a worker thread. Everything else -- has_address,
+            put_code, put_address, match_watchlist, the stats and the alerts
+            -- happens in the calling thread, taking the results in candidate
+            order, so for the same get_code answers the stats, the alerts,
+            their order and the stored rows are exactly those of the
+            sequential run. (The store is a sqlite3 connection, usable only
+            from the thread that opened it.) A get_code that raises an
+            Exception in a worker counts as failed, as before. A
+            KeyboardInterrupt -- raised by a get_code or while the calling
+            thread waits -- stops the block the same way as in the sequential
+            loop: the results of the candidates before it in order are stored,
+            on_alerts gets their alerts once, the calls not yet started are
+            cancelled and the exception propagates. Known limitation, accepted
+            2026-09-30: calls already in flight are not interrupted, so the
+            process may wait for up to K of them (typically 0.3 s each, at
+            most the transport timeout of 30 s) before it exits.
           guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
           steps:
             - calls: Discover Candidates
@@ -911,11 +965,42 @@ System:
               when: 'ingest_block is called with an on_alerts collecting into a list'
               then: 'KeyboardInterrupt propagates, and on_alerts was called once before it with the single alert for 0x1807090d… at 0.8667'
               ref: 'live smoke 2026-09-29: a Ctrl-C inside a block lost the alerts already found (TASK_PHASE5 §13)'
+            - given: 'receipts_26077729.json, a fresh store, a fake get_code serving codes_26077729.json, and workers=8'
+              when: 'ingest_block(26077729, …) is called'
+              then: >
+                the stats equal those of the sequential call: candidates 206, known 0,
+                fetched 206, contracts 147, eoas 59, failed 0, deferred 0, complete True,
+                alerts []; store.counts() gives addresses 206, addresses_with_code 147,
+                codes 130 -- the same as a sequential ingest into another fresh store
+              ref: 'counted over codes_26077729.json; phase 10'
+            - given: 'a fresh store, a fake get_code serving codes_26077729.json, max_calls=50 and workers=8'
+              when: 'ingest_block(26077729, …) is called'
+              then: 'fetched 50, deferred 156, complete False, and the 50 addresses get_code was called with are exactly the first 50 of discover_candidates(receipts)'
+            - given: >
+                a fresh store, workers=4 and a get_code serving codes_26077729.json
+                that holds every call 10 ms and counts the calls in flight under a
+                lock
+              when: 'ingest_block(26077729, …) is called'
+              then: 'fetched 206, and the peak number of calls in flight is at least 2 and at most 4'
+              ref: 'bounded parallelism; live 2026-09-30: 20 threads, 159 eth_getCode in 2.4 s, no refusal'
+            - given: 'a fresh store, workers=8 and a fake get_code raising OSError for 0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc only'
+              when: 'ingest_block is called'
+              then: 'failed 1, fetched 206, contracts 146'
+              ref: 'Tolerant Parser under workers'
+            - given: >
+                the BELLE setup of the example above (seed code_belle.hex "BELLE
+                honeypot"; candidates 0x1807090dd15a6f58e00fd769e32ebf20ee610385
+                served code_belle_copy_1807090d.hex and
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc whose get_code raises
+                KeyboardInterrupt) with workers=8
+              when: 'ingest_block is called with an on_alerts collecting into a list'
+              then: 'KeyboardInterrupt propagates, on_alerts was called once with the single alert for 0x1807090dd15a6f58e00fd769e32ebf20ee610385 at 0.8667, and that address is stored'
         - name: Follow Chain
           description: >
             follow_chain(rpc, store, start=None, stop=None,
             max_calls_per_block=None, daily_budget=None, day=None,
-            prices=None, on_alerts=None) -> summary {blocks, stopped,
+            prices=None, on_alerts=None, workers=None, code_tag=None)
+            -> summary {blocks, stopped,
             progress, alerts, day}. day is a "%Y-%m-%d" string pinning every
             block of the pass, or a callable of no arguments returning one;
             day=None means today's UTC date, resolved afresh before each
@@ -949,6 +1034,25 @@ System:
             string pins every block of the pass, as the examples below do.
             summary day is the last day resolved, the one a caller reports
             spent() for.
+            Phase 10. workers is handed to every ingest_block call unchanged.
+            code_tag is the block tag of eth_getCode: None keeps hex(block),
+            the block being ingested (the Infura behaviour, TASK_PHASE4 §2);
+            "latest" asks for the current code, because the public node
+            refuses eth_getCode on a block more than about 128 behind the
+            head (HTTP 403, -32602 "Archive requests require a personal
+            token", measured 2026-09-30). The price, the budget cap and the
+            charge per eth_getCode are the same under workers as without
+            them, but the store -- the ledger included -- is written only
+            from the calling thread: with workers > 1 a get_code handed to
+            ingest_block does the rpc call and nothing else, and the charges of a block's
+            successful eth_getCode calls reach store.spend in the calling
+            thread before that block's set_progress, and also when the block
+            stops on a cap, a budget or a KeyboardInterrupt. A receipts
+            answer that is not a list (null included) is not an empty block:
+            follow_chain raises RpcError(None, "eth_getBlockReceipts returned
+            null") before any charge for that call, before ingest_block and
+            before set_progress, so progress stays at the last complete
+            block and a rerun asks for the same block again.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
@@ -987,6 +1091,30 @@ System:
               when: 'follow_chain is called with an on_alerts collecting into a list'
               then: 'stopped "cap", progress unchanged, on_alerts called once with the single alert for 0x1807090d… at 0.8667, and summary alerts holds that same one'
               ref: 'discover_candidates sorts, so 0x1807… is fetched first; before phase 6 its alert was dropped together with the incomplete block'
+            - given: 'the fake rpc of the first example (head "0x18dea21", receipts_26077729.json, codes_26077729.json), progress 26077728, prices {}'
+              when: 'follow_chain is called with code_tag "latest", and again on a fresh store with code_tag None'
+              then: >
+                blocks 1 and progress 26077729 both times; the 206 eth_getCode calls
+                carry params [address, "latest"] in the first pass and
+                [address, "0x18dea21"] in the second; eth_getBlockReceipts is
+                called with ["0x18dea21"] both times
+              ref: 'phase 10: the public node is not an archive node'
+            - given: 'the fake rpc of the first example, progress 26077728, the Infura prices, daily_budget 3000000 and workers=8'
+              when: 'follow_chain is called'
+              then: 'blocks 1, progress 26077729, spent 17560 -- the same ledger as the sequential pass'
+              ref: '80 + 1000 + 206 × 80 = 17560'
+            - given: 'the same with daily_budget 10000 and workers=8'
+              when: 'follow_chain is called'
+              then: 'stopped "budget", exactly 111 eth_getCode calls, spent 9960, progress still 26077728'
+              ref: 'the budget cap holds under workers: 80 + 1000 + 111 × 80 = 9960 <= 10000 < 10040'
+            - given: 'a fake rpc answering eth_blockNumber "0x18dea21" and eth_getBlockReceipts null; progress 26077728; the Infura prices; daily_budget 3000000'
+              when: 'follow_chain is called'
+              then: 'RpcError with code None and message "eth_getBlockReceipts returned null"; progress still 26077728; no eth_getCode call; spent 80 (only eth_blockNumber)'
+              ref: 'before phase 10 a null answer reached discover_candidates and died on a TypeError'
+            - given: 'the fake rpc of the first example, progress 26077728, prices {} and workers=8'
+              when: 'follow_chain is called'
+              then: 'blocks 1, progress 26077729, spent 0 for the day of the pass'
+              ref: 'the public node has no credits; the CLI passes prices {} for it'
     - name: cli
       description: python -m ethsc with subcommands over one SQLite db.
       functions:
@@ -994,8 +1122,10 @@ System:
           description: >
             main(argv=None, rpc=None, sleep=None) -> exit code. Subcommands:
             listen [--daily-budget C] [--max-calls-per-block K]
-            [--interval S], backfill --from N --to M [--daily-budget C]
-            [--max-calls-per-block K], clusters top [--n K], cluster <addr>,
+            [--interval S] [--source {infura,publicnode}] [--workers K],
+            backfill --from N --to M [--daily-budget C]
+            [--max-calls-per-block K] [--source {infura,publicnode}]
+            [--workers K], clusters top [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L, seed list,
             recheck [--min 0.8], report [--out PREFIX],
             risk [--flag {selfdestruct,mutable_delegatecall}].
@@ -1085,6 +1215,32 @@ System:
             address, makes no rpc call, exits 0 -- also with an empty database,
             where stdout stays empty -- and two runs on an unchanged database
             print byte-identical stdout. Nothing printed ever contains the key.
+            Data source (phase 10), on listen and backfill only. --source
+            infura is the default and changes nothing: without rpc the client
+            is RpcClient(infura_url()), follow_chain gets prices=PRICES,
+            code_tag None and workers --workers (default 1). --source
+            publicnode: without rpc the client is RpcClient(PUBLICNODE_URL,
+            prices={}, max_retries=5) -- no key is read and infura_url() is
+            not called, so it runs with INFURA_API_KEY unset and no .env --
+            and follow_chain gets prices={}, code_tag "latest" and workers
+            --workers (default 8), so the credit ledger of the day stays as it
+            was. An rpc passed to main is used as is for either source; the
+            source still decides prices, code_tag and the default workers.
+            Usage errors, exit 2 with exactly one stderr line, empty stdout
+            and no rpc call (no eth_blockNumber either): --daily-budget
+            together with --source publicnode (the budget is an Infura
+            credit budget; it is refused, never silently ignored), --workers
+            below 1, and a --source outside {infura,publicnode}. There is no
+            upper bound on --workers. --max-calls-per-block works for both
+            sources, and a cap stop on the public node reports "spent 0
+            credits" when the day's ledger holds nothing else. An RpcError
+            out of follow_chain -- "eth_getBlockReceipts returned null" once
+            the client's retries are exhausted included -- keeps its phase 5
+            meaning for both sources and in listen too: exit 1, one stderr
+            line, no traceback, progress at the last complete block. Known
+            limitation, accepted 2026-09-30: with code_tag "latest" a contract
+            that self-destructed after the block answers "0x" and is stored as
+            an address without code, known from then on.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -1210,6 +1366,35 @@ System:
                 UniswapV2Pair matches at 1.0000 and 0xcf6daab9... at 0.8125
                 all carry no risk flag), the score still the field before it
               ref: 'the flag column is always present; UniswapV2Pair has no SELFDESTRUCT and no DELEGATECALL opcode'
+            - given: 'INFURA_API_KEY unset, no .env, a fresh db and the fake rpc over block 26077729 (receipts_26077729.json, codes_26077729.json)'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--source", "publicnode"], rpc=fake)'
+              then: 'exit 0, stdout and stderr empty, the db holds 206 addresses and 130 codes, every eth_getCode call carries "latest" as its second param, and spent of today (UTC) is 0'
+              ref: 'phase 10: the public node, keyless and not an archive node'
+            - given: 'a fresh db and the same fake rpc'
+              when: 'the same backfill without --source'
+              then: 'exit 0, the db holds 206 addresses and 130 codes, every eth_getCode call carries "0x18dea21" as its second param, and spent of today (UTC) is 17560'
+              ref: 'Infura stays the default and unchanged: 80 + 1000 + 206 × 80'
+            - given: 'ethsc.cli.follow_chain replaced by a recorder returning {"blocks": 0, "stopped": None, "progress": None, "alerts": [], "day": "2026-09-30"}, and a fake rpc'
+              when: 'backfill --from 26077729 --to 26077729 is run with no source flag, with --source publicnode, and with --source publicnode --workers 3'
+              then: >
+                exit 0 each time; the recorded keyword arguments are workers 1,
+                code_tag None, prices equal to ethsc.config.PRICES; then workers 8,
+                code_tag "latest", prices {}; then workers 3, code_tag "latest",
+                prices {}
+            - given: 'INFURA_API_KEY unset, no .env, ethsc.cli.RpcClient replaced by a recorder that returns a fake rpc over block 26077729, and ethsc.cli.infura_url replaced by one that raises AssertionError'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--source", "publicnode"]) is run with rpc=None'
+              then: 'exit 0; RpcClient was constructed once, with the url "https://ethereum-rpc.publicnode.com", prices {} and max_retries 5; infura_url was never called'
+            - given: 'a fresh db and a fake rpc'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--source", "publicnode", "--daily-budget", "3000000"], rpc=fake) and the same with listen instead of backfill --from/--to'
+              then: 'exit 2 both times, stdout empty, stderr exactly one line, and the fake rpc recorded no call'
+              ref: 'the daily budget is an Infura credit budget; refused, not ignored'
+            - given: 'a fresh db and a fake rpc'
+              when: 'main with backfill --from 26077729 --to 26077729 and --workers 0, then with --source alchemy'
+              then: 'exit 2 both times, stdout empty, stderr exactly one line, and the fake rpc recorded no call'
+            - given: 'a db with progress 26077728 and a fake rpc answering eth_blockNumber "0x18dea21" and eth_getBlockReceipts null'
+              when: 'main(["--db", db, "listen", "--source", "publicnode"], rpc=fake, sleep=fake_sleep)'
+              then: 'exit 1, stdout empty, stderr exactly one line containing "eth_getBlockReceipts returned null", no traceback, progress still 26077728, sleep never called'
+              ref: 'decision 2026-09-30: no new semantics for a null that outlived the retries; exit 1 as for any RpcError'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
