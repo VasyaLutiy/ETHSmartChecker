@@ -1,0 +1,485 @@
+{
+  "deck_id": "20260930-082801-571e15f5",
+  "completed_at": "2026-09-30T08:51:50.142",
+  "branch": "morph/20260930-082801-571e15f5",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "store",
+      "charts"
+    ],
+    [
+      "report"
+    ],
+    [
+      "report-judge",
+      "cli"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-a940bc6980444b7b8b04fcacbdca88ed",
+    "local-e71082450e7648eb92cce35604649e56",
+    "local-94878cacd9014552a1a308ca8f327513",
+    "local-f7758b0c07654b908643dc05d40f9a34",
+    "local-6268bc3d27384e538bf99e11c21481c0",
+    "local-ed2ee2825b894584984407a52f392346",
+    "local-1d970732fbbf47f9b7481b643c31f77a"
+  ],
+  "outcomes": {
+    "store": {
+      "custom_id": "store",
+      "status": "written",
+      "paths": [
+        "./tests/helpers.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "d4864f307e41cdc9e3bc55161e2bf9aabed475c5",
+      "diffstat": [
+        {
+          "path": "tests/helpers.py",
+          "insertions": 20,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/helpers.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "charts": {
+      "custom_id": "charts",
+      "status": "written",
+      "paths": [
+        "./ethsc/charts.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "charts.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "b2bd6f430252099a85a6d843ac97caab806dac9b",
+      "diffstat": [
+        {
+          "path": "ethsc/charts.py",
+          "insertions": 12,
+          "deletions": 3
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/charts.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/charts.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "report": {
+      "custom_id": "report",
+      "status": "written",
+      "paths": [
+        "./ethsc/report.py",
+        "./tests/test_report.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "report.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\nP8 the four-row hand case raised IndexError: tuple index out of range -- at report.py line 315, in spearman\nP15 build_report returned though the drawing layer would not import; it must raise ChartsUnavailable\nP15 /tmp/report72-probe-q0d1_wqt/missing.html was written before the drawing layer was checked; nothing is written on that path\nP15 /tmp/report72-probe-q0d1_wqt/missing.json was written before the drawing layer was checked; nothing is written on that path\n",
+      "commit": "7bbf60fd35672be55c83930b29432b7b39cab92f",
+      "diffstat": [
+        {
+          "path": "ethsc/report.py",
+          "insertions": 495,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_report.py",
+          "insertions": 110,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/report.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/report.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_report.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_report.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "report-judge": {
+      "custom_id": "report-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_report_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "report-judge.r2",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\n........F...                                                             [100%]\n=================================== FAILURES ===================================\nE   AssertionError: non-proxy features keep their diagonal 1.0\n    assert None == 1.0\n/home/john/Documents/Work2026/ETHSmartChecker/tests/test_report_examples.py:257: AssertionError: non-proxy features keep their diagonal 1.0\n=========================== short test summary info ============================\nFAILED tests/test_report_examples.py::test_example_proxy_free_base_null_row\n1 failed, 11 passed in 11.21s\n",
+      "commit": "d7d759d818227ff4b7dc4af75083a1af4767b573",
+      "diffstat": [
+        {
+          "path": "tests/test_report_examples.py",
+          "insertions": 328,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_report_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "cli.r2.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard: ast OK\ncli probe: 6 scenarios OK\n.........F....                                                           [100%]\n=================================== FAILURES ===================================\nE   AssertionError: 'ethsc-report.html\\nethsc-report.json\\n' != '/tmp/tmpo8p1gw42/ethsc-report.html\\n/tmp/tmpo8p1gw42/ethsc-report.json\\n'\n    - ethsc-report.html\n    - ethsc-report.json\n    + /tmp/tmpo8p1gw42/ethsc-report.html\n    + /tmp/tmpo8p1gw42/ethsc-report.json\n     : report default stdout\n/usr/lib/python3.12/unittest/case.py:715: AssertionError: 'ethsc-report.html\\nethsc-report.json\\n' != '/tmp/tmpo8p1gw42/ethsc-report.html\\n/tmp/tmpo8p1gw42/ethsc-report.json\\n'\n=========================== short test summary info ============================\nFAILED tests/test_cli.py::CliSmoke::test_report_default_prefix_and_empty_db\n1 failed, 13 passed in 10.82s\n",
+      "commit": "0ea5d4d15f344da12efcd429cf0cf2ded147209f",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 56,
+          "deletions": 17
+        },
+        {
+          "path": "tests/test_cli.py",
+          "insertions": 60,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "61532b2035275591502ff4285fb76069d9b0013b",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples.py",
+          "insertions": 140,
+          "deletions": 1
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "charts.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753282-vnnZxfVsi201X3bWcqbZ",
+      "input_tokens": 34349,
+      "output_tokens": 2210,
+      "cost": 0.00375441,
+      "finish_reason": "stop"
+    },
+    "store.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753282-8sQWSBdxFc1kdhfBW8ei",
+      "input_tokens": 37041,
+      "output_tokens": 1460,
+      "cost": 0.00377169,
+      "finish_reason": "stop"
+    },
+    "store.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753282-R8CR6YOLzEtCytPvEQ8D",
+      "input_tokens": 37041,
+      "output_tokens": 1494,
+      "cost": 0.00378189,
+      "finish_reason": "stop"
+    },
+    "charts.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753282-5KtkUk0NKytpPkh5zSxk",
+      "input_tokens": 34349,
+      "output_tokens": 2318,
+      "cost": 0.00378681,
+      "finish_reason": "stop"
+    },
+    "report.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753551-V047hIhaB5HR85rRu1Oh",
+      "input_tokens": 40867,
+      "output_tokens": 8135,
+      "cost": 0.00611853,
+      "finish_reason": "stop"
+    },
+    "report.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753551-7WxQTJ0I3vBqXTTap8ve",
+      "input_tokens": 40867,
+      "output_tokens": 18635,
+      "cost": 0.00926853,
+      "finish_reason": "stop"
+    },
+    "report.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753702-f5va08j6k7kTUQWVCiUy",
+      "input_tokens": 50364,
+      "output_tokens": 13531,
+      "cost": 0.00859206,
+      "finish_reason": "stop"
+    },
+    "report.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753702-jjGfbvWfSYqHn81zGMdA",
+      "input_tokens": 50364,
+      "output_tokens": 15787,
+      "cost": 0.00926886,
+      "finish_reason": "stop"
+    },
+    "report-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753928-uZdfxNZPHO6x41E38cbY",
+      "input_tokens": 41832,
+      "output_tokens": 4223,
+      "cost": 0.00503178,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753929-BtIYqzH4lW00ToXTr2Nt",
+      "input_tokens": 45655,
+      "output_tokens": 6289,
+      "cost": 0.00599565,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790753929-JRDcrSUtZP9sDB1KIZqE",
+      "input_tokens": 45680,
+      "output_tokens": 6079,
+      "cost": 0.0059349,
+      "finish_reason": "stop"
+    },
+    "report-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754029-JrlRnjbar3UJvg8EGd2A",
+      "input_tokens": 46074,
+      "output_tokens": 5568,
+      "cost": 0.003526884,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754030-uEs1WVmXlZpBmIL95ZdL",
+      "input_tokens": 52320,
+      "output_tokens": 6079,
+      "cost": 0.003749268,
+      "finish_reason": "stop"
+    },
+    "cli.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754029-kdRviWtHpyd1RWQSBl4m",
+      "input_tokens": 52320,
+      "output_tokens": 6122,
+      "cost": 0.0065454,
+      "finish_reason": "stop"
+    },
+    "report-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754167-2MwQBIlInt0GMAAXK8mr",
+      "input_tokens": 45975,
+      "output_tokens": 6019,
+      "cost": 0.003653274,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754167-9h0JX9M9KZUQ4wZQlQWp",
+      "input_tokens": 52584,
+      "output_tokens": 6264,
+      "cost": 0.003077424,
+      "finish_reason": "stop"
+    },
+    "cli.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754167-1sSB0nLumO9VY7h8m5tL",
+      "input_tokens": 52584,
+      "output_tokens": 7068,
+      "cost": 0.00685296,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790754467-9aDSeFvLRY2j6UxANv6t",
+      "input_tokens": 47526,
+      "output_tokens": 9398,
+      "cost": 0.00709674,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 807792,
+    "output_tokens": 126679,
+    "cost": 0.09980705999999999,
+    "requests": 18,
+    "requests_with_usage": 18
+  },
+  "orchestrator_usage": {}
+}
