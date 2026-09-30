@@ -599,13 +599,20 @@ System:
           description: >
             add_seed(address, label) marks the stored code of address as a
             known-bad seed; seeds() -> list of {address, label, code_id}
-            sorted by address.
+            sorted by address. Phase 12: remove_seed(address) -> bool
+            deletes the seed of address and returns True, or returns False
+            when the address is not a seed.
           behavior: >
             add_seed on an address with no stored code raises
             KeyError(address): both an address the db does not know and a
             known address stored with code_id None (an EOA). The address may
             come in any case. Adding the same address twice keeps one seed
-            with the latest label.
+            with the latest label. remove_seed takes the address in any case,
+            deletes only the one row of the seeds table and commits; the
+            codes and addresses rows of that address stay as they were, so
+            the address can be seeded again with add_seed and no rpc call. It
+            never raises for an unknown address or for an address that is
+            stored but not a seed: both give False and change nothing.
           steps:
             - modifies: Code Database
           examples:
@@ -618,6 +625,17 @@ System:
             - given: 'an address that is not in the db'
               when: 'add_seed is called'
               then: 'KeyError'
+            - given: 'a db holding code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6, seeded "BELLE honeypot"'
+              when: 'remove_seed("0x34C6211621F2763C60EB007DC2AE91090A2D22F6") is called twice, then add_seed(address, "BELLE again")'
+              then: >
+                True, then False; after the first call seeds() is [],
+                has_address is True and code_of returns the exact bytes of
+                code_belle.hex; the add_seed succeeds and seeds() has 1 entry
+                labelled "BELLE again"
+              ref: 'phase 12: seed remove keeps the code and address rows'
+            - given: 'a fresh db, and then that db with code_belle.hex stored at 0x34c6… but not seeded'
+              when: 'remove_seed("0x34c6211621f2763c60eb007dc2ae91090a2d22f6") is called on each'
+              then: 'False both times, no exception, and the codes and addresses row counts unchanged'
         - name: Budget Ledger
           description: >
             spend(day, method, credits) adds credits to the ledger of a UTC
@@ -1257,13 +1275,15 @@ System:
             backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K] [--source {infura,publicnode}]
             [--workers K], clusters top [--n K], cluster <addr>,
-            similar <addr> [--min 0.8], seed add <addr> --label L, seed list,
+            similar <addr> [--min 0.8], seed add <addr> --label L [--fetch],
+            seed remove <addr>, seed list,
             recheck [--min 0.8], report [--out PREFIX],
             risk [--flag {selfdestruct,mutable_delegatecall}].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
             Without rpc, builds RpcClient(infura_url()), but only on the way
             into a subcommand that talks to the chain -- listen and
-            backfill. Every other subcommand runs with INFURA_API_KEY unset
+            backfill -- and, keyless, for seed add --fetch on an address the
+            store does not hold (phase 12). Every other subcommand runs with INFURA_API_KEY unset
             and no .env in sight, and infura_url() is not called at all, so
             its RpcError never reaches the caller as a traceback.
             sleep=None means time.sleep, injected so listen can be stopped
@@ -1372,6 +1392,38 @@ System:
             limitation, accepted 2026-09-30: with code_tag "latest" a contract
             that self-destructed after the block answers "0x" and is stored as
             an address without code, known from then on.
+            Seed of a contract not in the base (phase 12). seed add takes
+            --fetch. Without it nothing changes. With it the address is
+            validated first (a bad address is exit 2 before any rpc); then,
+            if store.has_address(address) is True, no client is built and no
+            rpc call is made and seed add goes on exactly as without --fetch
+            (so a known EOA still answers exit 2). Otherwise the client is the
+            rpc passed to main, or else RpcClient(PUBLICNODE_URL, prices={},
+            max_retries=5) -- infura_url() is never called and no key is read
+            -- and exactly two calls are made, in this order:
+            call("eth_blockNumber", []) and call("eth_getCode", [<address
+            lowercase>, "latest"]); block is int(<eth_blockNumber answer>, 16).
+            A code answer that is "0x" + a non-empty even run of hex digits is
+            stored with put_code and put_address(address, code_id, block),
+            then add_seed and the recheck alerts of the new seed are printed
+            exactly as for a seed add of a stored address, exit 0. An answer
+            "0x" (an EOA or a self-destructed contract) is stored with
+            put_address(address, None, block), like the eoas of Ingest Block,
+            and the command answers exit 2 with the one stderr line
+            "unknown address or no code: <address>" and an empty stdout. Any
+            other answer (null, odd length, not hex) is exit 1 with exactly
+            one stderr line "eth_getCode returned no code: <address>" and
+            nothing stored. An RpcError from either call is exit 1, stderr
+            str(err) on one line, no traceback, nothing stored (not even an
+            address row). --fetch never writes the credit ledger (spend is
+            not called: the public node has no credits) and never reaches
+            follow_chain. seed remove <address> validates the address
+            (exit 2 on a bad one), calls store.remove_seed and makes no rpc
+            call: True is exit 0 with stdout and stderr empty; False is exit 2
+            with exactly one stderr line "not a seed: <address>" and an empty
+            stdout. The code and address rows stay, so a later recheck no
+            longer names the removed seed and a seed add without --fetch can
+            restore it.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -1526,6 +1578,56 @@ System:
               when: 'main(["--db", db, "listen", "--source", "publicnode"], rpc=fake, sleep=fake_sleep)'
               then: 'exit 1, stdout empty, stderr exactly one line containing "eth_getBlockReceipts returned null", no traceback, progress still 26077728, sleep never called'
               ref: 'decision 2026-09-30: no new semantics for a null that outlived the retries; exit 1 as for any RpcError'
+            - given: 'INFURA_API_KEY unset, a fresh temp db holding the four BELLE copies code_belle_copy_*.hex at 0x1807090dd15a6f58e00fd769e32ebf20ee610385, 0x2141be5f2afa674c94167ab167a478a56cb539f5, 0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a, 0x6411bed82614b91ef655d82486e0bd3a13d2eb8c (block 26077729) and no seed, and FakeRpc(codes={"0x34c6211621f2763c60eb007dc2ae91090a2d22f6": text of code_belle.hex}, head="0x18dea21")'
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x34C6211621F2763C60EB007DC2AE91090A2D22F6", "--label", "BELLE honeypot"], rpc=fake)'
+              then: >
+                exit 0, stderr empty, stdout exactly 4 ALERT lines, one per
+                copy in address order, each with the seed address lowercase,
+                "BELLE honeypot" and 0.8667; fake.calls is exactly
+                [("eth_blockNumber", []), ("eth_getCode",
+                ["0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "latest"])]; the
+                address is stored with block 26077729 and code_of gives the
+                exact bytes of code_belle.hex; seeds() has the one seed; the
+                ledger of today (UTC) is 0
+              ref: 'phase 12: a seed for a contract no listen ever stored'
+            - given: 'the db after the example above, and FakeRpc(fail=AssertionError("no rpc"))'
+              when: 'the same command is run again with --label "BELLE again"'
+              then: 'exit 0, the same 4 ALERT lines except the label "BELLE again", fake.calls is []; seeds() has 1 entry labelled "BELLE again"'
+              ref: '--fetch on a stored address makes no rpc call'
+            - given: 'INFURA_API_KEY unset, a fresh db and FakeRpc(codes={"0x023697eda1dfbe331c2cf791ef2f6089e73e3230": "0x"}, head="0x18dea21")'
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x023697eda1dfbe331c2cf791ef2f6089e73e3230", "--label", "L"], rpc=fake), then the same again with FakeRpc(fail=AssertionError("no rpc"))'
+              then: >
+                exit 2 both times, stdout empty, stderr exactly the one line
+                "unknown address or no code:
+                0x023697eda1dfbe331c2cf791ef2f6089e73e3230"; after the first
+                run has_address is True, code_of is None, seeds() is [], the
+                address row has block 26077729; the second fake records no call
+              ref: 'an EOA of codes_26077729.json; "0x" is stored like the eoas of Ingest Block'
+            - given: 'a fresh db and FakeRpc(fail=RpcError(-32000, "header not found"))'
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "--label", "L"], rpc=fake)'
+              then: 'exit 1, stdout empty, stderr exactly the one line "header not found", no traceback; one call recorded (eth_blockNumber); addresses 0, codes 0, seeds 0'
+            - given: 'a fresh db and FakeRpc(codes={"0x34c6211621f2763c60eb007dc2ae91090a2d22f6": None}, head="0x18dea21"), then the same with the answer "0x123"'
+              when: 'the seed add --fetch of the example above is run with each'
+              then: 'exit 1 each time, stdout empty, stderr exactly "eth_getCode returned no code: 0x34c6211621f2763c60eb007dc2ae91090a2d22f6"; addresses 0, codes 0, seeds 0'
+            - given: 'INFURA_API_KEY unset, no .env, a fresh db, ethsc.cli.RpcClient replaced by a recorder returning FakeRpc(codes={"0x34c6211621f2763c60eb007dc2ae91090a2d22f6": text of code_belle.hex}, head="0x18dea21"), and ethsc.cli.infura_url replaced by one that raises AssertionError'
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "--label", "BELLE honeypot"]) with rpc=None, then main(["--db", db, "seed", "add", "--fetch", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "--label", "x"]) again, then main(["--db", db2, "seed", "add", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "--label", "x"]) on a second fresh db'
+              then: >
+                exit 0, 0 and 2; RpcClient was constructed exactly once, in
+                the first run, with the url "https://ethereum-rpc.publicnode.com",
+                prices {} and max_retries 5; infura_url was never called
+              ref: 'keyless public node; no client for a stored address or without --fetch'
+            - given: 'a db holding code_belle.hex at 0x34c6… seeded "BELLE honeypot" and the four BELLE copies, and a FakeRpc'
+              when: 'main(["--db", db, "seed", "remove", "0x34C6211621F2763C60EB007DC2AE91090A2D22F6"], rpc=fake), then recheck, then the same seed remove again'
+              then: >
+                exit 0 with stdout and stderr empty; recheck exit 0 with empty
+                stdout; the second remove exit 2, stdout empty, stderr exactly
+                "not a seed: 0x34C6211621F2763C60EB007DC2AE91090A2D22F6"; the
+                fake records no call; addresses 5 and codes 5 throughout; a
+                seed add 0x34c6… --label "BELLE honeypot" afterwards prints
+                the 4 ALERT lines again
+            - given: 'a fresh db'
+              when: 'main(["--db", db, "seed", "remove", "0x12"]) and main(["--db", db, "seed", "add", "--fetch", "0x12", "--label", "L"], rpc=FakeRpc(fail=AssertionError("no rpc")))'
+              then: 'exit 2 both times, stdout empty, stderr one line, the fake records no call'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
