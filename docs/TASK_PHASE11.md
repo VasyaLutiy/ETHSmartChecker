@@ -235,3 +235,50 @@ The provider bill (scout and executors as separate lines); queue time per genera
 regenerations; final test count; the live timings of §3.6; the two recon numbers.
 
 ## 11. Actual
+
+One run, 5 of 5 cards accepted: `morph/20260930-210939-f34eccbf`, 3 generations,
+**19 min**, executor bill **$0.0506** (11 requests, glm).
+
+| card | attempts | commit | diff |
+|---|---|---|---|
+| store (fingerprint + store) | 1 (v1 of 2) | c1bfbee | fingerprint.py +35/−21, store.py +41/−7, test_store_p11.py +72 |
+| fingerprint-judge | 1 | d930778 | test_fingerprint_examples_p11.py +108 |
+| cluster | 2 | ec3d18d | cluster.py +52/−43, test_cluster_p11.py +95 |
+| store-judge | 3 | fe1a6fe | test_store_examples_p11.py +303 |
+| cluster-judge | 1 | 971a39b | test_cluster_examples_p11.py +96 |
+
+- Regenerations: 3, every one in the executor's own tests, never in product code and
+  never on the guard or the probe: `cluster` — its smoke tests read
+  `cluster.similarity` after the card had dropped that import; `store-judge` — a
+  hand-built phase-10 db asserted `PRAGMA index_list(addresses)` empty, forgetting
+  sqlite's `sqlite_autoindex_addresses_1` of the primary key, then a key list in the
+  wrong sort order.
+- Tests: 302 → **323**, all green (181 s). Old test files: 4 lines in 3 files, as data
+  before the run (f38311e).
+
+**Live acceptance (§3.6), on `smoke/p11/ethsc.sqlite`, branch code, one process at a
+time:**
+
+| step | before (master, 4 at once) | after | limit |
+|---|---|---|---|
+| first open (ALTER + fill of 7 509 codes) | — | 7.82 s | once |
+| second open (process, incl. imports) | — | 0.02 s (`Store()` itself 0.004 s) | < 1 s |
+| `recheck` | 38 s | **0.11 s** | < 2 s |
+| `similar 0x004f…2298` | 305 s | **0.14 s** | < 2 s |
+| `clusters top --n 50` | 282 s | **0.15 s** | — |
+| `report --out` | 553 s | **16.42 s** | < 25 s |
+
+All six outputs (`recheck.out`, `similar.out`, `clusters.out`, `report.out`, the report
+html and json) are `cmp`-identical to the baseline. `fingerprints()` of the migrated copy
+equals that of a fresh phase-11 db filled by `put_code` on 1 303 codes (every 15th plus
+all 864 `std_proxy`). **Falsifiable claim — confirmed.**
+
+**Recon.** Scout 347 s, $0.0080, `stop_reason` "the model answered on its own", `spent`
+reads 3 / calls 15 / rounds 4, seed `--seed-from-primer` plus one line asking for every
+test and caller relying on the five keys and the column list. Targets named: **3 of the
+deck's 8** (`store.py`, `fingerprint.py`, `cluster.py`; the other 5 are new test files).
+Roles moved by the orchestrator: **3** (`tests/test_fingerprint.py`,
+`tests/test_store_read.py`, `tests/test_store.py`: context → data edit before the run);
+the scout had named all three in its reasoning, as context. The ripple-by-execution
+mutation found exactly the same three tests and nothing more; it also showed the index
+must follow the `addresses` table in `_SCHEMA`.
