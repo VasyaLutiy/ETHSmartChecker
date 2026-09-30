@@ -84,7 +84,8 @@ class FingerprintCodeTests(unittest.TestCase):
         fp = fingerprint(code)
         self.assertEqual(
             sorted(fp.keys()),
-            ["code_id", "proxy", "selectors", "size", "skeleton_hash"],
+            ["code_id", "proxy", "selectors", "size", "skeleton_hash",
+             "std_proxy"],
             msg="the Fingerprint dict has exactly the five schema keys",
         )
         import hashlib

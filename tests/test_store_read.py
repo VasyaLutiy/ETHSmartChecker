@@ -73,7 +73,7 @@ class TestStoreRead(unittest.TestCase):
                 self.assertEqual(
                     sorted(fp.keys()),
                     ["code_id", "proxy", "selectors", "size",
-                     "skeleton_hash"],
+                     "skeleton_hash", "std_proxy"],
                     "exact keys",
                 )
                 self.assertIsInstance(fp["selectors"], list, "selectors list")

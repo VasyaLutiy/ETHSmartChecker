@@ -213,7 +213,7 @@ class StoreCodesAndContractsTest(unittest.TestCase):
             self.assertEqual(
                 cols,
                 ["code_id", "size", "skeleton_hash", "selectors",
-                 "proxy_kind", "proxy_target", "code"],
+                 "proxy_kind", "proxy_target", "code", "std_proxy"],
                 msg="codes columns must follow the Code Database schema",
             )
             row = conn.execute(
