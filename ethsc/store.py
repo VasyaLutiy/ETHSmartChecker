@@ -11,6 +11,7 @@ import json
 import sqlite3
 from typing import List, Optional
 
+from ethsc.evm import is_std_proxy
 from ethsc.fingerprint import fingerprint
 
 
@@ -22,13 +23,15 @@ CREATE TABLE IF NOT EXISTS codes (
     selectors TEXT,
     proxy_kind TEXT,
     proxy_target TEXT,
-    code BLOB
+    code BLOB,
+    std_proxy INTEGER
 );
 CREATE TABLE IF NOT EXISTS addresses (
     address TEXT PRIMARY KEY,
     code_id TEXT,
     block INTEGER
 );
+CREATE INDEX IF NOT EXISTS addresses_code_id ON addresses(code_id);
 CREATE TABLE IF NOT EXISTS progress (
     key TEXT PRIMARY KEY,
     block INTEGER
@@ -52,6 +55,33 @@ class Store(object):
     def __init__(self, path: str) -> None:
         self._conn = sqlite3.connect(path)
         self._conn.executescript(_SCHEMA)
+        columns = [row[1] for row in
+                   self._conn.execute("PRAGMA table_info(codes)").fetchall()]
+        if "std_proxy" not in columns:
+            self._conn.execute(
+                "ALTER TABLE codes ADD COLUMN std_proxy INTEGER")
+            self._conn.commit()
+        self._fill_std_proxy()
+        self._conn.commit()
+
+    def _fill_std_proxy(self) -> None:
+        """Fill every NULL std_proxy from is_std_proxy of the stored code.
+
+        Runs on every open, so a fill interrupted after the ALTER, or a
+        row written by an older ethsc, is repaired instead of scoring as
+        a non-proxy forever. Commits once it is done.
+        """
+        rows = self._conn.execute(
+            "SELECT code_id, code FROM codes WHERE std_proxy IS NULL"
+        ).fetchall()
+        if not rows:
+            return
+        for code_id, code in rows:
+            value = 1 if is_std_proxy(bytes(code)) else 0
+            self._conn.execute(
+                "UPDATE codes SET std_proxy = ? WHERE code_id = ?",
+                (value, code_id),
+            )
         self._conn.commit()
 
     def close(self) -> None:
@@ -70,8 +100,8 @@ class Store(object):
         code_id = fp["code_id"]
         self._conn.execute(
             "INSERT OR IGNORE INTO codes (code_id, size, skeleton_hash,"
-            " selectors, proxy_kind, proxy_target, code)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " selectors, proxy_kind, proxy_target, code, std_proxy)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 code_id,
                 fp["size"],
@@ -80,6 +110,7 @@ class Store(object):
                 fp["proxy"]["kind"] if fp["proxy"] else None,
                 fp["proxy"]["target"] if fp["proxy"] else None,
                 sqlite3.Binary(code),
+                1 if fp["std_proxy"] else 0,
             ),
         )
         self._conn.commit()
@@ -132,15 +163,17 @@ class Store(object):
         """One Fingerprint dict per row of codes, sorted by code_id.
 
         Each dict has exactly the keys code_id, size, skeleton_hash,
-        selectors (a list) and proxy ({"kind", "target"} or None); it
-        equals fingerprint(code) of the stored code. Empty db gives [].
+        selectors (a list), proxy ({"kind", "target"} or None) and
+        std_proxy (a bool); it equals fingerprint(code) of the stored
+        code. Empty db gives [].
         """
         rows = self._conn.execute(
             "SELECT code_id, size, skeleton_hash, selectors,"
-            " proxy_kind, proxy_target FROM codes ORDER BY code_id"
+            " proxy_kind, proxy_target, std_proxy FROM codes"
+            " ORDER BY code_id"
         ).fetchall()
         result = []
-        for code_id, size, skeleton_hash, selectors, kind, target in rows:
+        for code_id, size, skeleton_hash, selectors, kind, target, std in rows:
             proxy = None
             if kind is not None:
                 proxy = {"kind": kind, "target": target}
@@ -151,6 +184,7 @@ class Store(object):
                     "skeleton_hash": skeleton_hash,
                     "selectors": json.loads(selectors),
                     "proxy": proxy,
+                    "std_proxy": bool(std),
                 }
             )
         return result

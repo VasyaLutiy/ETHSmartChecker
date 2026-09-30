@@ -24,8 +24,9 @@ def fingerprint(code: bytes) -> Optional[dict]:
 
     Returns None for empty code; otherwise a dict with exactly the keys
     code_id (sha256 hex of the raw code), size, skeleton_hash (sha256 hex
-    of build_skeleton), selectors (extract_selectors) and proxy
-    (detect_proxy). Never raises on garbage bytes.
+    of build_skeleton), selectors (extract_selectors), proxy
+    (detect_proxy) and std_proxy (is_std_proxy, a bool). Never raises on
+    garbage bytes.
     """
     if len(code) == 0:
         return None
@@ -35,7 +36,36 @@ def fingerprint(code: bytes) -> Optional[dict]:
         "skeleton_hash": hashlib.sha256(build_skeleton(code)).hexdigest(),
         "selectors": extract_selectors(code),
         "proxy": detect_proxy(code),
+        "std_proxy": is_std_proxy(code),
     }
+
+
+def score_fingerprints(fp_a: Optional[dict], fp_b: Optional[dict]) -> float:
+    """The Similarity Score of two Fingerprint dicts, without their bytes.
+
+    The three rules of similarity, in order, each read from the dict:
+    (1) if either proxy is not None, 1.0 when both are not None with equal
+    kind AND equal target, else 0.0; (2) otherwise 0.0 if either std_proxy
+    is true or either selectors list is empty; (3) otherwise the Jaccard
+    index of the two selector sets, the float of the division, never
+    rounded. None on either side scores 0.0. Symmetric; never raises on
+    two dicts of the Fingerprint schema or None; never reads code.
+    """
+    if fp_a is None or fp_b is None:
+        return 0.0
+    proxy_a = fp_a["proxy"]
+    proxy_b = fp_b["proxy"]
+    if proxy_a is not None or proxy_b is not None:
+        if proxy_a is not None and proxy_b is not None \
+                and proxy_a["kind"] == proxy_b["kind"] \
+                and proxy_a["target"] == proxy_b["target"]:
+            return 1.0
+        return 0.0
+    sel_a = set(fp_a["selectors"])
+    sel_b = set(fp_b["selectors"])
+    if fp_a["std_proxy"] or fp_b["std_proxy"] or not sel_a or not sel_b:
+        return 0.0
+    return float(len(sel_a & sel_b)) / float(len(sel_a | sel_b))
 
 
 def _opcode_trigrams(code: bytes) -> set:
@@ -66,23 +96,7 @@ def similarity(code_a: bytes, code_b: bytes) -> float:
         the float of the division, never rounded.
     Symmetric; similarity(b"", b"") == 0.0; no exception on empty or
     garbage bytes. Two codes with the same non-empty selector set score
-    1.0.
+    1.0. Since phase 11 this is score_fingerprints of the two
+    fingerprints: the rules live in one place.
     """
-    proxy_a = detect_proxy(code_a)
-    proxy_b = detect_proxy(code_b)
-    if proxy_a is not None or proxy_b is not None:
-        if proxy_a is not None and proxy_b is not None \
-                and proxy_a["kind"] == proxy_b["kind"] \
-                and proxy_a["target"] == proxy_b["target"]:
-            return 1.0
-        return 0.0
-    sel_a = set(extract_selectors(code_a))
-    sel_b = set(extract_selectors(code_b))
-    if is_std_proxy(code_a) or is_std_proxy(code_b) \
-            or not sel_a or not sel_b:
-        return 0.0
-    union = len(sel_a | sel_b)
-    if union == 0:
-        return 0.0
-    return float(len(sel_a & sel_b)) / float(union)
-
+    return score_fingerprints(fingerprint(code_a), fingerprint(code_b))
