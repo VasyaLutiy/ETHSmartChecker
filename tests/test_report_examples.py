@@ -1,374 +1,330 @@
 # tests/test_report_examples.py
 # -*- coding: utf-8 -*-
-"""Example-based tests for ethsc/report.py (docs/TASK_PHASE8.md).
+"""Example-based tests for ethsc/report.py (docs/TASK_PHASE9.md).
 
-One test per Contour example (some large examples are split into two
-tests, each naming the example it checks). The block base is loaded
-from tests.helpers.block_store (the fixture of block 26077729: 206
-addresses, 147 with code, 130 codes). No network is opened, no Fake
-classes are defined here, and matplotlib is never imported by the
-tests: the numbers are read out of the collected payload and the
-charts are stubs, never a picture.
+One test per Contour example of TWO functions: Collect Report Data
+(examples 1-6) and Spearman Matrix (examples 7-10). Render Report is
+NOT tested here (the report code card owns it, and it needs
+matplotlib, which this judge must never import): every number is read
+straight out of the collect() / spearman() payload.
+
+The block base comes from tests.helpers.block_store (block 26077729:
+206 addresses, 147 with code, 130 codes). No network, no Fake classes
+defined here, no matplotlib, standard library only, Python 3.9.
 """
 
-import json
-import os
-import sys
-import tempfile
 import unittest
 
 from ethsc import report
+from ethsc.fingerprint import fingerprint
 
-from tests.helpers import block_store, load_hex, temp_store
-
-
-STUBS = {
-    "cluster_sizes": "<svg><text>stub-cluster_sizes</text></svg>",
-    "top_clusters": "<svg><text>stub-top_clusters</text></svg>",
-    "code_sizes": "<svg><text>stub-code_sizes</text></svg>",
-    "selector_counts": "<svg><text>stub-selector_counts</text></svg>",
-    "spearman": "<svg><text>stub-spearman</text></svg>",
-}
-
-# The Contour pins the six coefficients of the block base at four
-# decimal places from an independent computation, so the comparison is
-# against the printed figures at the precision they are given.
-COEF_TOL = 5e-5
-
-SIZE, OPCODES, SELECTORS, ADDRESSES, L1FAMILY, ISPROXY = range(6)
+from tests.helpers import block_codes, block_store, temp_store
 
 
-def _coef(matrix, i, j, msg):
-    value = matrix[i][j]
-    assert value is not None, msg
-    return value
+FEATURES = report.FEATURES
+IDX = dict((name, i) for i, name in enumerate(FEATURES))
+
+
+def _non_proxy_store():
+    """A store holding only the non-proxy codes of the block base.
+
+    Every distinct code of codes_26077729.json whose fingerprint has
+    proxy None is put in the store with its addresses; the eip1167 and
+    eip7702 proxy codes are left out, so is_proxy is 0 for every code
+    and the spearman section must mark it null.
+    """
+    store = temp_store()
+    block = 26077729
+    for address, text in sorted(block_codes().items()):
+        if text == "0x":
+            continue
+        code = bytes.fromhex(text[2:])
+        if fingerprint(code)["proxy"] is not None:
+            continue
+        code_id = store.put_code(code)
+        store.put_address(address, code_id, block)
+    return store
+
+
+def _levels_checks(test, levels):
+    """Collect Report Data example 1, phase-9 numbers."""
+    test.assertEqual(levels["L0"]["clusters"], 7, msg="L0 clusters")
+    test.assertEqual(levels["L0"]["addresses"], 16, msg="L0 addresses")
+    test.assertAlmostEqual(levels["L0"]["share"], 16 / 147, places=12,
+                           msg="L0 share 16/147")
+    test.assertEqual(levels["L1"]["clusters"], 2, msg="L1 clusters")
+    test.assertEqual(levels["L1"]["addresses"], 13, msg="L1 addresses")
+    test.assertAlmostEqual(levels["L1"]["share"], 13 / 147, places=12,
+                           msg="L1 share 13/147")
+    # the proxy level counts eip1167 only: 2 clusters over 5 addresses
+    test.assertEqual(levels["proxy"]["clusters"], 2, msg="proxy clusters (2/5)")
+    test.assertEqual(levels["proxy"]["addresses"], 5,
+                     msg="proxy addresses (2/5)")
+    test.assertAlmostEqual(levels["proxy"]["share"], 5 / 147, places=12,
+                           msg="proxy share 5/147")
+    # the eip7702 delegations are a level of their own: 4 clusters over 9
+    test.assertEqual(levels["eip7702"]["clusters"], 4, msg="eip7702 clusters")
+    test.assertEqual(levels["eip7702"]["addresses"], 9, msg="eip7702 addresses")
+    test.assertAlmostEqual(levels["eip7702"]["share"], 9 / 147, places=12,
+                           msg="eip7702 share 9/147")
+    test.assertEqual(levels["proxy_codes"], 5, msg="proxy_codes 5")
+    test.assertAlmostEqual(levels["proxy_code_share"], 5 / 130, places=12,
+                           msg="proxy_code_share 5/130")
+    test.assertEqual(levels["eip7702_codes"], 7, msg="eip7702_codes 7")
+    test.assertAlmostEqual(levels["eip7702_code_share"], 7 / 130, places=12,
+                           msg="eip7702_code_share 7/130")
 
 
 class CollectReportDataTests(unittest.TestCase):
     """Collect Report Data, examples 1 to 6."""
 
-    def test_collect_levels_block_base(self):
+    def setUp(self):
+        self.maxDiff = None
+
+    def test_1_levels_block_base(self):
         """Collect Report Data example 1: levels over the block base."""
-        store = block_store()
-        data = report.collect(store)
-        levels = data["levels"]
-        # L0 7 clusters over 16 addresses, L1 2 over 13, proxy 6 over 14.
-        self.assertEqual(levels["L0"]["clusters"], 7,
-                         msg="L0 cluster count")
-        self.assertEqual(levels["L1"]["clusters"], 2,
-                         msg="L1 cluster count")
-        self.assertEqual(levels["proxy"]["clusters"], 6,
-                         msg="proxy cluster count")
-        self.assertEqual(levels["L0"]["addresses"], 16, msg="L0 addresses")
-        self.assertEqual(levels["L1"]["addresses"], 13, msg="L1 addresses")
-        self.assertEqual(levels["proxy"]["addresses"], 14,
-                         msg="proxy addresses")
-        # shares 16/147, 13/147 and 14/147
-        self.assertAlmostEqual(levels["L0"]["share"], 16.0 / 147.0,
-                               places=12, msg="L0 share is 16/147")
-        self.assertAlmostEqual(levels["L1"]["share"], 13.0 / 147.0,
-                               places=12, msg="L1 share is 13/147")
-        self.assertAlmostEqual(levels["proxy"]["share"], 14.0 / 147.0,
-                               places=12, msg="proxy share is 14/147")
-        self.assertEqual(levels["proxy_codes"], 12, msg="proxy codes")
-        # proxy_code_share 12/130
-        self.assertAlmostEqual(levels["proxy_code_share"], 12.0 / 130.0,
-                               places=12, msg="proxy_code_share is 12/130")
+        data = report.collect(block_store())
+        _levels_checks(self, data["levels"])
 
-    def test_collect_skeletons_block_base(self):
-        """Collect Report Data example 2: skeleton uniqueness, block base."""
-        store = block_store()
-        data = report.collect(store)
-        skeletons = data["skeletons"]
-        self.assertEqual(skeletons["non_proxy_codes"], 118,
-                         msg="non_proxy_codes")
-        self.assertEqual(skeletons["unique_codes"], 105,
-                         msg="unique_codes")
-        # unique_share 105/118 = 0.8898
-        self.assertAlmostEqual(skeletons["unique_share"], 105.0 / 118.0,
-                               places=12,
-                               msg="unique_share is 105/118 = 0.8898")
-        self.assertEqual(skeletons["non_proxy_addresses"], 127,
+    def test_2_skeletons_block_base(self):
+        """Collect Report Data example 2: the unique-skeleton shares."""
+        data = report.collect(block_store())
+        s = data["skeletons"]
+        self.assertEqual(s["non_proxy_codes"], 118, msg="non_proxy_codes")
+        self.assertEqual(s["unique_codes"], 105, msg="unique_codes")
+        self.assertAlmostEqual(s["unique_share"], 105 / 118, places=12,
+                               msg="unique_share 105/118 = 0.8898")
+        self.assertAlmostEqual(s["unique_share"], 0.8898, places=4,
+                               msg="the unique-skeleton share by code_id "
+                                   "0.8898")
+        self.assertEqual(s["non_proxy_addresses"], 127,
                          msg="non_proxy_addresses")
-        self.assertEqual(skeletons["unique_addresses"], 114,
-                         msg="unique_addresses")
-        # unique_address_share 114/127 = 0.8976
-        self.assertAlmostEqual(
-            skeletons["unique_address_share"], 114.0 / 127.0, places=12,
-            msg="unique_address_share is 114/127 = 0.8976")
+        self.assertEqual(s["unique_addresses"], 114, msg="unique_addresses")
+        self.assertAlmostEqual(s["unique_address_share"], 114 / 127,
+                               places=12,
+                               msg="unique_address_share 114/127")
+        self.assertAlmostEqual(s["unique_address_share"], 0.8976, places=4,
+                               msg="the unique-skeleton share by address "
+                                   "0.8976")
 
-    def test_collect_code_sizes_block_base(self):
-        """Collect Report Data example 3 (sizes): bytecode size stats."""
-        store = block_store()
-        data = report.collect(store)
+    def test_3_code_distributions_block_base(self):
+        """Collect Report Data example 3: size and selector histograms."""
+        data = report.collect(block_store())
         size = data["codes"]["size"]
-        self.assertEqual(size["min"], 20, msg="size min")
-        # median 4442.5 (4369 and 4516 averaged)
-        self.assertEqual(size["median"], 4442.5, msg="size median 4442.5")
-        self.assertEqual(size["max"], 24313, msg="size max")
+        self.assertEqual(size["min"], 20, msg="size min 20")
+        self.assertEqual(size["median"], 4442.5,
+                         msg="the size median 4442.5 (4369 and 4516 averaged)")
+        self.assertIsInstance(size["median"], float, msg="median is a float")
+        self.assertEqual(size["max"], 24313, msg="size max 24313")
+        self.assertEqual(size["histogram"]["edges"],
+                         [0, 256, 1024, 4096, 8192, 16384, 24576],
+                         msg="size edges fixed")
         self.assertEqual(size["histogram"]["counts"],
                          [22, 5, 36, 19, 23, 25, 0], msg="size histogram")
-
-    def test_collect_selector_counts_block_base(self):
-        """Collect Report Data example 3 (selectors): selector stats."""
-        store = block_store()
-        data = report.collect(store)
-        selectors = data["codes"]["selectors"]
-        self.assertEqual(selectors["min"], 0, msg="selector min")
-        # median 12.5 (12 and 13 averaged)
-        self.assertEqual(selectors["median"], 12.5,
-                         msg="selector median 12.5")
-        self.assertEqual(selectors["max"], 72, msg="selector max")
-        self.assertEqual(selectors["histogram"]["counts"],
+        sel = data["codes"]["selectors"]
+        self.assertEqual(sel["min"], 0, msg="selector min 0")
+        self.assertEqual(sel["median"], 12.5,
+                         msg="the selector median 12.5 (12 and 13 averaged)")
+        self.assertIsInstance(sel["median"], float, msg="median is a float")
+        self.assertEqual(sel["max"], 72, msg="selector max 72")
+        self.assertEqual(sel["histogram"]["edges"],
+                         [0, 1, 2, 4, 8, 16, 32, 64],
+                         msg="selector edges fixed")
+        self.assertEqual(sel["histogram"]["counts"],
                          [28, 2, 3, 16, 27, 35, 17, 2],
                          msg="selector histogram")
 
-    def test_collect_alerts_block_base(self):
+    def test_4_alerts_univ2_seed(self):
         """Collect Report Data example 4: alerts folded per seed."""
         store = block_store()
         store.add_seed("0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc",
                        "UniV2 pair seed")
-        data = report.collect(store)
-        alerts = data["alerts"]
-        self.assertEqual(alerts["total"], 4, msg="alerts total")
+        alerts = report.collect(store)["alerts"]
+        self.assertEqual(alerts["total"], 4, msg="total 4 alerts")
         self.assertEqual(len(alerts["seeds"]), 1, msg="one seed entry")
         seed = alerts["seeds"][0]
         self.assertEqual(seed["address"],
                          "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc",
                          msg="the seed address")
-        self.assertEqual(seed["label"], "UniV2 pair seed",
-                         msg="the seed label")
-        self.assertEqual(seed["count"], 4, msg="four alerts of the seed")
+        self.assertEqual(seed["label"], "UniV2 pair seed", msg="the label")
+        self.assertEqual(seed["count"], 4, msg="count 4")
 
-    def test_collect_risk_block_base(self):
-        """Collect Report Data example 5: risk flags over the block base."""
-        store = block_store()
-        data = report.collect(store)
+    def test_5_risk_flags_block_base(self):
+        """Collect Report Data example 5: the risk reach over the base."""
+        data = report.collect(block_store())
         risk = data["risk"]
-        # selfdestruct codes 1, addresses 1, code_share 1/130,
-        # address_share 1/147
-        self.assertEqual(risk["selfdestruct"]["codes"], 1,
-                         msg="selfdestruct codes")
-        self.assertEqual(risk["selfdestruct"]["addresses"], 1,
-                         msg="selfdestruct addresses")
-        self.assertAlmostEqual(risk["selfdestruct"]["code_share"],
-                               1.0 / 130.0, places=12,
-                               msg="selfdestruct code_share is 1/130")
-        self.assertAlmostEqual(risk["selfdestruct"]["address_share"],
-                               1.0 / 147.0, places=12,
-                               msg="selfdestruct address_share is 1/147")
-        # mutable_delegatecall codes 29, addresses 33, code_share 29/130,
-        # address_share 33/147
-        self.assertEqual(risk["mutable_delegatecall"]["codes"], 29,
-                         msg="mutable_delegatecall codes")
-        self.assertEqual(risk["mutable_delegatecall"]["addresses"], 33,
-                         msg="mutable_delegatecall addresses")
-        self.assertAlmostEqual(risk["mutable_delegatecall"]["code_share"],
-                               29.0 / 130.0, places=12,
-                               msg="mutable_delegatecall code_share is 29/130")
-        self.assertAlmostEqual(
-            risk["mutable_delegatecall"]["address_share"], 33.0 / 147.0,
-            places=12, msg="mutable_delegatecall address_share is 33/147")
+        sd = risk["selfdestruct"]
+        self.assertEqual(sd["codes"], 1,
+                         msg="the selfdestruct flag: 1 code")
+        self.assertEqual(sd["addresses"], 1,
+                         msg="the selfdestruct flag: 1 address")
+        self.assertAlmostEqual(sd["code_share"], 1 / 130, places=12,
+                               msg="the selfdestruct code share 1/130")
+        self.assertAlmostEqual(sd["address_share"], 1 / 147, places=12,
+                               msg="the selfdestruct address share 1/147")
+        md = risk["mutable_delegatecall"]
+        self.assertEqual(md["codes"], 12,
+                         msg="the mutable_delegatecall flag: 12 codes")
+        self.assertEqual(md["addresses"], 13,
+                         msg="the mutable_delegatecall flag: 13 addresses")
+        self.assertAlmostEqual(md["code_share"], 12 / 130, places=12,
+                               msg="the mutable_delegatecall code share "
+                                   "12/130")
+        self.assertAlmostEqual(md["address_share"], 13 / 147, places=12,
+                               msg="the mutable_delegatecall address share "
+                                   "13/147")
 
-    def test_collect_empty_structure(self):
-        """Collect Report Data example 6: an empty database, structure."""
-        store = temp_store()
-        data = report.collect(store)
-        self.assertEqual(sorted(data.keys()), sorted([
-            "summary", "levels", "skeletons", "clusters", "codes",
-            "ledger", "alerts", "spearman", "risk"]),
+    def test_6_empty_database(self):
+        """Collect Report Data example 6: an empty database, no exception."""
+        data = report.collect(temp_store())
+        self.assertEqual(
+            set(data.keys()),
+            {"summary", "levels", "skeletons", "clusters", "codes",
+             "ledger", "alerts", "spearman", "risk"},
             msg="all nine keys present")
-        self.assertEqual(data["summary"], {
-            "addresses": 0, "addresses_with_code": 0,
-            "addresses_without_code": 0, "codes": 0, "blocks": 0},
-            msg="summary all zeros")
-        self.assertEqual(data["clusters"]["top"], [],
-                         msg="cluster list empty")
-        self.assertEqual(data["ledger"]["days"], [], msg="ledger empty")
-        self.assertEqual(data["alerts"]["seeds"], [], msg="alerts empty")
-
-    def test_collect_empty_risk(self):
-        """Collect Report Data example 6: an empty database, risk zeros."""
-        store = temp_store()
-        data = report.collect(store)
+        summary = data["summary"]
+        self.assertEqual(
+            set(summary.keys()),
+            {"addresses", "addresses_with_code", "addresses_without_code",
+             "codes", "blocks"},
+            msg="summary keys")
+        for key in sorted(summary):
+            self.assertEqual(summary[key], 0, msg="summary %s is 0" % key)
+        self.assertEqual(data["clusters"]["top"], [], msg="no top clusters")
+        self.assertEqual(data["clusters"]["histogram"]["counts"],
+                         [0] * len(report.CLUSTER_EDGES),
+                         msg="empty cluster histogram")
+        self.assertEqual(data["ledger"]["days"], [], msg="empty ledger")
+        self.assertEqual(data["ledger"]["total"], 0, msg="ledger total 0")
+        self.assertEqual(data["alerts"]["seeds"], [], msg="no alert seeds")
+        self.assertEqual(data["alerts"]["total"], 0, msg="alerts total 0")
         for name in ("selfdestruct", "mutable_delegatecall"):
             entry = data["risk"][name]
             self.assertEqual(entry["codes"], 0,
-                             msg="%s codes 0 on an empty base" % name)
+                             msg="risk %s codes 0" % name)
             self.assertEqual(entry["addresses"], 0,
-                             msg="%s addresses 0 on an empty base" % name)
+                             msg="risk %s addresses 0" % name)
             self.assertEqual(entry["code_share"], 0.0,
-                             msg="%s code_share 0.0" % name)
+                             msg="risk %s code_share 0.0" % name)
             self.assertEqual(entry["address_share"], 0.0,
-                             msg="%s address_share 0.0" % name)
+                             msg="risk %s address_share 0.0" % name)
+        sp = data["spearman"]
+        self.assertEqual(sp["n"], 0, msg="spearman n 0")
+        self.assertEqual(len(sp["matrix"]), 6, msg="6x6 matrix")
+        for row in sp["matrix"]:
+            self.assertEqual(len(row), 6, msg="6x6 matrix")
+            for cell in row:
+                self.assertIsNone(cell, msg="empty base: null everywhere")
 
 
 class SpearmanMatrixTests(unittest.TestCase):
-    """Spearman Matrix, examples 1 to 4."""
+    """Spearman Matrix, examples 7 to 10."""
 
-    def test_spearman_block_base(self):
-        """Spearman Matrix example 1: the six coefficients, block base."""
-        store = block_store()
-        sp = report.collect(store)["spearman"]
-        self.assertEqual(sp["n"], 130, msg="n = 130 codes")
-        matrix = sp["matrix"]
-        expected = {
-            (SIZE, OPCODES): 0.9893,
-            (SIZE, SELECTORS): 0.8422,
-            (SIZE, ADDRESSES): -0.3368,
-            (OPCODES, SELECTORS): 0.8559,
-            (ADDRESSES, ISPROXY): 0.4289,
-            (L1FAMILY, ISPROXY): 0.2326,
-        }
-        for (i, j), value in expected.items():
-            coefficient = _coef(matrix, i, j,
-                                "matrix[%d][%d] is defined" % (i, j))
-            self.assertAlmostEqual(coefficient, value, delta=COEF_TOL,
-                                   msg="matrix[%d][%d] = %.4f" % (i, j, value))
+    def setUp(self):
+        self.maxDiff = None
 
-    def test_spearman_tie_handling(self):
-        """Spearman Matrix example 2: correct tie handling, not the shortcut."""
-        store = block_store()
-        matrix = report.collect(store)["spearman"]["matrix"]
-        by_address = _coef(matrix, SIZE, ADDRESSES,
-                           "bytecode_size~address_count is defined")
-        proxy = _coef(matrix, ADDRESSES, ISPROXY,
-                      "address_count~is_proxy is defined")
-        # the correct values -0.3368 and 0.4289; the tie-blind shortcut
-        # would give 0.1898 and 0.8509, which must not appear
-        self.assertAlmostEqual(by_address, -0.3368, delta=COEF_TOL,
-                               msg="bytecode_size~address_count is -0.3368")
-        self.assertAlmostEqual(proxy, 0.4289, delta=COEF_TOL,
-                               msg="address_count~is_proxy is 0.4289")
-        self.assertFalse(abs(by_address - 0.1898) < 1e-3,
-                         msg="the shortcut value 0.1898 is not used")
-        self.assertFalse(abs(proxy - 0.8509) < 1e-3,
-                         msg="the shortcut value 0.8509 is not used")
+    def _matrix(self, store):
+        """The spearman section of collect(store), features in order."""
+        section = report.collect(store)["spearman"]
+        self.assertEqual(section["features"], list(report.FEATURES),
+                         msg="features in the fixed order")
+        self.assertEqual(section["n"], 130, msg="the counted base: n = 130 "
+                                                "codes")
+        return section
 
-    def test_spearman_hand_rows(self):
-        """Spearman Matrix example 3: the four-row hand case."""
-        result = report.spearman([(1, 10), (2, 20), (2, 30), (3, 40)])
-        self.assertEqual(result["n"], 4, msg="n = 4 rows")
-        coefficient = _coef(result["matrix"], 0, 1,
-                            "the coefficient is defined")
-        self.assertEqual(coefficient, 0.9486832980505138,
-                         msg="the four-row coefficient")
-        self.assertEqual(result["matrix"][0][0], 1.0,
-                         msg="diagonal is 1.0")
-        self.assertEqual(result["matrix"][1][0],
-                         result["matrix"][0][1],
-                         msg="the matrix is symmetric")
-
-    def test_spearman_no_proxy_base(self):
-        """Spearman Matrix example 4: a base of non-proxy codes only."""
-        store = temp_store()
-        placements = [
-            ("0x" + "a1" * 20, "code_weth9.hex"),
-            ("0x" + "a2" * 20, "code_usdt.hex"),
-            ("0x" + "a3" * 20, "code_univ2_usdc_weth.hex"),
-            ("0x" + "a4" * 20, "code_univ2_usdc_weth.hex"),
-            ("0x" + "a5" * 20, "code_univ3_usdc_weth_005.hex"),
-            ("0x" + "a6" * 20, "code_univ3_pool_e0554a47.hex"),
-            ("0x" + "a7" * 20, "code_launchtoken_4e67db19.hex"),
-            ("0x" + "a8" * 20, "code_launchtoken_40676634.hex"),
+    def test_7_coefficients_block_base(self):
+        """Spearman Matrix, example 7: the six pinned coefficients."""
+        m = self._matrix(block_store())["matrix"]
+        pairs = [
+            ("bytecode_size", "opcode_count", 0.9893),
+            ("bytecode_size", "selector_count", 0.8422),
+            ("bytecode_size", "address_count", -0.3368),
+            ("opcode_count", "selector_count", 0.8559),
+            ("address_count", "is_proxy", 0.4289),
+            ("l1_family_size", "is_proxy", 0.2326),
         ]
-        block = 26077729
-        for address, fixture in placements:
-            code_id = store.put_code(load_hex(fixture))
-            store.put_address(address, code_id, block)
-        sp = report.collect(store)["spearman"]
-        matrix = sp["matrix"]
-        for i in range(6):
-            self.assertIsNone(matrix[ISPROXY][i],
-                              msg="is_proxy column cell %d is null" % i)
-            self.assertIsNone(matrix[i][ISPROXY],
-                              msg="is_proxy row cell %d is null" % i)
+        for a, b, expected in pairs:
+            value = m[IDX[a]][IDX[b]]
+            self.assertIsNotNone(value, msg="%s~%s is not null" % (a, b))
+            self.assertAlmostEqual(value, expected, places=4,
+                                   msg="%s~%s = %.4f" % (a, b, expected))
+            self.assertAlmostEqual(m[IDX[b]][IDX[a]], expected, places=4,
+                                   msg="%s~%s symmetric" % (b, a))
+        # the diagonal is 1.0 on every non-degenerate feature
+        for name in report.FEATURES:
+            self.assertAlmostEqual(m[IDX[name]][IDX[name]], 1.0, places=9,
+                                   msg="diagonal %s is 1.0" % name)
+
+    def test_8_tie_handling(self):
+        """Spearman Matrix, example 8: the tie-blind shortcut refuted.
+
+        bytecode_size~address_count is -0.3368 and
+        address_count~is_proxy 0.4289, while the shortcut
+        1 - 6*sum(d^2)/(n(n^2-1)) gives 0.1898 and 0.8509; the payload
+        must carry the tie-averaged values, never the shortcut's.
+        """
+        m = self._matrix(block_store())["matrix"]
+        self.assertAlmostEqual(m[IDX["bytecode_size"]][IDX["address_count"]],
+                               -0.3368, places=4,
+                               msg="bytecode_size~address_count tie-averaged")
+        self.assertAlmostEqual(m[IDX["address_count"]][IDX["is_proxy"]],
+                               0.4289, places=4,
+                               msg="address_count~is_proxy tie-averaged")
+        self.assertNotAlmostEqual(
+            m[IDX["bytecode_size"]][IDX["address_count"]], 0.1898, places=4,
+            msg="not the shortcut for bytecode_size~address_count")
+        self.assertNotAlmostEqual(
+            m[IDX["address_count"]][IDX["is_proxy"]], 0.8509, places=4,
+            msg="not the shortcut for address_count~is_proxy")
+
+    def test_9_small_rows(self):
+        """Spearman Matrix, example 9: the four-row hand case.
+
+        Rows [(1, 10), (2, 20), (2, 30), (3, 40)] as two features give
+        0.9486832980505138, the average ranks being
+        [1.0, 2.5, 2.5, 4.0].
+        """
+        result = report.spearman([(1, 10), (2, 20), (2, 30), (3, 40)])
+        self.assertEqual(result["n"], 4, msg="n = 4")
+        self.assertAlmostEqual(result["matrix"][0][1],
+                               0.9486832980505138, places=12,
+                               msg="the four-row hand case coefficient")
+        self.assertAlmostEqual(result["matrix"][1][0],
+                               0.9486832980505138, places=12,
+                               msg="symmetric")
+        self.assertAlmostEqual(result["matrix"][0][0], 1.0, places=9,
+                               msg="diagonal 1.0")
+
+    def test_10_zero_variance_feature(self):
+        """Spearman Matrix, example 10: a zero-variance feature.
+
+        On a base of non-proxy codes only (the 118 non-proxy codes of
+        the block base), every cell of the is_proxy row and column is
+        null, the diagonal included, and the other features keep their
+        coefficients.
+        """
+        store = _non_proxy_store()
+        fps = store.fingerprints()
+        self.assertEqual(len(fps), 118, msg="118 non-proxy codes stored")
+        for fp in fps:
+            self.assertIsNone(fp["proxy"], msg="no proxy code in the base")
+        section = report.collect(store)["spearman"]
+        self.assertEqual(section["features"], list(report.FEATURES),
+                         msg="features in the fixed order")
+        m = section["matrix"]
+        ip = IDX["is_proxy"]
+        for i in range(len(report.FEATURES)):
+            self.assertIsNone(m[i][ip],
+                              msg="matrix[%d][is_proxy] is null" % i)
+            self.assertIsNone(m[ip][i],
+                              msg="matrix[is_proxy][%d] is null" % i)
         # the other four features keep their coefficients
-        self.assertIsNotNone(matrix[SIZE][OPCODES],
-                             msg="bytecode_size~opcode_count stays defined")
-        self.assertIsNotNone(matrix[SIZE][SELECTORS],
-                             msg="bytecode_size~selector_count stays defined")
-        self.assertIsNotNone(matrix[OPCODES][SELECTORS],
-                             msg="opcode_count~selector_count stays defined")
-        self.assertIsNotNone(matrix[SIZE][ADDRESSES],
-                             msg="bytecode_size~address_count stays defined")
-
-
-class RenderReportTests(unittest.TestCase):
-    """Render Report, examples 1 to 3."""
-
-    def test_render_html_stubs(self):
-        """Render Report example 1: render_html with stub SVGs, twice."""
-        store = block_store()
-        data = report.collect(store)
-        page1 = report.render_html(data, STUBS)
-        page2 = report.render_html(data, STUBS)
-        self.assertEqual(page1, page2, msg="the two strings are equal")
-        for key in ("cluster_sizes", "top_clusters", "code_sizes",
-                    "selector_counts", "spearman"):
-            self.assertIn("stub-" + key, page1,
-                          msg="the %s stub appears in the page" % key)
-        for banned in ("<script", "<link", "<img", "http"):
-            self.assertNotIn(banned, page1,
-                             msg="%s does not appear in the page" % banned)
-
-    def test_build_report_deterministic(self):
-        """Render Report example 2: build_report twice, byte-identical."""
-        try:
-            import ethsc.charts  # noqa: F401
-        except ImportError:
-            self.skipTest("matplotlib is not installed")
-        store = block_store()
-        directory = tempfile.mkdtemp(prefix="ethsc-report-test-")
-        prefix = os.path.join(directory, "r")
-        html1, json1 = report.build_report(store, prefix)
-        html2, json2 = report.build_report(store, prefix)
-        self.assertEqual(html1, prefix + ".html", msg="html path")
-        self.assertEqual(json1, prefix + ".json", msg="json path")
-        with open(html1, "rb") as handle:
-            html1_bytes = handle.read()
-        with open(html2, "rb") as handle:
-            html2_bytes = handle.read()
-        with open(json1, "rb") as handle:
-            json1_bytes = handle.read()
-        with open(json2, "rb") as handle:
-            json2_bytes = handle.read()
-        self.assertEqual(html1_bytes, html2_bytes,
-                         msg="html byte-identical between the runs")
-        self.assertEqual(json1_bytes, json2_bytes,
-                         msg="json byte-identical between the runs")
-        with open(json2, "r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-        self.assertEqual(loaded, report.collect(store),
-                         msg="json.load of the second gives collect(store)")
-
-    def test_build_report_charts_unavailable(self):
-        """Render Report example 3: ImportError becomes ChartsUnavailable."""
-        store = block_store()
-        directory = tempfile.mkdtemp(prefix="ethsc-report-test-")
-        prefix = os.path.join(directory, "r")
-
-        class _FailFinder(object):
-            def find_spec(self, name, path=None, target=None):
-                if name == "ethsc.charts":
-                    raise ImportError("no matplotlib")
-                return None
-
-        finder = _FailFinder()
-        saved = sys.modules.pop("ethsc.charts", None)
-        sys.meta_path.insert(0, finder)
-        try:
-            with self.assertRaises(report.ChartsUnavailable,
-                                   msg="ChartsUnavailable is raised"):
-                report.build_report(store, prefix)
-        finally:
-            sys.meta_path.remove(finder)
-            if saved is not None:
-                sys.modules["ethsc.charts"] = saved
-        self.assertFalse(os.path.exists(prefix + ".html"),
-                         msg="no html file written")
-        self.assertFalse(os.path.exists(prefix + ".json"),
-                         msg="no json file written")
+        others = [("bytecode_size", "opcode_count"),
+                  ("bytecode_size", "selector_count"),
+                  ("opcode_count", "selector_count")]
+        for a, b in others:
+            self.assertIsNotNone(m[IDX[a]][IDX[b]],
+                                 msg="%s~%s keeps its coefficient" % (a, b))
 
 
 if __name__ == "__main__":
