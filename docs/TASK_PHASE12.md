@@ -176,4 +176,39 @@ equivalent of both agents, the live table of §3.3, and the comparison with phas
 
 ## 11. Actual
 
-(filled after the run)
+One pass, 2 of 2 cards accepted, each on its **first** acceptance run, 2 generations,
+Claude Code agents on claude-sonnet-5 (`morph-agent-run`), no `mrph run`, no OpenRouter.
+
+| card | acceptance runs | commit | diff | agent wall | API equivalent (ccledger) |
+|---|---|---|---|---|---|
+| cli (cli.py + store.py + smoke) | 1 | c7c68a7 | cli.py +77/−2, store.py +16, test_cli_p12.py +132 | 7.2 min | $1.31 (34 calls) |
+| cli-judge | 1 | ae6390d | test_cli_examples_p12.py +470 | 8.5 min | $1.40 (36 calls) |
+
+- Tests 323 → **337**, all green. The judge found no defect; no regeneration, no hand fix.
+- Wall: run (executor start → judge commit) **15.7 min**; primer → judge commit **27.3 min**,
+  operator gate included. Recon: primer + ~10 reads, scout skipped (no OpenRouter), one
+  ripple spike (323 passed: nothing to edit as data).
+- Bill, API equivalent by ccledger over the session journal: **$7.09** in total —
+  executors $2.71 (70 calls, sonnet), orchestrator ≈ $4.38 (47 calls, opus). A subscription
+  pays none of it in cash.
+- Against phase 11 (Morph on glm): 5 cards, 3 generations, 19 min run, executors $0.0506
+  for 128 lines of product code (+128/−71). Here: 2 cards,
+  15.7 min, $2.71 executor-equivalent for 93 lines of product code — ~50× the glm price
+  per line, same order of wall time, 0 regenerations against 3. Phase 11 has no
+  orchestrator bill to compare with.
+
+**Live acceptance (§3.3)** on a copy of `smoke/20260930/ethsc.sqlite`, branch code:
+
+| step | result |
+|---|---|
+| first open (phase-11 migration) + `seed list` | 7.96 s, 2 seeds |
+| `seed add --fetch 0xdacf…850c` | exit 0, 0.69 s, stored at block 26092959, 24 280 bytes, no ALERT |
+| `seed list` / `cluster 0xdacf…` | 3 seeds / empty stdout (no L1 yet) |
+| `seed add --fetch 0x93d1…f0bd` | exit 0, 0.69 s, 1 ALERT: 0xdacf… at 1.0000 |
+| `cluster 0xdacf…` and `cluster 0x93d1…` | one L1 line each, skeleton 46037d92…, members both pools, flags "-" |
+| `seed add --fetch 0xdacf…` again, sockets blocked | exit 0, 0.13 s, no network |
+| `recheck` | **0.14 s**; = phase-11 baseline `smoke/p11/recheck.out` (192 lines, cmp-identical) + 1 line for the new seed |
+| `seed remove 0x93d1…` twice | exit 0, then exit 2 "not a seed: 0x93d1…"; `seed list` back to 3 |
+
+The two pools have different code (code_id 912957…, 3ffed3…) of equal size and one
+skeleton: **falsifiable claim — confirmed**, measured.
