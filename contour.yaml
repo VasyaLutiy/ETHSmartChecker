@@ -506,7 +506,12 @@ System:
             unknown code_id. close() closes the connection. Phase 11: the
             schema holds the index addresses_code_id on addresses(code_id),
             and the codes table the column std_proxy INTEGER (0 or 1), written
-            by put_code from fingerprint(code)["std_proxy"].
+            by put_code from fingerprint(code)["std_proxy"]. Phase 13: the
+            addresses table holds the column origin TEXT;
+            put_address(address, code_id, block, origin=None) stores it
+            (None is stored as NULL); origins() -> dict, the bulk read for
+            cluster: every stored address (lowercase) mapped to its origin,
+            a NULL origin read back as "unknown".
           behavior: >
             Addresses are lowercased on the way in: every method accepts an
             address in any case and stores or looks it up lowercase. Every
@@ -535,6 +540,19 @@ System:
             every later open well under 1 s; addresses_of went from a scan of
             48413 rows to an index lookup (build_clusters 200 s -> 0.12 s,
             measured 30.09).
+            Origin (phase 13): a fresh database creates addresses with the
+            columns address, code_id, block, origin in that order; an
+            addresses table without origin gets ALTER TABLE addresses ADD
+            COLUMN origin TEXT on open, once, so the column is last in a
+            fresh and a migrated database alike. Existing rows are not
+            rewritten: their origin stays NULL in the file and reads back
+            as "unknown" through origins() (the live base has tens of
+            thousands of rows; no UPDATE on open). put_address on a known
+            address changes nothing, its origin included -- the first record
+            wins. The values the code writes are "created", "seen" (ingest)
+            and "fetched" (seed add --fetch); the store does not validate
+            the text. origins() is one SELECT over addresses, an empty
+            database gives {}.
           guardrails: [No Network In Core, Deterministic Output]
           steps:
             - uses: fingerprint
@@ -585,6 +603,39 @@ System:
               when: 'the db is reopened with Store(path) and fingerprints() is called'
               then: 'no row has std_proxy NULL and fingerprints() equals that of a fresh db of the same codes'
               ref: 'the NULL fill runs on every open (phase 11)'
+            - given: 'a fresh temp db'
+              when: 'PRAGMA table_info(addresses) is read, and origins() is called'
+              then: 'the columns are address, code_id, block, origin in that order; origins() is {}'
+              ref: 'phase 13 schema'
+            - given: 'a fresh temp db and the code_id c of code_belle.hex'
+              when: >
+                put_address("0x1807090DD15A6F58E00FD769E32EBF20EE610385", c, 1, origin="created"),
+                put_address("0x023697eda1dfbe331c2cf791ef2f6089e73e3230", None, 1, origin="seen"),
+                put_address("0x34c6211621f2763c60eb007dc2ae91090a2d22f6", c, 1),
+                then put_address("0x1807090dd15a6f58e00fd769e32ebf20ee610385", c, 2, origin="seen"),
+                and origins() is called; then the db is reopened and origins() is called again
+              then: >
+                both times {"0x023697eda1dfbe331c2cf791ef2f6089e73e3230": "seen",
+                "0x1807090dd15a6f58e00fd769e32ebf20ee610385": "created",
+                "0x34c6211621f2763c60eb007dc2ae91090a2d22f6": "unknown"}; the
+                second put_address on 0x1807… changed nothing (the row keeps
+                block 1 and origin "created")
+              ref: 'phase 13; first record wins'
+            - given: >
+                a phase-12 database: a file made with the phase-12 schema
+                (addresses with the three columns address, code_id, block, no
+                origin) holding the 130 codes and the 206 addresses of
+                codes_26077729.json (59 with code_id NULL), written by plain
+                INSERTs
+              when: 'Store(path) opens it, origins() is called, the db is closed and opened again'
+              then: >
+                after the first open addresses has the column origin last;
+                origins() has 206 entries, every one "unknown"; the file still
+                holds 206 rows with origin NULL (SELECT count(*) WHERE origin
+                IS NULL is 206: nothing rewritten); has_address and
+                addresses_of answer as before; the second open adds no column
+                and changes nothing
+              ref: 'phase 13 migration; on the live 30.09 copy: 48413 rows, all unknown'
         - name: Track Progress
           description: >
             get_progress() -> int or None, the last fully ingested block;
@@ -818,9 +869,14 @@ System:
             already in the database visible: match_watchlist only ever sees
             a code arriving after the seed.
           behavior: >
-            Each Alert has exactly the keys address, seed_address, label and
-            score; address is the matching stored address, lowercase, and
-            score is the float from similarity, unrounded. One similarity per
+            Each Alert has exactly the keys address, seed_address, label,
+            score and origin (phase 13); address is the matching stored
+            address, lowercase, score is the float from similarity,
+            unrounded, and origin is that address's origin as
+            store.origins() gives it -- "created", "seen", "fetched", or
+            "unknown" for a row stored before phase 13. origins() is read
+            once per call, never once per alert; the alert order and the
+            scores do not depend on origin. One similarity per
             (code_id, seed) pair, fanned out to addresses_of(code_id): the
             cost is distinct codes times seeds, never addresses times seeds.
             Since phase 11 each (code_id, seed) pair is scored by
@@ -842,7 +898,8 @@ System:
             depend on insertion order, and two calls on the same store give
             equal lists. No seeds, an empty store, or seed_addresses naming
             nothing known give []. Reads the store through seeds(),
-            fingerprints() and addresses_of() only (phase 11: no code_by_id).
+            fingerprints(), addresses_of() and origins() only (phase 11: no
+            code_by_id).
           guardrails: [Deterministic Output, No Network In Core]
           steps:
             - uses: store
@@ -892,6 +949,22 @@ System:
               when: 'match_watchlist(store, b"", min_score=0.0)'
               then: 'one alert, seed 0x34c6211621f2763c60eb007dc2ae91090a2d22f6, score 0.0 -- unchanged from before phase 11'
               ref: 'score_fingerprints(None, fp) == 0.0 == similarity(b"", code)'
+            - given: >
+                a store filled by ingest_block(26077729, receipts_26077729.json, …)
+                with a fake get_code serving codes_26077729.json, then seed
+                0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc "UniV2 pair seed";
+                and the store of example 1 (filled by put_address, no origin)
+                with the same seed
+              when: 'recheck_watchlist(store) is called on each'
+              then: >
+                the same 4 alerts as example 1 (0x22052a1a0f5a3d2839d71c458f177e68b0e73963,
+                0x2621cc0b3f3c079c1db0e80794aa24976f0b9e3c,
+                0x3041cbd36888becc7bbcbc0045e3b1f144466f5f with 1.0, then
+                0xcf6daab95c476106eca715d48de4b13287ffdeaa with 0.8125), each
+                with exactly the five keys: origin "seen" on every alert of the
+                ingested store, "unknown" on every alert of the put_address
+                store; store.origins() was called once per recheck_watchlist call
+              ref: 'phase 13'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
@@ -906,11 +979,13 @@ System:
             to every alert it passes on; Recheck Watchlist returns alerts
             with that key already set (the stored address that matched), so
             a cli record is written the same way whichever produced it.
+            Phase 13: both also set origin, the origin of that address.
           schema:
             seed_address: str
             label: str
             score: float
             address: 'str -- added by Ingest Block, returned by Recheck Watchlist'
+            origin: '"created" | "seen" | "fetched" | "unknown" -- set by Ingest Block (created, seen) and Recheck Watchlist (any, from store.origins())'
     - name: rpc
       description: >
         The only network module: a minimal JSON-RPC client over an injected
@@ -1020,11 +1095,25 @@ System:
           description: >
             discover_candidates(receipts: list) -> sorted list of distinct
             lowercase addresses: every contractAddress, every to, and every
-            logs[].address of the block's receipts.
+            logs[].address of the block's receipts. Phase 13:
+            candidate_origins(receipts: list) -> dict, the same candidates
+            as keys (lowercase), each mapped to its origin: "created" when
+            the address is the contractAddress of a receipt of the block,
+            else "seen" (it came only as a to or a logs[].address).
           behavior: >
             null to and null contractAddress are skipped; from is not a
             candidate. Contracts created by factories are caught only when
-            they emit a log (no trace_* on the free tier).
+            they emit a log (no trace_* on the free tier). discover_candidates
+            keeps its signature, its result and its order; the keys of
+            candidate_origins are exactly the elements of discover_candidates
+            for the same receipts, under the same tolerance (non-dict
+            elements, None, missing keys and missing logs skipped). An
+            address that is both a contractAddress and a log emitter (or a
+            to) in the same block is "created": contractAddress wins. A
+            contract made by a factory inside a transaction is not a
+            contractAddress of any receipt, so it is "seen" even in the
+            block that made it -- "created" means a deploy transaction of
+            that block, nothing more. An empty list gives {}.
           guardrails: [Deterministic Output, Tolerant Parser]
           steps:
             - reads: RPC Response
@@ -1036,6 +1125,27 @@ System:
             - given: 'an empty list'
               when: 'discover_candidates is called'
               then: '[]'
+            - given: 'the "result" list of tests/fixtures/receipts_26077729.json'
+              when: 'candidate_origins is called'
+              then: >
+                a dict of 206 entries whose sorted keys equal
+                discover_candidates of the same list; exactly one value is
+                "created", for 0xb53c071bdb35d21aa1216b084f79c372d71053d5 (the
+                contractAddress of receipt 207, which also emits a log in the
+                block), and the other 205 are "seen"
+              ref: 'phase 13; counted over the fixture'
+            - given: >
+                the list [None, "x", {"to": None, "contractAddress": None},
+                {"to": "0x1807090DD15A6F58E00FD769E32EBF20EE610385", "logs": None},
+                {"to": None, "contractAddress": "0xB53C071BDB35D21AA1216B084F79C372D71053D5",
+                "logs": [{"address": "0xb53c071bdb35d21aa1216b084f79c372d71053d5"}, "y",
+                {"address": None}]}], and then []
+              when: 'candidate_origins is called'
+              then: >
+                {"0x1807090dd15a6f58e00fd769e32ebf20ee610385": "seen",
+                "0xb53c071bdb35d21aa1216b084f79c372d71053d5": "created"}, no
+                exception; and {} for []
+              ref: 'Tolerant Parser; contractAddress wins over a log of the same address'
         - name: Ingest Block
           description: >
             ingest_block(block, receipts, get_code, store, max_calls=None,
@@ -1085,6 +1195,17 @@ System:
             2026-09-30: calls already in flight are not interrupted, so the
             process may wait for up to K of them (typically 0.3 s each, at
             most the transport timeout of 30 s) before it exits.
+            Origin (phase 13): ingest_block computes
+            candidate_origins(receipts) once per call and stores every
+            address it stores -- contracts and eoas alike, in the sequential
+            and the workers path -- with put_address(address, code_id or
+            None, block, origin=<its origin>), origin "created" or "seen".
+            Every alert gains the key origin, the origin of its address, so
+            alerts is a list of {address, seed_address, label, score,
+            origin}; the same dicts reach on_alerts. The stats, their
+            invariants, the alert order and which addresses are stored do
+            not change; match_watchlist itself is unchanged (its alerts
+            have no address and no origin).
           guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
           steps:
             - calls: Discover Candidates
@@ -1144,6 +1265,42 @@ System:
                 KeyboardInterrupt) with workers=8
               when: 'ingest_block is called with an on_alerts collecting into a list'
               then: 'KeyboardInterrupt propagates, on_alerts was called once with the single alert for 0x1807090dd15a6f58e00fd769e32ebf20ee610385 at 0.8667, and that address is stored'
+            - given: 'receipts_26077729.json, a fresh store, a fake get_code serving codes_26077729.json; then the same with workers=8 into a second fresh store'
+              when: 'ingest_block(26077729, …) is called, and store.origins() is read'
+              then: >
+                206 entries both times, equal dicts: 0xb53c071bdb35d21aa1216b084f79c372d71053d5
+                "created", the other 205 "seen" (eoas included); the stats
+                are those of example 1
+              ref: 'phase 13; candidate_origins of the fixture'
+            - given: >
+                a store with 0x1111111111111111111111111111111111111111 holding
+                the code of 0xb53c071bdb35d21aa1216b084f79c372d71053d5 from
+                codes_26077729.json, seeded "deployed in 26077729", and a fake
+                get_code serving codes_26077729.json
+              when: 'ingest_block(26077729, receipts_26077729.json, …) is called with an on_alerts collecting into a list'
+              then: >
+                alerts is exactly [{address 0xb53c071bdb35d21aa1216b084f79c372d71053d5,
+                seed_address 0x1111111111111111111111111111111111111111, label
+                "deployed in 26077729", score 1.0, origin "created"}, {address
+                0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2, same seed and label,
+                score 9/11 (0.8182), origin "seen"}, {address
+                0xff74317e948695297acb79cb2de06111f5cc16b3, same seed and label,
+                score 1.0, origin "seen"}], each dict with exactly the five keys;
+                on_alerts was called once with an equal list
+              ref: 'phase 13; 0xff74317e… holds the same code as the deployed 0xb53c… and was only seen'
+            - given: >
+                a store seeded with code_belle.hex as "BELLE honeypot", and a
+                fake get_code serving 0x1807090dd15a6f58e00fd769e32ebf20ee610385
+                code_belle_copy_1807090d.hex
+              when: >
+                ingest_block(1, [{"contractAddress": "0x1807090dd15a6f58e00fd769e32ebf20ee610385"}], …)
+                into that store, and ingest_block(1, [{"to": "0x1807090dd15a6f58e00fd769e32ebf20ee610385"}], …)
+                into a second store made the same way
+              then: >
+                one alert each, at 13/15: origin "created" the first time,
+                "seen" the second; store.origins() maps the copy to the same
+                origin
+              ref: 'phase 13'
         - name: Follow Chain
           description: >
             follow_chain(rpc, store, start=None, stop=None,
@@ -1271,13 +1428,16 @@ System:
           description: >
             main(argv=None, rpc=None, sleep=None) -> exit code. Subcommands:
             listen [--daily-budget C] [--max-calls-per-block K]
-            [--interval S] [--source {infura,publicnode}] [--workers K],
+            [--interval S] [--source {infura,publicnode}] [--workers K]
+            [--alert-on {created,seen,all}],
             backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K] [--source {infura,publicnode}]
-            [--workers K], clusters top [--n K], cluster <addr>,
+            [--workers K] [--alert-on {created,seen,all}], clusters top
+            [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L [--fetch],
             seed remove <addr>, seed list,
-            recheck [--min 0.8], report [--out PREFIX],
+            recheck [--min 0.8] [--origin {created,seen,fetched,unknown}],
+            report [--out PREFIX],
             risk [--flag {selfdestruct,mutable_delegatecall}].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
             Without rpc, builds RpcClient(infura_url()), but only on the way
@@ -1292,8 +1452,9 @@ System:
           behavior: >
             Output is plain text, one record per line, tab-separated, fully
             ordered; every float is printed "%.4f", exact inside. Records:
-            "ALERT\t<address>\t<seed_address>\t<label>\t<score>" from
-            backfill, listen, recheck and seed add; clusters top (K default 20):
+            "ALERT\t<address>\t<seed_address>\t<label>\t<score>\t<origin>"
+            from backfill, listen, recheck and seed add (six fields since
+            phase 13; <origin> is the alert's origin key); clusters top (K default 20):
             "<level>\t<key>\t<member count>"; cluster <addr>:
             "<level>\t<key>\t<members comma-joined>\t<flags>", 0 or 1 line,
             where <flags> is the risk flags of the queried address's code;
@@ -1424,6 +1585,27 @@ System:
             stdout. The code and address rows stay, so a later recheck no
             longer names the removed seed and a seed add without --fetch can
             restore it.
+            Origin of an alert (phase 13). Every ALERT record carries a sixth
+            field after the score, the origin of the alerted address: one of
+            created, seen, fetched, unknown -- created when the address was
+            the contractAddress of a receipt of the block that stored it,
+            seen when it only came as a to or a log emitter, fetched when
+            seed add --fetch stored it, unknown for a row stored before
+            phase 13. Every path that prints alerts prints it the same way:
+            listen, backfill, recheck, seed add (with and without --fetch).
+            seed add --fetch stores the address it fetches -- the code
+            answer and the "0x" answer alike -- with origin "fetched".
+            listen and backfill take --alert-on {created,seen,all}, default
+            all: a filter on the printed ALERT lines only -- with created
+            (seen) only the lines whose origin is created (seen) are
+            written, in the same order; the store writes, the progress, the
+            exit code, the stop line and the alert list handed to on_alerts
+            by follow_chain are exactly those of a run without the flag.
+            recheck takes --origin {created,seen,fetched,unknown}, the same
+            kind of filter over the recheck_watchlist alerts; without it
+            every alert is printed. A value outside these sets is an
+            argparse usage error: exit 2, one stderr line, empty stdout, no
+            rpc call.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -1628,6 +1810,82 @@ System:
             - given: 'a fresh db'
               when: 'main(["--db", db, "seed", "remove", "0x12"]) and main(["--db", db, "seed", "add", "--fetch", "0x12", "--label", "L"], rpc=FakeRpc(fail=AssertionError("no rpc")))'
               then: 'exit 2 both times, stdout empty, stderr one line, the fake records no call'
+            - given: >
+                a fresh temp db holding at 0x1111111111111111111111111111111111111111
+                the code of 0xb53c071bdb35d21aa1216b084f79c372d71053d5 from
+                codes_26077729.json (put_address with block 1, no origin),
+                seeded "deployed in 26077729", and FakeRpc() over block
+                26077729 (receipts_26077729.json, codes_26077729.json)
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake)'
+              then: >
+                exit 0, stderr empty, stdout exactly the three lines
+                "ALERT\t0xb53c071bdb35d21aa1216b084f79c372d71053d5\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t1.0000\tcreated",
+                "ALERT\t0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t0.8182\tseen",
+                "ALERT\t0xff74317e948695297acb79cb2de06111f5cc16b3\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t1.0000\tseen";
+                store.origins() then has 207 entries: 0xb53c… "created", 205
+                "seen", 0x1111… "unknown"
+              ref: 'phase 13; the deploy of block 26077729 and a byte-identical contract that was only seen'
+            - given: 'the setup of the example above, made three times in three fresh dbs'
+              when: 'the same backfill with --alert-on created, with --alert-on seen, and with --alert-on all'
+              then: >
+                exit 0 each time, stderr empty; stdout is the created line
+                only, the two seen lines only (0xc02aaa39… then 0xff74317e…),
+                and all three lines; in all three dbs store.origins() is the
+                same dict of 207 entries and the progress is 26077729
+              ref: 'the flag filters the printed lines, never the store'
+            - given: >
+                the setup of the example above with progress 26077728, FakeRpc()
+                (head 0x18dea21), and a sleep that raises KeyboardInterrupt
+              when: 'main(["--db", db, "listen", "--source", "publicnode", "--alert-on", "created"], rpc=fake, sleep=fake_sleep)'
+              then: 'exit 0, stderr empty, stdout exactly the one created line of the example above, progress 26077729'
+            - given: 'the db after the plain backfill of the example above'
+              when: 'recheck, then recheck --origin created, --origin seen, --origin fetched, --origin unknown'
+              then: >
+                exit 0 every time, stderr empty; recheck prints the same three
+                lines as that backfill, byte for byte; --origin created the
+                created line only; --origin seen the two seen lines; --origin
+                fetched and --origin unknown an empty stdout (the seed's own
+                address 0x1111… never alerts)
+              ref: 'phase 13; the same records whichever path printed them'
+            - given: >
+                a fresh db, FakeRpc(fail=AssertionError("no rpc")), and the
+                argument lists backfill --from 26077729 --to 26077729 --alert-on
+                deployed; listen --alert-on fetched; recheck --origin all
+              when: 'main is called with each'
+              then: 'exit 2 each time, stdout empty, stderr exactly one line, the fake records no call'
+              ref: 'argparse choices: listen and backfill take created, seen, all; recheck takes created, seen, fetched, unknown'
+            - given: >
+                a fresh db holding code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6
+                (put_address, block 26077729, no origin) seeded "BELLE
+                honeypot", and FakeRpc(codes={"0x1807090dd15a6f58e00fd769e32ebf20ee610385":
+                text of code_belle_copy_1807090d.hex}, head="0x18dea21")
+              when: >
+                main(["--db", db, "seed", "add", "--fetch", "0x1807090dd15a6f58e00fd769e32ebf20ee610385",
+                "--label", "BELLE copy"], rpc=fake), then recheck, then recheck
+                --origin fetched
+              then: >
+                seed add: exit 0, stdout exactly
+                "ALERT\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\t0x1807090dd15a6f58e00fd769e32ebf20ee610385\tBELLE copy\t0.8667\tunknown";
+                recheck: exactly the two lines
+                "ALERT\t0x1807090dd15a6f58e00fd769e32ebf20ee610385\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0.8667\tfetched"
+                and the seed add line above; --origin fetched: the first of the
+                two only; store.origins() is {0x1807…: "fetched", 0x34c6…: "unknown"}
+              ref: 'phase 13; a fetched address alerts as fetched'
+            - given: 'a fresh db and FakeRpc(codes={"0x023697eda1dfbe331c2cf791ef2f6089e73e3230": "0x"}, head="0x18dea21")'
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x023697eda1dfbe331c2cf791ef2f6089e73e3230", "--label", "L"], rpc=fake)'
+              then: 'exit 2 as in phase 12, and store.origins() is {"0x023697eda1dfbe331c2cf791ef2f6089e73e3230": "fetched"}'
+            - given: >
+                a phase-12 database (addresses without the column origin)
+                holding code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6
+                seeded "BELLE honeypot" and the four BELLE copies at their
+                addresses, written by plain INSERTs
+              when: 'recheck, recheck --origin unknown, recheck --origin seen'
+              then: >
+                exit 0 each time; recheck prints the 4 ALERT lines of the
+                copies in address order, each
+                "ALERT\t<copy>\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0.8667\tunknown";
+                --origin unknown the same 4 lines; --origin seen an empty stdout
+              ref: 'phase 13; legacy rows read back as unknown'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
