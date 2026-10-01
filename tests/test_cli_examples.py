@@ -33,7 +33,7 @@ _SIMILAR_L0 = [
     "0x3041cbd36888becc7bbcbc0045e3b1f144466f5f",
 ]
 _EXPECTED_ALERT = (
-    "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_BELLE_COPY, _BELLE_SEED)
+    "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\tseen\n" % (_BELLE_COPY, _BELLE_SEED)
 )
 # The four BELLE copies, in address order; each address carries the
 # fixture-name prefix of its code_belle_copy_*.hex file.
@@ -456,10 +456,10 @@ class CliExamplesTest(unittest.TestCase):
         """
         self._fill_block()
         want = "".join(
-            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\n" % (addr, _PAIR)
+            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\tseen\n" % (addr, _PAIR)
             for addr in _SIMILAR_L0
         ) + "ALERT\t0xcf6daab95c476106eca715d48de4b13287ffdeaa\t%s" \
-            "\tUniV2 pair seed\t0.8125\n" % _PAIR
+            "\tUniV2 pair seed\t0.8125\tseen\n" % _PAIR
         code, out, err = self.run_main(
             ["--db", self.db, "seed", "add", _PAIR,
              "--label", "UniV2 pair seed"], FakeRpc())
@@ -496,7 +496,7 @@ class CliExamplesTest(unittest.TestCase):
         """
         self._fill_belle_copies()
         want = "".join(
-            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n"
+            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\tunknown\n"
             % (addr, _BELLE_SEED)
             for addr in _BELLE_COPY_ADDRESSES)
         code, out, err = self.run_main(
@@ -540,7 +540,7 @@ class CliExamplesTest(unittest.TestCase):
                          msg="seed add setup: got %r; stderr=%r"
                              % (code, err))
         want = "".join(
-            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\n" % (addr, _PAIR)
+            "ALERT\t%s\t%s\tUniV2 pair seed\t1.0000\tseen\n" % (addr, _PAIR)
             for addr in _SIMILAR_L0)
         code, out, err = self.run_main(
             ["--db", self.db, "recheck", "--min", "1.0"], FakeRpc())

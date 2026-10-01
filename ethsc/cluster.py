@@ -11,7 +11,10 @@ score_fingerprints: no stored code is loaded and similarity() over raw
 bytes is not called here.
 
 Every list returned is fully ordered; the result does not depend on the
-order in which codes or addresses were inserted into the store.
+order in which codes or addresses were inserted into the store. Origin
+(phase 13): recheck_watchlist reads store.origins() to label its
+alerts; it never computes an origin itself, and match_watchlist is
+unchanged -- its alerts carry no address and no origin.
 """
 
 from typing import List, Tuple
@@ -206,8 +209,11 @@ def recheck_watchlist(
     match_watchlist only sees a code arriving after the seed was added.
 
     Each Alert has exactly the keys address (the matching stored
-    address, lowercase), seed_address, label and score (the float from
-    score_fingerprints, unrounded). Every (code_id, seed) pair is
+    address, lowercase), seed_address, label, score (the float from
+    score_fingerprints, unrounded) and origin (phase 13: that address's
+    origin, from store.origins(), read once per call -- never once per
+    alert -- "unknown" for a row stored before phase 13). Every
+    (code_id, seed) pair is
     scored by score_fingerprints over two elements of
     store.fingerprints() -- no code is loaded -- and fanned out to that
     code's addresses. A seed never alerts on itself -- the single pair
@@ -233,6 +239,7 @@ def recheck_watchlist(
     fps = {}  # code_id -> stored Fingerprint dict
     for fp in store.fingerprints():
         fps[fp["code_id"]] = fp
+    origins = store.origins()  # read once per call, not once per alert
 
     alerts = []
     for seed in seeds:
@@ -252,6 +259,7 @@ def recheck_watchlist(
                         "seed_address": seed["address"],
                         "label": seed["label"],
                         "score": score,
+                        "origin": origins.get(addr, "unknown"),
                     }
                 )
     alerts.sort(

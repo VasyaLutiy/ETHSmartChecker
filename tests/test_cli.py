@@ -89,7 +89,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(code, 0, msg="backfill exit %d, err=%r" % (code, err))
         self.assertEqual(
             out,
-            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_COPY, _BELLE),
+            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\tseen\n" % (_COPY, _BELLE),
             msg="alert line wrong",
         )
 
@@ -281,7 +281,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(code, 0, msg="interrupted listen exit")
         self.assertEqual(
             out,
-            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\n" % (_COPY, _BELLE),
+            "ALERT\t%s\t%s\tBELLE honeypot\t0.8667\tseen\n" % (_COPY, _BELLE),
             msg="alert lost across interrupt",
         )
         self.assertEqual(err, "", msg="stderr on interrupted pass")
@@ -320,7 +320,7 @@ class CliSmoke(unittest.TestCase):
         self.assertEqual(lines[0].split("\t")[1],
                          "0x22052a1a0f5a3d2839d71c458f177e68b0e73963",
                          msg="seed add first alert address")
-        self.assertEqual(lines[-1].split("\t")[-1], "0.8125",
+        self.assertEqual(lines[-1].split("\t")[4], "0.8125",
                          msg="seed add last score")
         code, out2, err = _run(["--db", path, "recheck"], FakeRpc())
         self.assertEqual(code, 0, msg="recheck exit")

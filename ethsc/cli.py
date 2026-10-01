@@ -67,6 +67,13 @@ takes the old path and never builds a client or calls the chain. seed
 remove <address> deletes one seed (exit 2, "not a seed: <address>",
 when it was not one) and leaves the code and address rows untouched, so
 the address can be seeded again without a new fetch.
+
+Origin of an alert (phase 13): the ALERT record carries a sixth field,
+the alerted address's origin (created, seen, fetched, unknown); --fetch
+stores with origin "fetched". --alert-on on listen/backfill and
+--origin on recheck filter the printed lines only -- they never touch
+what follow_chain hands to on_alerts, the store writes, the progress or
+the exit code.
 """
 
 import argparse
@@ -143,31 +150,54 @@ def _flags_field(code):
 
 
 def _print_alerts(alerts):
-    """Write the block's ALERT lines to stdout and flush at once."""
+    """Write the block's ALERT lines to stdout and flush at once.
+
+    Six fields since phase 13: the sixth is the alert's origin key.
+    """
     for alert in alerts:
         sys.stdout.write(
-            "ALERT\t%s\t%s\t%s\t%.4f\n"
+            "ALERT\t%s\t%s\t%s\t%.4f\t%s\n"
             % (
                 alert["address"],
                 alert["seed_address"],
                 alert["label"],
                 alert["score"],
+                alert["origin"],
             )
         )
     sys.stdout.flush()
 
 
+def _alert_on_sink(alert_on):
+    """The on_alerts sink of listen/backfill, filtered by --alert-on.
+
+    A wrapper around _print_alerts, not a change in ingest: "all"
+    prints every alert; "created" or "seen" prints only the lines whose
+    origin matches, in the same order. follow_chain always hands the
+    full, unfiltered list to this sink -- the filter touches stdout
+    only, never the store writes, the progress or the stats.
+    """
+    if alert_on == "all":
+        return _print_alerts
+
+    def sink(alerts):
+        _print_alerts([a for a in alerts if a["origin"] == alert_on])
+
+    return sink
+
+
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
-            max_calls=None, prices=PRICES, code_tag=None, workers=None):
+            max_calls=None, prices=PRICES, code_tag=None, workers=None,
+            alert_on="all"):
     """One follow_chain call with the CLI's error and exit-code policy.
 
     Returns the exit code, or None when the pass was interrupted by
     KeyboardInterrupt (a clean stop: no output, no traceback). The ALERT
     lines of every block -- a complete one included -- are printed by
-    the on_alerts sink as the block ends. The stop line reports the
-    ledger of summary["day"], the day the pass last charged, not the
-    day it started on. prices, code_tag and workers come from the
-    --source resolution in main.
+    the on_alerts sink as the block ends, filtered by --alert-on
+    (phase 13). The stop line reports the ledger of summary["day"], the
+    day the pass last charged, not the day it started on. prices,
+    code_tag and workers come from the --source resolution in main.
     """
     try:
         summary = follow_chain(
@@ -180,7 +210,7 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             prices=prices,
             code_tag=code_tag,
             workers=workers,
-            on_alerts=_print_alerts,
+            on_alerts=_alert_on_sink(alert_on),
         )
     except KeyboardInterrupt:
         return None
@@ -216,6 +246,7 @@ def _run_backfill(args, rpc, store, prices, code_tag, workers):
             prices=prices,
             code_tag=code_tag,
             workers=workers,
+            alert_on=args.alert_on,
         )
     except KeyboardInterrupt:
         # Ctrl-C in the gap between the pass and the return.
@@ -234,6 +265,7 @@ def _run_listen(args, rpc, store, sleep, prices, code_tag, workers):
                 prices=prices,
                 code_tag=code_tag,
                 workers=workers,
+                alert_on=args.alert_on,
             )
             if code is None:
                 # Ctrl-C inside the pass: a clean stop, no pause, no loop.
@@ -335,7 +367,7 @@ def _run_seed_add(args, rpc, store):
             return 1
         block = int(head, 16)
         if text == "0x":
-            store.put_address(args.address, None, block)
+            store.put_address(args.address, None, block, origin="fetched")
             sys.stderr.write(
                 "unknown address or no code: %s\n" % args.address)
             return 2
@@ -344,7 +376,7 @@ def _run_seed_add(args, rpc, store):
                 "eth_getCode returned no code: %s\n" % args.address)
             return 1
         code_id = store.put_code(bytes.fromhex(text[2:]))
-        store.put_address(args.address, code_id, block)
+        store.put_address(args.address, code_id, block, origin="fetched")
     try:
         store.add_seed(args.address, args.label)
     except KeyError:
@@ -370,7 +402,11 @@ def _run_seed_list(args, store):
 
 
 def _run_recheck(args, store):
-    _print_alerts(recheck_watchlist(store, min_score=args.min))
+    """recheck, filtered by --origin (phase 13): without it, every alert."""
+    alerts = recheck_watchlist(store, min_score=args.min)
+    if args.origin is not None:
+        alerts = [a for a in alerts if a["origin"] == args.origin]
+    _print_alerts(alerts)
     return 0
 
 
@@ -404,6 +440,8 @@ def _build_parser():
     backfill.add_argument("--source", choices=["infura", "publicnode"],
                           default="infura")
     backfill.add_argument("--workers", type=int, default=None)
+    backfill.add_argument("--alert-on", choices=["created", "seen", "all"],
+                          default="all")
 
     listen = sub.add_parser("listen")
     listen.add_argument("--daily-budget", type=int, default=None)
@@ -412,6 +450,8 @@ def _build_parser():
     listen.add_argument("--source", choices=["infura", "publicnode"],
                         default="infura")
     listen.add_argument("--workers", type=int, default=None)
+    listen.add_argument("--alert-on", choices=["created", "seen", "all"],
+                        default="all")
 
     clusters = sub.add_parser("clusters")
     clusters_sub = clusters.add_subparsers(dest="subcommand")
@@ -444,6 +484,11 @@ def _build_parser():
 
     recheck = sub.add_parser("recheck")
     recheck.add_argument("--min", type=float, default=0.8)
+    recheck.add_argument(
+        "--origin",
+        choices=["created", "seen", "fetched", "unknown"],
+        default=None,
+    )
 
     report = sub.add_parser("report")
     report.add_argument("--out", default="ethsc-report")
