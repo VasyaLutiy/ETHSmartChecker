@@ -204,4 +204,49 @@ the comparison with phase 12.
 
 ## 11. Actual
 
-_(after the run)_
+One pass, 2 of 2 cards accepted, 0 red acceptance runs, 2 generations, Claude Code
+agents on claude-sonnet-5 (`morph-agent-run`), no `mrph run`, no OpenRouter.
+
+| card | acceptance runs | commit | diff | agent wall | API equivalent (ccledger) |
+|---|---|---|---|---|---|
+| origin (4 modules + smoke) | 1 | 7592d0f | ingest +61/−10, store +36/−7, cli +56/−11, cluster +11/−3, test_origin_p13.py +110 (3 tests) | 11.7 min | $2.65 (50 calls) |
+| origin-judge | 2, both green (re-run before commit) | 33e331c | test_origin_examples_p13.py +946 (17 tests) | 18.4 min | $2.58 (35 calls) |
+
+- Tests 337 → **357**, all green. The judge found no defect; no regeneration, no hand fix
+  of code. The 16 old tests edited as data before the run (5694d53) went green with the
+  code card, as the spike predicted.
+- Wall: run (executor start 07:48:36 → judge commit 08:18:49) **30.2 min**; primer →
+  judge commit ≈ 62 min, the operator gate included. Recon: primer + ~12 reads, scout
+  skipped (operator's call), one ripple spike that named all 16 tests the data edit
+  fixed; the spike also measured every value of the 17 new examples before the gate.
+- Bill, API equivalent by ccledger over the session journal: **$13.27** — executors
+  $5.23 (85 calls, sonnet), orchestrator ≈ $8.04 (73 calls, opus). A subscription pays
+  none of it in cash.
+- Against phase 12 (same path): 2 cards, 15.7 min run, $2.71 executors, $4.38
+  orchestrator, 93 product lines. Here: 2 cards, 30.2 min, $5.23, $8.04, 164 product
+  lines over 4 modules (+31 removed). Executor cost per product line ~$0.032 vs ~$0.029.
+- Predictions (§9): both cards first-or-second run — **hit** (1 and 1 green + 1 re-run);
+  product diff +80..130 — **missed** (+164, docstrings and the workers path); smoke
+  ≤ 100 — **missed** (110); judge 350..600 — **missed** (946); run wall < 30 min —
+  **missed by 0.2 min** (the judge ran the 4-min full suite twice); §3.3 step 2 one line
+  `seen` — **hit**.
+
+**Live acceptance (§3.3)**, branch code 7592d0f, fresh dbs in `/tmp/p13/live/`, public node:
+
+| step | result |
+|---|---|
+| `seed add --fetch 0x2257aaac…cac57 --label "Balancer V1 BPool"` | exit 0, 0.96 s, no ALERT; stored as `fetched` |
+| `backfill --from 26093180 --to 26093180 --source publicnode` | exit 0, 14.8 s, exactly one line: `ALERT 0xc351648240e9fc9213e8b6016e566f95c5fa7909 0x2257aaac34bcb27900291f7b84ee2565a6cbac57 Balancer V1 BPool 1.0000 seen` |
+| the same with `--alert-on created` (second fresh db) | exit 0, 13.0 s, no ALERT; store: 296 addresses, 295 `seen` + 1 `fetched`, `0xc351…` `seen` — identical to the first db |
+| `recheck` / `recheck --origin created` | the same one line with `seen` / empty |
+| block 26093180 overall | 295 addresses stored, 0 `created` |
+
+Offline on a copy of `smoke/20260930/ethsc.sqlite`: the first open adds `origin` as the
+last column and rewrites nothing (48 413 rows, 48 413 NULL); first open + recheck
+7.08 s (the phase-11 std_proxy fill of that older copy, as in phase 12), later recheck
+**0.13 s**; output = `smoke/p11/recheck.out` with `\tunknown` on every one of its 192
+lines (cmp-identical); `--origin unknown` the same bytes, `--origin seen` empty.
+
+**The operator's prediction** (most LaunchToken-family alerts `created`, most Balancer V1
+BPool alerts `seen`): **pending** — scored on the next listen run, as agreed at the
+gate. Orchestrator's counter-forecast stands: LaunchToken half `seen` (factory deploys).
