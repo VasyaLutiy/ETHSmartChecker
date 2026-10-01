@@ -331,6 +331,7 @@ class TestRecheckWatchlistExamples(unittest.TestCase):
                 "seed_address": UNIV2_SEED,
                 "label": "UniV2 pair seed",
                 "score": 1.0,
+                "origin": "unknown",
             }
             for addr in UNIV2_ADDRESSES
         ]
@@ -340,6 +341,7 @@ class TestRecheckWatchlistExamples(unittest.TestCase):
                 "seed_address": UNIV2_SEED,
                 "label": "UniV2 pair seed",
                 "score": 26 / 32,
+                "origin": "unknown",
             }
         )
         self.assertEqual(
@@ -364,6 +366,7 @@ class TestRecheckWatchlistExamples(unittest.TestCase):
                 "seed_address": UNIV2_SEED,
                 "label": "UniV2 pair seed",
                 "score": 1.0,
+                "origin": "unknown",
             }
             for addr in UNIV2_ADDRESSES
         ]
@@ -393,6 +396,7 @@ class TestRecheckWatchlistExamples(unittest.TestCase):
                 "seed_address": BELLE_SEED,
                 "label": "BELLE honeypot",
                 "score": 13 / 15,
+                "origin": "unknown",
             }
             for addr in BELLE_COPIES
         ]

@@ -50,13 +50,13 @@ class TestClusterExamplesP11(unittest.TestCase):
             alerts = cluster.recheck_watchlist(guarded)
             expected = [
                 {"address": UNIV2_PAIRS[0], "seed_address": SEED,
-                 "label": "UniV2 pair seed", "score": 1.0},
+                 "label": "UniV2 pair seed", "score": 1.0, "origin": "unknown"},
                 {"address": UNIV2_PAIRS[1], "seed_address": SEED,
-                 "label": "UniV2 pair seed", "score": 1.0},
+                 "label": "UniV2 pair seed", "score": 1.0, "origin": "unknown"},
                 {"address": UNIV2_PAIRS[2], "seed_address": SEED,
-                 "label": "UniV2 pair seed", "score": 1.0},
+                 "label": "UniV2 pair seed", "score": 1.0, "origin": "unknown"},
                 {"address": SOLC6_PAIR, "seed_address": SEED,
-                 "label": "UniV2 pair seed", "score": 26 / 32},
+                 "label": "UniV2 pair seed", "score": 26 / 32, "origin": "unknown"},
             ]
             self.assertEqual(alerts, expected,
                              msg="recheck_watchlist alerts differ")

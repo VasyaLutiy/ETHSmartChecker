@@ -91,7 +91,7 @@ def _store_belle_copies(db):
 
 def _copies_alert_lines(label):
     return "".join(
-        "ALERT\t%s\t%s\t%s\t0.8667\n" % (address, _BELLE, label)
+        "ALERT\t%s\t%s\t%s\t0.8667\tunknown\n" % (address, _BELLE, label)
         for address, _ in _COPIES
     )
 

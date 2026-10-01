@@ -592,7 +592,7 @@ class RecheckWatchlistTest(unittest.TestCase):
             )
             self.assertEqual(
                 sorted(alerts[0]),
-                ["address", "label", "score", "seed_address"],
+                ["address", "label", "origin", "score", "seed_address"],
                 "exactly the four Alert keys",
             )
         finally:
