@@ -511,7 +511,16 @@ System:
             put_address(address, code_id, block, origin=None) stores it
             (None is stored as NULL); origins() -> dict, the bulk read for
             cluster: every stored address (lowercase) mapped to its origin,
-            a NULL origin read back as "unknown".
+            a NULL origin read back as "unknown". Phase 14: the addresses
+            table holds the column implementation TEXT;
+            set_implementation(address, implementation) writes it on a
+            stored row; implementation(address) -> str or None reads it;
+            implementations() -> dict is the bulk read for ingest and
+            cluster: every stored address whose code has std_proxy 1,
+            mapped to {"implementation": str or None, "code_id": str or
+            None}, where code_id is the code_id stored for the
+            implementation address (None when the implementation is
+            unknown, not stored, or stored without code).
           behavior: >
             Addresses are lowercased on the way in: every method accepts an
             address in any case and stores or looks it up lowercase. Every
@@ -553,6 +562,34 @@ System:
             and "fetched" (seed add --fetch); the store does not validate
             the text. origins() is one SELECT over addresses, an empty
             database gives {}.
+            Implementation (phase 14): a fresh database creates addresses
+            with the columns address, code_id, block, origin, implementation
+            in that order; an addresses table without implementation gets
+            ALTER TABLE addresses ADD COLUMN implementation TEXT on open,
+            once, so the column is last in a fresh and a migrated database
+            alike; existing rows are not rewritten (NULL stays in the file;
+            no UPDATE on open). set_implementation(address, implementation)
+            is the one write that changes a stored row: UPDATE addresses SET
+            implementation = ? WHERE address = ?, both values lowercased,
+            committed; on an address the store does not hold it changes
+            nothing and does not raise; a later call overwrites (the
+            upgrade case). The column carries the address the proxy
+            delegates through -- the implementation of an EIP-1967/UUPS
+            proxy or the beacon of a beacon proxy -- exactly as the caller
+            gives it; the store never reads a slot and never decides what
+            the value means. implementation(address) returns the stored
+            text or None (unknown address, NULL, or an address whose code
+            is not a standard proxy -- the column is written for standard
+            proxies only, but the reader does not check that).
+            implementations() is one SELECT joining addresses with codes
+            (std_proxy = 1) and, by implementation, with addresses again
+            for the implementation's code_id; an address without code, or
+            whose code is not a standard proxy, is absent from it; an empty
+            database gives {}. On the live 01.10 copy (210952 addresses,
+            19574 codes, 1907 of them std_proxy, 5092 std-proxy addresses)
+            the first open adds the column with no rewrite and
+            implementations() stays well under 1 s.
+            Phase 14 also changes add_seed: see Manage Watchlist.
           guardrails: [No Network In Core, Deterministic Output]
           steps:
             - uses: fingerprint
@@ -605,8 +642,8 @@ System:
               ref: 'the NULL fill runs on every open (phase 11)'
             - given: 'a fresh temp db'
               when: 'PRAGMA table_info(addresses) is read, and origins() is called'
-              then: 'the columns are address, code_id, block, origin in that order; origins() is {}'
-              ref: 'phase 13 schema'
+              then: 'the columns are address, code_id, block, origin, implementation in that order; origins() is {}'
+              ref: 'phase 13 schema; phase 14 appends implementation'
             - given: 'a fresh temp db and the code_id c of code_belle.hex'
               when: >
                 put_address("0x1807090DD15A6F58E00FD769E32EBF20EE610385", c, 1, origin="created"),
@@ -629,13 +666,69 @@ System:
                 INSERTs
               when: 'Store(path) opens it, origins() is called, the db is closed and opened again'
               then: >
-                after the first open addresses has the column origin last;
-                origins() has 206 entries, every one "unknown"; the file still
-                holds 206 rows with origin NULL (SELECT count(*) WHERE origin
-                IS NULL is 206: nothing rewritten); has_address and
-                addresses_of answer as before; the second open adds no column
-                and changes nothing
+                after the first open addresses has the columns origin and
+                implementation after block, in that order (phase 14: origin is
+                no longer last); origins() has 206 entries, every one
+                "unknown"; the file still holds 206 rows with origin NULL
+                (SELECT count(*) WHERE origin IS NULL is 206: nothing
+                rewritten); has_address and addresses_of answer as before; the
+                second open adds no column and changes nothing
               ref: 'phase 13 migration; on the live 30.09 copy: 48413 rows, all unknown'
+            - given: 'a fresh temp db'
+              when: 'PRAGMA table_info(addresses) is read, and implementations() is called'
+              then: 'the columns are address, code_id, block, origin, implementation in that order; implementations() is {}'
+              ref: 'phase 14 schema'
+            - given: >
+                a fresh temp db holding code_proxy_seed_0c010533.hex at
+                0x0c0105334a50db16b51b2911c9956539753a2cf8 (block 1, origin
+                "fetched") and at 0x069c4c579671f8c120b1327a73217d01ea2ec5ea
+                (block 1, origin "seen"), code_impl_72b97171.hex at
+                0x72b971717e088b59f26d4236be222adb6acd393b (block 1, origin
+                "impl") and code_weth9.hex at
+                0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2 (block 1)
+              when: >
+                implementations() is called; then
+                set_implementation("0x0C0105334A50DB16B51B2911C9956539753A2CF8",
+                "0x72B971717E088B59F26D4236BE222ADB6ACD393B"),
+                set_implementation("0x069c4c579671f8c120b1327a73217d01ea2ec5ea",
+                "0x1111111111111111111111111111111111111111") and
+                set_implementation("0xdead00000000000000000000000000000000dead",
+                "0x72b971717e088b59f26d4236be222adb6acd393b") are called, and
+                implementation() of the three addresses and implementations()
+                are read; then the db is reopened and implementations() read again
+              then: >
+                first {"0x069c4c579671f8c120b1327a73217d01ea2ec5ea": {"implementation": None, "code_id": None},
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8": {"implementation": None, "code_id": None}}
+                (the WETH9 and the implementation rows are not standard
+                proxies and are absent); after the writes
+                implementation("0x0c0105334a50db16b51b2911c9956539753a2cf8") is
+                "0x72b971717e088b59f26d4236be222adb6acd393b" (lowercase),
+                implementation("0x069c4c579671f8c120b1327a73217d01ea2ec5ea") is
+                "0x1111111111111111111111111111111111111111",
+                implementation("0xdead00000000000000000000000000000000dead") is
+                None and has_address of it is False (nothing inserted);
+                implementations() is
+                {"0x069c4c579671f8c120b1327a73217d01ea2ec5ea": {"implementation": "0x1111111111111111111111111111111111111111", "code_id": None},
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8": {"implementation": "0x72b971717e088b59f26d4236be222adb6acd393b",
+                "code_id": "148d598b091197e8547a99bb62fb69d3003cfcad58124c5d847b1de213ecbf28"}};
+                the reopened db gives the same dict; the four rows keep their
+                block and origin
+              ref: 'phase 14; 0x72b9…393b is the implementation of the seed proxy, slot read on the public node 2026-10-01; 0x069c…5ea is a live proxy pointing at the same implementation'
+            - given: >
+                a phase-13 database: a file made with the phase-13 schema
+                (addresses with the four columns address, code_id, block,
+                origin, no implementation) holding the 130 codes and the 206
+                addresses of codes_26077729.json, written by plain INSERTs
+              when: 'Store(path) opens it, implementations() is called, the db is closed and opened again'
+              then: >
+                after the first open addresses has the column implementation
+                last; implementations() has exactly 20 entries -- the 20
+                addresses of the block whose code is a standard proxy (17
+                distinct codes) -- every one {"implementation": None,
+                "code_id": None}; the file holds 206 rows with implementation
+                NULL (nothing rewritten); the second open adds no column and
+                changes nothing
+              ref: 'phase 14 migration; 20 counted with is_std_proxy over codes_26077729.json; on the live 01.10 copy: 210952 rows, 5092 of them standard proxies'
         - name: Track Progress
           description: >
             get_progress() -> int or None, the last fully ingested block;
@@ -652,7 +745,10 @@ System:
             known-bad seed; seeds() -> list of {address, label, code_id}
             sorted by address. Phase 12: remove_seed(address) -> bool
             deletes the seed of address and returns True, or returns False
-            when the address is not a seed.
+            when the address is not a seed. Phase 14: a seed on a standard
+            proxy with a stored implementation whose code is stored seeds
+            through that implementation -- the seed row carries the
+            implementation's code_id.
           behavior: >
             add_seed on an address with no stored code raises
             KeyError(address): both an address the db does not know and a
@@ -664,6 +760,18 @@ System:
             the address can be seeded again with add_seed and no rpc call. It
             never raises for an unknown address or for an address that is
             stored but not a seed: both give False and change nothing.
+            Seeding through the implementation (phase 14): add_seed(address,
+            label) stores as the seed's code_id the code_id of the
+            implementation address when implementations() has address with
+            a code_id that is not None (a standard proxy whose implementation
+            is stored with code); otherwise the address's own code_id as
+            before (a non-proxy, a proxy with NULL implementation, or one
+            whose implementation address is unknown or stored without code
+            -- phase 9 stands for those: such a seed matches nothing). The
+            seed row's address stays the proxy's address, so seeds() lists
+            the address the operator gave with the implementation's
+            code_id. add_seed reads the implementation at the time of the
+            call; a later set_implementation does not move the seed.
           steps:
             - modifies: Code Database
           examples:
@@ -687,6 +795,23 @@ System:
             - given: 'a fresh db, and then that db with code_belle.hex stored at 0x34c6… but not seeded'
               when: 'remove_seed("0x34c6211621f2763c60eb007dc2ae91090a2d22f6") is called on each'
               then: 'False both times, no exception, and the codes and addresses row counts unchanged'
+            - given: >
+                the four-address db of Store Codes And Contracts example 14
+                after its set_implementation calls (0x0c01…2cf8 ->
+                0x72b9…393b whose code is stored, 0x069c…5ea -> 0x1111…1111
+                which is not stored)
+              when: >
+                add_seed("0x0c0105334a50db16b51b2911c9956539753a2cf8", "proxy-seed"),
+                add_seed("0x069c4c579671f8c120b1327a73217d01ea2ec5ea", "dangling") and
+                add_seed("0x72b971717e088b59f26d4236be222adb6acd393b", "impl-seed") are called
+              then: >
+                seeds() has 3 entries sorted by address: 0x069c…5ea "dangling"
+                with code_id 30ccc4ce49c00fae11d7118fc244f29a13788fb32cd4022ee69acc2f15c0e2f5
+                (its own, the proxy's code), 0x0c01…2cf8 "proxy-seed" with
+                code_id 148d598b091197e8547a99bb62fb69d3003cfcad58124c5d847b1de213ecbf28
+                (the implementation's), 0x72b9…393b "impl-seed" with the same
+                148d598b…cbf28
+              ref: 'phase 14: a seed on a proxy seeds through its implementation; code_ids from fingerprint() of the two fixtures'
         - name: Budget Ledger
           description: >
             spend(day, method, credits) adds credits to the ledger of a UTC
@@ -738,7 +863,8 @@ System:
             codes(code_id TEXT PRIMARY KEY, size INTEGER, skeleton_hash TEXT,
             selectors TEXT (JSON list), proxy_kind TEXT, proxy_target TEXT,
             code BLOB, std_proxy INTEGER); addresses(address TEXT PRIMARY KEY,
-            code_id TEXT NULL, block INTEGER), index addresses_code_id on
+            code_id TEXT NULL, block INTEGER, origin TEXT, implementation
+            TEXT), index addresses_code_id on
             addresses(code_id); progress(key TEXT PRIMARY KEY, block INTEGER);
             seeds(address TEXT PRIMARY KEY, code_id TEXT, label TEXT);
             ledger(day TEXT, method TEXT, credits INTEGER)
@@ -754,11 +880,14 @@ System:
             addresses; L1 per skeleton_hash with >= 2 distinct code_id; proxy
             per eip1167 (kind, target) with >= 2 addresses; eip7702 per
             (kind, target) of the EIP-7702 delegations with >= 2 addresses.
-            Proxy codes enter only their proxy/eip7702 clusters.
+            Proxy codes enter only their proxy/eip7702 clusters. Phase 14:
+            impl per implementation address of the standard proxies with >= 2
+            proxies, from store.implementations().
           behavior: >
-            Cluster = {level: "L0" | "L1" | "proxy" | "eip7702", key, members:
-            sorted lowercase addresses}; key is the code_id, the skeleton_hash,
-            or "<kind>:<target>". L0 and L1 are built from non-proxy codes
+            Cluster = {level: "L0" | "L1" | "proxy" | "eip7702" | "impl", key,
+            members: sorted lowercase addresses}; key is the code_id, the
+            skeleton_hash, "<kind>:<target>", or the implementation address.
+            L0 and L1 are built from non-proxy codes
             only; a proxy code never enters L0 or L1, however many addresses it
             has. L1 members are the addresses of all the codes sharing the
             skeleton_hash. An EIP-1167 clone goes to a "proxy" cluster; an
@@ -769,9 +898,21 @@ System:
             that drowned out the contract clusters. Each cluster counts the
             addresses of every code with that (kind, target) pair. Addresses
             without code are never members. The list is sorted by member count
-            descending, then level (L0, L1, proxy, eip7702), then key;
+            descending, then level (L0, L1, proxy, eip7702, impl), then key;
             insertion order does not matter. Reads the store through
-            fingerprints(), code_by_id() and addresses_of() only.
+            fingerprints(), code_by_id(), addresses_of() and
+            implementations() only.
+            impl (phase 14): one cluster per implementation address (the
+            value of the implementation column, lowercase, as the key) with
+            >= 2 standard-proxy addresses pointing at it; the members are
+            those proxy addresses, never the implementation address itself;
+            a beacon proxy counts under its beacon address the same way
+            (the column holds whichever the ingest found). A standard proxy
+            still enters its L0 (identical bytecode) and L1 clusters as
+            before -- the impl level is an addition, so a proxy may be a
+            member of an L0 cluster and of an impl cluster. The level ranks
+            last, after eip7702. A proxy with NULL implementation is in no
+            impl cluster.
           guardrails: [Deterministic Output]
           steps:
             - uses: store
@@ -793,6 +934,40 @@ System:
               when: 'build_clusters is called'
               then: 'the result is equal'
               ref: 'Deterministic Output'
+            - given: >
+                the store from codes_26077729.json with set_implementation
+                applied to its 20 standard-proxy addresses from
+                storage_26077729.json (17 of them with the implementation slot
+                set, 3 with the beacon slot set; two of the beacon proxies,
+                0xc9eef266834730340a55b6cc24621b31baf55581 and
+                0xf6b1117ec07684d3958cad8beb1b302bfd21103f, share the beacon
+                0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598; every other
+                implementation is unique)
+              when: 'build_clusters is called'
+              then: >
+                the 15 clusters of example 1 unchanged and in the same order,
+                plus exactly one impl cluster, last of all: {"level": "impl",
+                "key": "0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598",
+                "members": ["0xc9eef266834730340a55b6cc24621b31baf55581",
+                "0xf6b1117ec07684d3958cad8beb1b302bfd21103f"]}; 16 clusters
+              ref: 'phase 14; slots of the 20 std-proxy addresses read on the public node 2026-10-01 (storage_26077729.json)'
+            - given: >
+                a store holding code_proxy_seed_0c010533.hex at
+                0x0c0105334a50db16b51b2911c9956539753a2cf8 and at
+                0x069c4c579671f8c120b1327a73217d01ea2ec5ea, both with
+                implementation 0x72b971717e088b59f26d4236be222adb6acd393b, and
+                code_impl_72b97171.hex at that implementation address
+              when: 'build_clusters is called, and again on the same store built in reverse insertion order'
+              then: >
+                exactly [{"level": "L0", "key":
+                "30ccc4ce49c00fae11d7118fc244f29a13788fb32cd4022ee69acc2f15c0e2f5",
+                "members": ["0x069c4c579671f8c120b1327a73217d01ea2ec5ea",
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8"]}, {"level":
+                "impl", "key": "0x72b971717e088b59f26d4236be222adb6acd393b",
+                "members": ["0x069c4c579671f8c120b1327a73217d01ea2ec5ea",
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8"]}] both times --
+                the implementation address is not a member
+              ref: 'phase 14; two live proxies of the same implementation'
         - name: Find Similar
           description: >
             find_similar(store, address, min_score=0.8) -> list of (address,
@@ -810,6 +985,19 @@ System:
             excluded; the other addresses of the same code come back with
             1.0. The query address may be in any case. Unknown address or one
             without code gives [].
+            Through the implementation (phase 14): a standard proxy whose
+            implementations() entry has a code_id is scored by the
+            fingerprint of that code_id instead of its own, on both sides --
+            as the query (the query fingerprint is the implementation's) and
+            as a stored address (it comes back with the score of its
+            implementation's fingerprint). A standard proxy without a
+            resolved implementation keeps its own fingerprint and so scores
+            0.0 (phase 9 stands). The implementation address itself is an
+            ordinary stored address: against a proxy that delegates to it,
+            it scores 1.0. The result still excludes the query address, is
+            still sorted by score descending then address, and reads the
+            store through code_of(), fingerprints(), addresses_of() and
+            implementations() only.
           guardrails: [Deterministic Output]
           steps:
             - uses: fingerprint
@@ -827,6 +1015,26 @@ System:
               when: 'find_similar(store, "0x34c6211621f2763c60eb007dc2ae91090a2d22f6")'
               then: 'the 4 copies, each 13/15, in address order 0x1807…, 0x2141…, 0x46ca…, 0x6411…'
               ref: 'deployer 0xf80f6fa4… nonces 0, 1, 5, 13 (CREATE addresses); selector diff'
+            - given: >
+                the store of Build Clusters example 5 (code_proxy_seed_0c010533.hex at
+                0x0c0105334a50db16b51b2911c9956539753a2cf8 and
+                0x069c4c579671f8c120b1327a73217d01ea2ec5ea, both with implementation
+                0x72b971717e088b59f26d4236be222adb6acd393b, code_impl_72b97171.hex
+                there), and a second store made the same way but without
+                set_implementation for 0x069c…5ea
+              when: >
+                find_similar(store, "0x0c0105334a50db16b51b2911c9956539753a2cf8") and
+                find_similar(store, "0x72b971717e088b59f26d4236be222adb6acd393b") on the
+                first store; find_similar of 0x0c01…2cf8 and of 0x069c…5ea on the second
+              then: >
+                first store: [("0x069c4c579671f8c120b1327a73217d01ea2ec5ea", 1.0),
+                ("0x72b971717e088b59f26d4236be222adb6acd393b", 1.0)] and
+                [("0x069c4c579671f8c120b1327a73217d01ea2ec5ea", 1.0),
+                ("0x0c0105334a50db16b51b2911c9956539753a2cf8", 1.0)]; second
+                store: [("0x72b971717e088b59f26d4236be222adb6acd393b", 1.0)]
+                for 0x0c01…2cf8 (the unresolved sibling scores 0.0 and is
+                absent) and [] for 0x069c…5ea
+              ref: 'phase 14; a proxy without a resolved implementation keeps phase 9'
         - name: Match Watchlist
           description: >
             match_watchlist(store, code, min_score=0.8) -> list of Alert
@@ -843,6 +1051,12 @@ System:
             whose code_id has no fingerprint is skipped. fingerprint(b"") is
             None and scores 0.0 like similarity(b"", code): at min_score 0.0
             empty code still gives one 0.0 alert per seed, as before.
+            Phase 14 changes nothing in match_watchlist itself: it scores
+            the bytes it is given against the seed fingerprints; a seed
+            added on a proxy carries its implementation's code_id (Manage
+            Watchlist), and Ingest Block hands it the implementation's
+            bytes on behalf of a proxy, so a proxy's own bytes still score
+            0.0 against everything.
           guardrails: [Deterministic Output, Tolerant Parser]
           steps:
             - uses: store
@@ -858,6 +1072,15 @@ System:
               when: 'match_watchlist is called'
               then: '[] both times'
               ref: 'Tolerant Parser'
+            - given: >
+                the store of Build Clusters example 5 with
+                add_seed("0x0c0105334a50db16b51b2911c9956539753a2cf8", "proxy-seed")
+              when: 'match_watchlist(store, bytes of code_impl_72b97171.hex), then match_watchlist(store, bytes of code_proxy_seed_0c010533.hex)'
+              then: >
+                one alert {"seed_address": "0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "label": "proxy-seed", "score": 1.0} for the implementation
+                bytes; [] for the proxy bytes
+              ref: 'phase 14: the seed carries the implementation code_id; a proxy''s own bytes still score 0.0'
         - name: Recheck Watchlist
           description: >
             recheck_watchlist(store, min_score=0.8, seed_addresses=None) ->
@@ -892,7 +1115,22 @@ System:
             is by design: on the live 30.09 base the TransparentUpgradeableProxy
             seed produced 380 false alerts at 1.0 against unrelated proxies;
             after this phase it produces none, while byte-identical proxies are
-            still grouped by their code_id in an L0 cluster. Addresses stored
+            still grouped by their code_id in an L0 cluster.
+            Through the implementation (phase 14): a stored standard proxy
+            whose implementations() entry has a code_id is scored by the
+            fingerprint of that code_id instead of its own, so it alerts
+            against a seed its implementation matches (score 1.0 when the
+            seed is that implementation, or another proxy of it); a seed on
+            a proxy carries the implementation's code_id (Manage Watchlist)
+            and so alerts on the implementation address and on every other
+            proxy resolved to it. A proxy without a resolved implementation
+            keeps phase 9: it alerts on nothing and nothing alerts on it
+            through its bytes. Scoring stays per distinct (effective
+            code_id, seed) pair fanned out to addresses -- the proxies of
+            one implementation are scored once -- and the store is read
+            through seeds(), fingerprints(), addresses_of(), origins() and
+            implementations() only; origin "impl" is read back like any
+            other. Addresses stored
             without code are never checked. The list is sorted by address ascending,
             then score descending, then seed_address ascending; it does not
             depend on insertion order, and two calls on the same store give
@@ -965,12 +1203,46 @@ System:
                 ingested store, "unknown" on every alert of the put_address
                 store; store.origins() was called once per recheck_watchlist call
               ref: 'phase 13'
+            - given: >
+                the store of Build Clusters example 5 (0x0c01…2cf8 origin
+                "fetched" and 0x069c…5ea origin "seen", both resolved to
+                0x72b9…393b, whose code is stored with origin "impl") with
+                add_seed("0x72b971717e088b59f26d4236be222adb6acd393b", "impl-seed")
+              when: 'recheck_watchlist(store) is called twice'
+              then: >
+                both times exactly [{"address": "0x069c4c579671f8c120b1327a73217d01ea2ec5ea",
+                "seed_address": "0x72b971717e088b59f26d4236be222adb6acd393b", "label":
+                "impl-seed", "score": 1.0, "origin": "seen"}, {"address":
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8", "seed_address":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "label": "impl-seed",
+                "score": 1.0, "origin": "fetched"}]
+              ref: 'phase 14: the proxies of a seeded implementation alert at 1.0'
+            - given: 'the same store seeded instead with add_seed("0x0c0105334a50db16b51b2911c9956539753a2cf8", "proxy-seed")'
+              when: 'recheck_watchlist(store) is called'
+              then: >
+                exactly [{"address": "0x069c4c579671f8c120b1327a73217d01ea2ec5ea",
+                "seed_address": "0x0c0105334a50db16b51b2911c9956539753a2cf8", "label":
+                "proxy-seed", "score": 1.0, "origin": "seen"}, {"address":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "seed_address":
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8", "label": "proxy-seed",
+                "score": 1.0, "origin": "impl"}]; the seed itself is absent
+              ref: 'phase 14: a proxy seed alerts on its implementation and on the other proxies of it'
+            - given: >
+                the second store of Find Similar example 3 (0x069c…5ea with NULL
+                implementation), seeded "impl-seed" at 0x72b9…393b; and the same store
+                seeded "dangling" at 0x069c…5ea instead
+              when: 'recheck_watchlist(store) is called on each'
+              then: >
+                one alert for the first: address 0x0c0105334a50db16b51b2911c9956539753a2cf8,
+                seed 0x72b971717e088b59f26d4236be222adb6acd393b, score 1.0 (the
+                unresolved sibling is absent); [] for the second
+              ref: 'phase 14; phase 9 stands for a proxy without a resolved implementation'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
           schema:
-            level: '"L0" | "L1" | "proxy" | "eip7702"'
-            key: code_id, skeleton_hash, or "<kind>:<target>"
+            level: '"L0" | "L1" | "proxy" | "eip7702" | "impl"'
+            key: code_id, skeleton_hash, "<kind>:<target>", or the implementation address (impl)
             members: sorted lowercase addresses
         - name: Alert
           description: >
@@ -985,7 +1257,7 @@ System:
             label: str
             score: float
             address: 'str -- added by Ingest Block, returned by Recheck Watchlist'
-            origin: '"created" | "seen" | "fetched" | "unknown" -- set by Ingest Block (created, seen) and Recheck Watchlist (any, from store.origins())'
+            origin: '"created" | "seen" | "fetched" | "impl" | "unknown" -- set by Ingest Block (created, seen, impl) and Recheck Watchlist (any, from store.origins())'
     - name: rpc
       description: >
         The only network module: a minimal JSON-RPC client over an injected
@@ -1076,7 +1348,8 @@ System:
               ref: 'only eth_getBlockReceipts treats null as a failure'
             - given: 'the module ethsc.config'
               when: 'PUBLICNODE_URL is read'
-              then: 'it equals "https://ethereum-rpc.publicnode.com" and PRICES is unchanged: {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000, "eth_getCode": 80}'
+              then: 'it equals "https://ethereum-rpc.publicnode.com" and PRICES is exactly {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000, "eth_getCode": 80, "eth_getStorageAt": 80}'
+              ref: 'phase 14 adds eth_getStorageAt at 80 credits (Infura credit table, not yet confirmed against the dashboard, like eth_blockNumber)'
       dataObjects:
         - name: RPC Response
           description: >
@@ -1149,12 +1422,24 @@ System:
         - name: Ingest Block
           description: >
             ingest_block(block, receipts, get_code, store, max_calls=None,
-            watch=None, on_alerts=None, workers=None) -> stats dict {candidates, known,
-            fetched, contracts, eoas, failed, deferred, complete, alerts}.
+            watch=None, on_alerts=None, workers=None, get_storage=None,
+            on_upgrades=None) -> stats dict {candidates, known,
+            fetched, contracts, eoas, failed, deferred, complete, alerts,
+            upgrades}.
             get_code(address, block) -> hex string is injected. watch is the
             min_score passed to match_watchlist; None means 0.8. on_alerts is
             an optional sink for the alerts of this block, called before the
-            call returns or raises.
+            call returns or raises. Phase 14: get_storage(address, slot,
+            block) -> hex word is injected too (None: no slot is read);
+            on_upgrades is the sink for the block's upgrade records, with
+            the same once-per-call rule as on_alerts. The module holds the
+            constants IMPL_SLOT
+            ("0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc")
+            and BEACON_SLOT
+            ("0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50"),
+            slot_address(word) -> str or None, and
+            fetch_implementation(store, address, block, get_storage,
+            get_code) -> str or None, the one place a slot is read.
           behavior: >
             Candidates already in the store are skipped (known). Each other
             one costs one get_code call until max_calls is reached; the rest
@@ -1206,6 +1491,62 @@ System:
             invariants, the alert order and which addresses are stored do
             not change; match_watchlist itself is unchanged (its alerts
             have no address and no origin).
+            Standard proxies (phase 14). slot_address(word) is pure: for a
+            str word of "0x" plus 64 hex digits whose first 24 digits are
+            zero and whose last 40 are not all zero it returns "0x" plus
+            those 40 digits lowercased; anything else (None, a non-string,
+            the zero word, a short or malformed string) gives None.
+            fetch_implementation(store, address, block, get_storage,
+            get_code) reads get_storage(address, IMPL_SLOT, block); when
+            slot_address of the answer is None and the call did not raise,
+            it reads get_storage(address, BEACON_SLOT, block); the first
+            address found is written with store.set_implementation and
+            returned; when it came from IMPL_SLOT and store.has_address of
+            it is False, its code is fetched with get_code(implementation,
+            block) and stored exactly as _store_text stores a candidate --
+            "0x" as an address without code, hex as put_code/put_address --
+            with origin "impl"; a beacon address is stored in the column
+            and never fetched (calling the beacon is out of scope). A
+            get_storage or get_code that raises, or answers something
+            slot_address rejects, ends the attempt there: the stored
+            implementation is left as it was (never cleared), nothing else
+            is stored, None is returned when no address was found, and no
+            exception leaves (Tolerant Parser). get_storage None means no
+            read at all: None is returned and the store is untouched.
+            ingest_block uses it in two more steps after the candidate loop,
+            both skipped when get_storage is None: step 2, in candidate
+            order, for every candidate this call stored with a standard
+            proxy code (fingerprint std_proxy True) and for every known
+            candidate present in store.implementations() (read once per
+            call, before the loop), it calls fetch_implementation; for a
+            known candidate whose stored implementation was not None and
+            whose newly read one is not None and differs, it appends
+            {"address", "old", "new", "block"} to stats["upgrades"] (a known
+            proxy with NULL implementation that resolves now is stored
+            silently: no record); step 3, alerts: every candidate stored in
+            this call whose implementation's code is stored (after step 2,
+            fetched now or already there) is checked by match_watchlist with
+            the implementation's bytes, each alert gaining address = the
+            proxy's address and origin = the proxy's origin ("created" or
+            "seen"); every implementation stored in this call is checked
+            with its own bytes, its alerts gaining address = the
+            implementation address and origin "impl". A proxy whose
+            implementation was not resolved, or whose implementation's code
+            is not stored, gets the phase-9 check of its own bytes (0.0
+            against everything). Neither step changes candidates, known,
+            fetched, contracts, eoas, failed, deferred or complete: the slot
+            reads and implementation fetches are outside max_calls and are
+            not counted in the stats; upgrades is the list of step 2 in
+            candidate order; alerts stays sorted by address. on_upgrades,
+            when given, is called exactly once per call with stats["upgrades"]
+            (possibly []), after on_alerts, on the normal return and on the
+            KeyboardInterrupt path alike, with what was found so far. Under
+            workers K > 1 the get_storage and get_code calls of steps 2 and
+            3 may run in the pool like the candidate get_code calls; every
+            store write and every match stays in the calling thread, in
+            candidate order, so for the same answers the stats, the alerts,
+            the upgrades and the stored rows equal those of the sequential
+            run. The stats dict has exactly the ten keys above.
           guardrails: [No Network In Core, Tolerant Parser, Budget Respected]
           steps:
             - calls: Discover Candidates
@@ -1301,13 +1642,152 @@ System:
                 "seen" the second; store.origins() maps the copy to the same
                 origin
               ref: 'phase 13'
+            - given: 'receipts_26077729.json, a fresh store and a fake get_code serving codes_26077729.json, get_storage left None'
+              when: 'ingest_block(26077729, …) is called, then store.implementations() is read'
+              then: >
+                the stats of example 1 with the key upgrades = [] (ten keys
+                exactly); implementations() has 20 entries, every one
+                {"implementation": None, "code_id": None}; store.counts()
+                addresses 206, codes 130 -- nothing beyond the candidates
+              ref: 'phase 14; get_storage None reads no slot'
+            - given: >
+                receipts_26077729.json, a fresh store, a fake get_code serving
+                codes_26077729.json, and a fake get_storage serving
+                storage_26077729.json ({address: {slot: word}}, the zero
+                word for any address or slot outside it) that records its
+                calls; then the same with workers=8 into a second fresh store
+              when: 'ingest_block(26077729, …) is called on each, then again on the first store'
+              then: >
+                the stats of example 1 plus upgrades [] both times;
+                implementations() has 20 entries: the 17 whose
+                implementation slot is set carry it, e.g.
+                0x07696dcab55e62cfef953666b29fe1970518cb00 ->
+                "0xfd03064ff0f29e3113a1198c2694fc8c10bd35e5" and
+                0x28b5a0e9c621a5badaa536219b3a228c8168cf5d ->
+                "0x555e272506c06e7e559d57418563742afe363ec8"; the 3 beacon
+                proxies carry their beacon: 0x11457ef2b71087d18651106f23ed59dd8ec0da6c
+                -> "0x365e8991d29d79dc6b56df59858f25fee1601f70",
+                0xc9eef266834730340a55b6cc24621b31baf55581 and
+                0xf6b1117ec07684d3958cad8beb1b302bfd21103f ->
+                "0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598"; code_id is None
+                on all 20 (the fake get_code knows no implementation address,
+                so the 17 fetches raise KeyError and store nothing; the 3
+                beacons are never fetched); counts() addresses 206, codes 130;
+                get_storage was called 23 times, 20 with IMPL_SLOT and 3 with
+                BEACON_SLOT, every call with block 26077729; the workers=8
+                store gives an equal implementations() and equal counts; the
+                second ingest into the first store gives known 206, fetched 0,
+                upgrades [] and 23 more get_storage calls (the known proxies
+                are re-read), implementations() unchanged
+              ref: 'phase 14; slots read on the public node 2026-10-01: 17 implementation, 3 beacon, 0 neither'
+            - given: >
+                a store holding code_impl_72b97171.hex at
+                0x72b971717e088b59f26d4236be222adb6acd393b (block 1, origin
+                "fetched") seeded "impl-seed"; a block whose receipts are
+                [{"to": "0x0c0105334a50db16b51b2911c9956539753a2cf8"}]; a fake
+                get_code serving code_proxy_seed_0c010533.hex for 0x0c01…2cf8
+                and code_impl_72b97171.hex for 0x72b9…393b; get_storage from
+                storage_26077729.json
+              when: 'ingest_block(26077729, …) is called with an on_alerts and an on_upgrades collecting into lists'
+              then: >
+                candidates 1, known 0, fetched 1, contracts 1, eoas 0, failed 0,
+                deferred 0, complete True, upgrades []; alerts exactly
+                [{"address": "0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "seed_address": "0x72b971717e088b59f26d4236be222adb6acd393b", "label":
+                "impl-seed", "score": 1.0, "origin": "seen"}]; on_alerts called once
+                with an equal list, on_upgrades once with []; implementations() is
+                {"0x0c0105334a50db16b51b2911c9956539753a2cf8": {"implementation":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "code_id":
+                "148d598b091197e8547a99bb62fb69d3003cfcad58124c5d847b1de213ecbf28"}};
+                get_code was called once (0x0c01…2cf8 only: the implementation was
+                already stored) and get_storage once (IMPL_SLOT; the beacon slot is
+                not read when the implementation slot is set); counts() addresses 2
+              ref: 'phase 14; the slot of 0x0c01…2cf8 read on the public node 2026-10-01 gives 0x72b9…393b'
+            - given: >
+                the block, get_code and get_storage of the example above into a
+                fresh store with no seeds; and into a second fresh store seeded
+                "impl copy seed" at 0x1111111111111111111111111111111111111111
+                holding code_impl_72b97171.hex (put_address, block 1)
+              when: 'ingest_block(26077729, …) is called on each'
+              then: >
+                first store: fetched 1, contracts 1, alerts [], upgrades [];
+                get_code called twice in order (0x0c01…2cf8, 26077729) then
+                (0x72b9…393b, 26077729); origins() is
+                {"0x0c0105334a50db16b51b2911c9956539753a2cf8": "seen",
+                "0x72b971717e088b59f26d4236be222adb6acd393b": "impl"}; code_of
+                0x72b9…393b is the bytes of code_impl_72b97171.hex; counts()
+                addresses 2, codes 2. Second store: the same stats and rows, and
+                alerts exactly [{"address": "0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "seed_address": "0x1111111111111111111111111111111111111111", "label":
+                "impl copy seed", "score": 1.0, "origin": "seen"}, {"address":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "seed_address":
+                "0x1111111111111111111111111111111111111111", "label": "impl copy
+                seed", "score": 1.0, "origin": "impl"}]
+              ref: 'phase 14; the implementation is stored like a candidate, origin impl, and checked with its own bytes'
+            - given: >
+                the first store of the example above (0x0c01…2cf8 resolved to
+                0x72b9…393b); the same block; a fake get_code serving
+                code_proxy_seed_0c010533.hex for 0x0c01…2cf8 and code_weth9.hex
+                for 0xe440cc08a71694c8229323803f59024e3144630e; a fake
+                get_storage answering
+                0x000000000000000000000000e440cc08a71694c8229323803f59024e3144630e
+                for (0x0c01…2cf8, IMPL_SLOT)
+              when: >
+                ingest_block(26077730, …) is called with an on_upgrades collecting into
+                a list; then ingest_block(26077731, …) with a get_storage that raises
+                OSError; then ingest_block(26077732, …) with a get_storage answering
+                the zero word for both slots
+              then: >
+                first call: known 1, fetched 0, alerts [], upgrades exactly
+                [{"address": "0x0c0105334a50db16b51b2911c9956539753a2cf8", "old":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "new":
+                "0xe440cc08a71694c8229323803f59024e3144630e", "block": 26077730}];
+                on_upgrades called once with an equal list;
+                implementation("0x0c0105334a50db16b51b2911c9956539753a2cf8") is
+                "0xe440cc08a71694c8229323803f59024e3144630e"; 0xe440…630e is stored
+                with the WETH9 bytes and origin "impl"; get_code was called once, for
+                0xe440…630e. Second and third calls: upgrades [], the implementation
+                still "0xe440cc08a71694c8229323803f59024e3144630e", nothing stored
+                (a failed or zero re-read changes nothing)
+              ref: 'phase 14 upgrade alert; 0xe440…630e is the second-largest implementation group of the seed proxy code on the live base (19 of 120 proxies read 2026-10-01)'
+            - given: >
+                a store holding code_proxy_seed_0c010533.hex at 0x0c01…2cf8 by
+                put_address with no implementation (a row from before phase 14);
+                the block, get_code and get_storage of example 16
+              when: 'ingest_block(26077729, …) is called with an on_upgrades collecting into a list'
+              then: >
+                known 1, fetched 0, upgrades [] and on_upgrades called once with
+                [] (the first resolution of a NULL row is silent);
+                implementation of 0x0c01…2cf8 is
+                "0x72b971717e088b59f26d4236be222adb6acd393b", stored with the
+                bytes of code_impl_72b97171.hex and origin "impl"; alerts []
+                (the proxy was known: no match for it)
+              ref: 'phase 14; how the 5092 std-proxy rows of the live base get resolved: by being touched'
+            - given: >
+                the block of example 16 and get_code of example 16; a get_storage
+                that raises OSError; then a get_storage answering the zero word
+                for both slots; then one answering "garbage" for IMPL_SLOT and
+                the zero word for BEACON_SLOT; then one answering a word with a
+                non-zero prefix ("0x01" + 22 zero bytes + 0x72b9…393b) for IMPL_SLOT
+              when: 'ingest_block(26077729, …) into a fresh store each time'
+              then: >
+                every time: fetched 1, contracts 1, upgrades [], alerts [],
+                implementations() {"0x0c0105334a50db16b51b2911c9956539753a2cf8":
+                {"implementation": None, "code_id": None}}, get_code called once,
+                counts() addresses 1; get_storage called once in the first case
+                (the exception ends the attempt), twice in the others (IMPL_SLOT
+                then BEACON_SLOT); slot_address of the four answers is None, and
+                slot_address("0x00000000000000000000000072b971717e088b59f26d4236be222adb6acd393b")
+                is "0x72b971717e088b59f26d4236be222adb6acd393b"
+              ref: 'Tolerant Parser; phase 14'
         - name: Follow Chain
           description: >
             follow_chain(rpc, store, start=None, stop=None,
             max_calls_per_block=None, daily_budget=None, day=None,
-            prices=None, on_alerts=None, workers=None, code_tag=None)
+            prices=None, on_alerts=None, workers=None, code_tag=None,
+            on_upgrades=None)
             -> summary {blocks, stopped,
-            progress, alerts, day}. day is a "%Y-%m-%d" string pinning every
+            progress, alerts, day, upgrades}. day is a "%Y-%m-%d" string pinning every
             block of the pass, or a callable of no arguments returning one;
             day=None means today's UTC date, resolved afresh before each
             block. prices=None means {}. on_alerts is the per-block alert
@@ -1359,6 +1839,28 @@ System:
             null") before any charge for that call, before ingest_block and
             before set_progress, so progress stays at the last complete
             block and a rerun asks for the same block again.
+            Phase 14. Every ingest_block call gets get_storage(address, slot,
+            blk) = rpc.call("eth_getStorageAt", [address, slot, tag]) with
+            the tag rule of eth_getCode (hex(blk), or code_tag verbatim),
+            and on_upgrades unchanged; summary["upgrades"] is the
+            concatenation of the blocks' upgrades in block order, the
+            incomplete block included. Budget: before each eth_getStorageAt
+            the check is spent(day) + price(eth_getStorageAt) +
+            price(eth_getCode) <= daily_budget -- one read and the code
+            fetch it may trigger -- and when it fails get_storage returns
+            None without a call (the implementation stays empty, the block
+            is not stopped: slot reads never set stopped and never cap the
+            block). Each successful eth_getStorageAt is charged
+            price(eth_getStorageAt) (prices.get, 0 when absent); the
+            implementation's eth_getCode goes through the block's get_code
+            and is charged like a candidate's. Under workers > 1 the reads
+            are charged from the calling thread like the candidate calls,
+            and the budget check runs in the calling thread before a read
+            is submitted, against the ledger as it stands then. The slot
+            reads are outside max_calls_per_block. Measured on the live
+            01.10 copy over 5 blocks after its progress: 29 known-proxy
+            touches per block on average (6..38), under the 50 at which the
+            re-read would have become a flag, so there is no flag.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
@@ -1421,6 +1923,44 @@ System:
               when: 'follow_chain is called'
               then: 'blocks 1, progress 26077729, spent 0 for the day of the pass'
               ref: 'the public node has no credits; the CLI passes prices {} for it'
+            - given: >
+                FakeRpc(storage=storage_26077729.json) over receipts_26077729.json
+                and codes_26077729.json, progress 26077728, the Infura prices
+                with eth_getStorageAt 80 (PRICES of ethsc.config), daily_budget
+                3000000, day "2026-10-01"; then the same with workers=8 into a
+                second fresh store; then the same with code_tag "latest" into a
+                third
+              when: 'follow_chain is called on each'
+              then: >
+                blocks 1, progress 26077729, upgrades [] and spent("2026-10-01")
+                19400 (80 + 1000 + 206 × 80 + 23 × 80: the 17 implementation
+                fetches raise KeyError in the fake and are not charged) all
+                three times; implementations() equals Ingest Block example
+                15; the 23 eth_getStorageAt calls carry params [address, slot,
+                "0x18dea21"] in the first two passes and [address, slot,
+                "latest"] in the third; the summary has exactly the keys
+                blocks, stopped, progress, alerts, day, upgrades
+              ref: 'phase 14; eth_getStorageAt at 80 credits'
+            - given: 'the fake rpc of the example above, progress 26077728, the same prices, daily_budget 18000, day "2026-10-01", workers None'
+              when: 'follow_chain is called'
+              then: >
+                blocks 1, progress 26077729, stopped None, spent 17880:
+                17560 after the candidates, then slot reads while spent +
+                160 <= 18000 -- 0x07696dcab55e62cfef953666b29fe1970518cb00
+                (IMPL_SLOT), 0x11457ef2b71087d18651106f23ed59dd8ec0da6c
+                (IMPL_SLOT zero, then BEACON_SLOT) and
+                0x28b5a0e9c621a5badaa536219b3a228c8168cf5d (IMPL_SLOT), 4
+                reads, 320 credits -- and none for the 17 other proxies;
+                implementations() has those three resolved
+                ("0xfd03064ff0f29e3113a1198c2694fc8c10bd35e5",
+                "0x365e8991d29d79dc6b56df59858f25fee1601f70",
+                "0x555e272506c06e7e559d57418563742afe363ec8") and 17 None;
+                exactly 4 eth_getStorageAt calls
+              ref: 'Budget Respected: the check before the read covers the read and one code fetch; candidate order is sorted address order'
+            - given: 'FakeRpc() without storage (eth_getStorageAt raises KeyError) over the fixtures, progress 26077728, the Infura prices with eth_getStorageAt 80, daily_budget 3000000, day "2026-10-01"'
+              when: 'follow_chain is called'
+              then: 'blocks 1, progress 26077729, spent 17560 (a raising read is not charged), implementations() 20 entries all None, upgrades []'
+              ref: 'Tolerant Parser: a node that refuses the slot leaves the proxy as in phase 9'
     - name: cli
       description: python -m ethsc with subcommands over one SQLite db.
       functions:
@@ -1436,7 +1976,7 @@ System:
             [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L [--fetch],
             seed remove <addr>, seed list,
-            recheck [--min 0.8] [--origin {created,seen,fetched,unknown}],
+            recheck [--min 0.8] [--origin {created,seen,fetched,impl,unknown}],
             report [--out PREFIX],
             risk [--flag {selfdestruct,mutable_delegatecall}].
             Global --db PATH (default ethsc.sqlite) before the subcommand.
@@ -1456,8 +1996,10 @@ System:
             from backfill, listen, recheck and seed add (six fields since
             phase 13; <origin> is the alert's origin key); clusters top (K default 20):
             "<level>\t<key>\t<member count>"; cluster <addr>:
-            "<level>\t<key>\t<members comma-joined>\t<flags>", 0 or 1 line,
-            where <flags> is the risk flags of the queried address's code;
+            "<level>\t<key>\t<members comma-joined>\t<flags>", 0, 1 or 2 lines
+            (phase 14: a standard proxy may sit in an L0 and an impl cluster;
+            lines in build_clusters order), where <flags> is the risk flags
+            of the queried address's code;
             similar: "<address>\t<score>\t<flags>"; risk: "<address>\t<flags>",
             one line per stored address whose code has at least one flag;
             seed list: "<address>\t<label>". A <flags> field is the set risk
@@ -1606,6 +2148,37 @@ System:
             every alert is printed. A value outside these sets is an
             argparse usage error: exit 2, one stderr line, empty stdout, no
             rpc call.
+            Standard proxies (phase 14). listen and backfill hand
+            follow_chain an on_upgrades sink that prints one record
+            "UPGRADE\t<proxy>\t<old_impl>\t<new_impl>\t<block>" per upgrade
+            of the block, after the block's ALERT lines, in the order
+            follow_chain delivers them; --alert-on filters ALERT lines only,
+            never UPGRADE lines. The ALERT origin field gains the value
+            impl (the alerted address is an implementation stored on behalf
+            of a proxy); --alert-on created (seen) hides impl lines like any
+            other origin, all prints them; recheck --origin accepts impl.
+            cluster, clusters top, similar and recheck see through the
+            implementation as build_clusters, find_similar and
+            recheck_watchlist do; a proxy's ALERT line is the proxy's
+            address with the proxy's origin, and its score is its
+            implementation's. seed add seeds through the implementation as
+            add_seed does. seed add --fetch on an address the store does
+            not hold makes, after eth_blockNumber and eth_getCode, when the
+            code is a standard proxy, the slot read(s) and the
+            implementation fetch of fetch_implementation with get_storage =
+            rpc.call("eth_getStorageAt", [address, slot, "latest"]) and
+            get_code over eth_getCode at "latest", the fetched address
+            stored with origin "fetched" and its implementation with origin
+            "impl"; then add_seed and the recheck of that seed as before. On
+            an address the store already holds whose code is a standard proxy
+            with NULL implementation, --fetch is no longer a no-op: it makes
+            eth_blockNumber and the same fetch_implementation calls (no
+            eth_getCode of the proxy itself), then seeds; on a held address
+            with an implementation, or a held non-proxy, --fetch stays a
+            no-op. A slot read that fails or reads zero leaves the seed on the
+            proxy's own code: exit 0, the phase-9 behaviour, nothing on
+            stderr. The number and order of rpc calls is part of the
+            contract (examples 44-49).
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -1886,6 +2459,136 @@ System:
                 "ALERT\t<copy>\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0.8667\tunknown";
                 --origin unknown the same 4 lines; --origin seen an empty stdout
               ref: 'phase 13; legacy rows read back as unknown'
+            - given: >
+                a fresh db and FakeRpc(codes={"0x0c0105334a50db16b51b2911c9956539753a2cf8":
+                text of code_proxy_seed_0c010533.hex,
+                "0x72b971717e088b59f26d4236be222adb6acd393b": text of
+                code_impl_72b97171.hex}, storage=storage_26077729.json, head="0x18dea21")
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x0c0105334a50db16b51b2911c9956539753a2cf8", "--label", "proxy-seed"], rpc=fake)'
+              then: >
+                exit 0; fake.calls is exactly [("eth_blockNumber", []),
+                ("eth_getCode", ["0x0c0105334a50db16b51b2911c9956539753a2cf8", "latest"]),
+                ("eth_getStorageAt", ["0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", "latest"]),
+                ("eth_getCode", ["0x72b971717e088b59f26d4236be222adb6acd393b", "latest"])];
+                the store holds implementation("0x0c01…2cf8") =
+                "0x72b971717e088b59f26d4236be222adb6acd393b", origins()
+                {"0x0c01…2cf8": "fetched", "0x72b9…393b": "impl"}, code_of
+                0x72b9…393b = the bytes of code_impl_72b97171.hex, and seeds()
+                [{"address": "0x0c0105334a50db16b51b2911c9956539753a2cf8", "label":
+                "proxy-seed", "code_id":
+                "148d598b091197e8547a99bb62fb69d3003cfcad58124c5d847b1de213ecbf28"}];
+                stdout is exactly one line
+                "ALERT\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x0c0105334a50db16b51b2911c9956539753a2cf8\tproxy-seed\t1.0000\timpl"
+              ref: 'phase 14 live acceptance 1, offline: the seed proxy, its slot and its implementation as read on the public node 2026-10-01'
+            - given: >
+                that db and FakeRpc, with "0x069c4c579671f8c120b1327a73217d01ea2ec5ea"
+                added to codes with the text of code_proxy_seed_0c010533.hex (its
+                slot in storage_26077729.json reads 0x72b9…393b too)
+              when: >
+                main(["--db", db, "seed", "add", "--fetch", "0x069c4c579671f8c120b1327a73217d01ea2ec5ea", "--label", "sibling"], rpc=fake),
+                then main(["--db", db, "recheck"]), then main(["--db", db, "recheck", "--origin", "impl"])
+              then: >
+                seed add: exit 0, three more calls -- eth_blockNumber,
+                eth_getCode of 0x069c…5ea, eth_getStorageAt of (0x069c…5ea,
+                IMPL_SLOT, "latest") -- and no eth_getCode of 0x72b9…393b (held);
+                stdout exactly
+                "ALERT\t0x0c0105334a50db16b51b2911c9956539753a2cf8\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea\tsibling\t1.0000\tfetched"
+                then
+                "ALERT\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea\tsibling\t1.0000\timpl".
+                recheck: exit 0 and exactly four lines in this order:
+                "ALERT\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea\t0x0c0105334a50db16b51b2911c9956539753a2cf8\tproxy-seed\t1.0000\tfetched",
+                "ALERT\t0x0c0105334a50db16b51b2911c9956539753a2cf8\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea\tsibling\t1.0000\tfetched",
+                "ALERT\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea\tsibling\t1.0000\timpl",
+                "ALERT\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x0c0105334a50db16b51b2911c9956539753a2cf8\tproxy-seed\t1.0000\timpl";
+                --origin impl: the last two lines only
+              ref: 'phase 14 live acceptance 2, offline: a second live proxy of the same implementation alerts at 1.0000 against the proxy seed'
+            - given: >
+                a fresh db and FakeRpc(codes={"0x0c01…2cf8": text of
+                code_proxy_seed_0c010533.hex}, storage={}, head="0x18dea21") (every
+                slot reads the zero word); then a fresh db and FakeRpc(codes=the
+                same, head="0x18dea21") with no storage (eth_getStorageAt raises
+                KeyError)
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x0c0105334a50db16b51b2911c9956539753a2cf8", "--label", "L"], rpc=fake) on each'
+              then: >
+                exit 0 both times, empty stdout and stderr; implementation of
+                0x0c01…2cf8 is None; seeds() code_id is
+                30ccc4ce49c00fae11d7118fc244f29a13788fb32cd4022ee69acc2f15c0e2f5
+                (the proxy's own); the first fake saw 4 calls (eth_blockNumber,
+                eth_getCode, eth_getStorageAt IMPL_SLOT, eth_getStorageAt
+                BEACON_SLOT), the second 3 (the exception ends the attempt);
+                origins() is {"0x0c01…2cf8": "fetched"} both times
+              ref: 'phase 14; Tolerant Parser: phase 9 stands when the slot cannot be read'
+            - given: >
+                a db holding code_impl_72b97171.hex at
+                0x1111111111111111111111111111111111111111 (put_address, block 1)
+                seeded "impl copy seed", and FakeRpc(codes={"0x0c01…2cf8": text of
+                code_proxy_seed_0c010533.hex, "0x72b9…393b": text of
+                code_impl_72b97171.hex}, receipts=[{"to":
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8"}],
+                storage=storage_26077729.json, head="0x18dea21")
+              when: >
+                main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake);
+                the same with "--alert-on", "created" and with "--alert-on", "seen" into two
+                more dbs made the same way
+              then: >
+                exit 0 each time; the plain run prints exactly
+                "ALERT\t0x0c0105334a50db16b51b2911c9956539753a2cf8\t0x1111111111111111111111111111111111111111\timpl copy seed\t1.0000\tseen"
+                then
+                "ALERT\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x1111111111111111111111111111111111111111\timpl copy seed\t1.0000\timpl";
+                --alert-on created prints nothing; --alert-on seen prints the
+                first line only; all three dbs hold 0x72b9…393b with origin
+                "impl" and implementation of 0x0c01…2cf8 =
+                "0x72b971717e088b59f26d4236be222adb6acd393b"
+              ref: 'phase 14; the proxy alerts with its own origin, the implementation with impl'
+            - given: >
+                the first db of the example above (0x0c01…2cf8 resolved to
+                0x72b9…393b) and FakeRpc(codes={"0x0c01…2cf8": text of
+                code_proxy_seed_0c010533.hex, "0xe440cc08a71694c8229323803f59024e3144630e":
+                text of code_weth9.hex}, receipts=[{"to": "0x0c01…2cf8"}],
+                storage={"0x0c0105334a50db16b51b2911c9956539753a2cf8":
+                {IMPL_SLOT: "0x000000000000000000000000e440cc08a71694c8229323803f59024e3144630e"}},
+                head="0x18dea21")
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--alert-on", "created"], rpc=fake)'
+              then: >
+                exit 0; stdout is exactly one line
+                "UPGRADE\t0x0c0105334a50db16b51b2911c9956539753a2cf8\t0x72b971717e088b59f26d4236be222adb6acd393b\t0xe440cc08a71694c8229323803f59024e3144630e\t26077729"
+                (--alert-on does not touch UPGRADE lines; no ALERT: the proxy is
+                known); the store holds implementation of 0x0c01…2cf8 =
+                "0xe440cc08a71694c8229323803f59024e3144630e" and 0xe440…630e
+                with the WETH9 bytes and origin "impl"
+              ref: 'phase 14 upgrade alert'
+            - given: >
+                a db holding code_proxy_seed_0c010533.hex at 0x0c01…2cf8 by
+                put_address (block 1, origin "fetched", no implementation), and
+                the FakeRpc of example 44
+              when: 'main(["--db", db, "seed", "add", "--fetch", "0x0c0105334a50db16b51b2911c9956539753a2cf8", "--label", "proxy-seed"], rpc=fake)'
+              then: >
+                exit 0; fake.calls is exactly [("eth_blockNumber", []),
+                ("eth_getStorageAt", ["0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", "latest"]),
+                ("eth_getCode", ["0x72b971717e088b59f26d4236be222adb6acd393b", "latest"])]
+                -- no eth_getCode of the held proxy; the store and the stdout
+                line are those of example 44 (0x72b9…393b stored with origin
+                "impl" at block 26077729, the seed on code_id 148d598b…cbf28);
+                a second identical call makes no rpc call at all and prints the
+                same line
+              ref: 'phase 14; how a proxy seeded before phase 14 is resolved by hand'
+            - given: 'the db after example 45 (0x0c01…2cf8 and 0x069c…5ea resolved to 0x72b9…393b)'
+              when: >
+                main(["--db", db, "cluster", "0x0c0105334a50db16b51b2911c9956539753a2cf8"]),
+                main(["--db", db, "clusters", "top"]) and
+                main(["--db", db, "similar", "0x0c0105334a50db16b51b2911c9956539753a2cf8"])
+              then: >
+                exit 0 each; cluster prints exactly
+                "L0\t30ccc4ce49c00fae11d7118fc244f29a13788fb32cd4022ee69acc2f15c0e2f5\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea,0x0c0105334a50db16b51b2911c9956539753a2cf8\t-"
+                then
+                "impl\t0x72b971717e088b59f26d4236be222adb6acd393b\t0x069c4c579671f8c120b1327a73217d01ea2ec5ea,0x0c0105334a50db16b51b2911c9956539753a2cf8\t-";
+                clusters top prints "L0\t30ccc4ce…e2f5\t2" then
+                "impl\t0x72b971717e088b59f26d4236be222adb6acd393b\t2"; similar prints
+                "0x069c4c579671f8c120b1327a73217d01ea2ec5ea\t1.0000\t-" then
+                "0x72b971717e088b59f26d4236be222adb6acd393b\t1.0000\t-"
+              ref: 'phase 14; risk_flags of both fixtures are all False, so <flags> is "-"'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
