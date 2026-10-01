@@ -5,6 +5,10 @@ EXISTS): distinct codes with their fingerprints, addresses pointing at
 codes, the follow progress, the security watchlist and the daily credit
 ledger. One file, stdlib sqlite3. Every write commits before returning;
 every list the store returns is sorted; addresses are stored lowercase.
+Origin (phase 13): the store only carries the text a caller gives it
+(put_address's origin) and reads it back through origins(); it never
+decides what "created" or "seen" means, and it never rewrites the
+origin of a row already stored.
 """
 
 import json
@@ -29,7 +33,8 @@ CREATE TABLE IF NOT EXISTS codes (
 CREATE TABLE IF NOT EXISTS addresses (
     address TEXT PRIMARY KEY,
     code_id TEXT,
-    block INTEGER
+    block INTEGER,
+    origin TEXT
 );
 CREATE INDEX IF NOT EXISTS addresses_code_id ON addresses(code_id);
 CREATE TABLE IF NOT EXISTS progress (
@@ -60,6 +65,14 @@ class Store(object):
         if "std_proxy" not in columns:
             self._conn.execute(
                 "ALTER TABLE codes ADD COLUMN std_proxy INTEGER")
+            self._conn.commit()
+        address_columns = [row[1] for row in self._conn.execute(
+            "PRAGMA table_info(addresses)").fetchall()]
+        if "origin" not in address_columns:
+            # Phase 13: no UPDATE of old rows -- their origin stays NULL
+            # in the file and reads back as "unknown" through origins().
+            self._conn.execute(
+                "ALTER TABLE addresses ADD COLUMN origin TEXT")
             self._conn.commit()
         self._fill_std_proxy()
         self._conn.commit()
@@ -117,16 +130,17 @@ class Store(object):
         return code_id
 
     def put_address(self, address: str, code_id: Optional[str],
-                    block: int) -> None:
+                    block: int, origin: Optional[str] = None) -> None:
         """Record an address (code_id None for an account without code).
 
-        Known addresses are not changed (the first record wins) and do
-        not raise.
+        Known addresses are not changed (the first record wins, origin
+        included) and do not raise. origin is stored verbatim (None as
+        NULL); the store does not validate the text.
         """
         self._conn.execute(
-            "INSERT OR IGNORE INTO addresses (address, code_id, block)"
-            " VALUES (?, ?, ?)",
-            (address.lower(), code_id, block),
+            "INSERT OR IGNORE INTO addresses (address, code_id, block,"
+            " origin) VALUES (?, ?, ?, ?)",
+            (address.lower(), code_id, block, origin),
         )
         self._conn.commit()
 
@@ -156,6 +170,21 @@ class Store(object):
             (code_id,),
         ).fetchall()
         return [row[0] for row in rows]
+
+    def origins(self) -> dict:
+        """{address: origin} for every stored address (phase 13).
+
+        One SELECT over addresses; a NULL origin (a row stored before
+        phase 13, or with origin=None) reads back as "unknown". An
+        empty database gives {}.
+        """
+        rows = self._conn.execute(
+            "SELECT address, origin FROM addresses"
+        ).fetchall()
+        return {
+            address: ("unknown" if origin is None else origin)
+            for address, origin in rows
+        }
 
     # -- Read Codes In Bulk --------------------------------------------------
 

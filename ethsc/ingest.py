@@ -6,7 +6,10 @@ module imports ethsc.rpc only for the RpcError class (no transport of its
 own) and neither ethsc.rpc's client construction nor ethsc.config -- prices
 come in as a parameter, the rpc object duck-types a .call(method, params).
 Every list the module returns is fully ordered; results do not depend on
-insertion order.
+insertion order. Origin (phase 13): candidate_origins tells "created"
+from "seen" by the receipts alone, never by a trace or a later fetch --
+an address made by a factory inside a transaction is "seen", not
+"created".
 """
 
 import concurrent.futures
@@ -45,6 +48,41 @@ def discover_candidates(receipts):
     return sorted(candidates)
 
 
+def candidate_origins(receipts):
+    """{address: "created" | "seen"} for every candidate of discover_candidates.
+
+    The keys are exactly the elements discover_candidates(receipts)
+    gives for the same list, under the same tolerance (non-dict
+    elements, None, missing keys and missing logs skipped). An address
+    is "created" when it is the contractAddress of a receipt of the
+    block (contractAddress wins over a log of the same address in the
+    same block); every other candidate -- a to or a logs[].address only
+    -- is "seen". An empty list gives {}.
+    """
+    origins = {}
+    for receipt in receipts:
+        if not isinstance(receipt, dict):
+            continue
+        to_value = receipt.get("to")
+        if isinstance(to_value, str):
+            address = to_value.lower()
+            if origins.get(address) != "created":
+                origins[address] = "seen"
+        logs = receipt.get("logs")
+        if isinstance(logs, list):
+            for log in logs:
+                if isinstance(log, dict):
+                    value = log.get("address")
+                    if isinstance(value, str):
+                        address = value.lower()
+                        if origins.get(address) != "created":
+                            origins[address] = "seen"
+        contract_address = receipt.get("contractAddress")
+        if isinstance(contract_address, str):
+            origins[contract_address.lower()] = "created"
+    return origins
+
+
 def _is_hex_code(text):
     """True iff text is a string '0x' + an even number of hex digits."""
     if not isinstance(text, str) or not text.startswith("0x"):
@@ -66,24 +104,26 @@ def _deliver_alerts(on_alerts, alerts):
         )
 
 
-def _store_text(address, text, block, store, watch, stats):
+def _store_text(address, text, block, store, watch, stats, origin):
     """Apply one fetched code answer exactly as the sequential loop does.
 
     Not 0x-hex is failed; "0x" stores the address with code_id None
     (eoas); other code goes through put_code/put_address (contracts) and
     every stored code is checked with match_watchlist, each alert gaining
-    the key address. Runs in the calling thread only.
+    the keys address and origin (phase 13: origin is the address's own
+    origin, "created" or "seen", from candidate_origins). Runs in the
+    calling thread only.
     """
     if not _is_hex_code(text):
         stats["failed"] += 1
         return
     if text == "0x":
-        store.put_address(address, None, block)
+        store.put_address(address, None, block, origin=origin)
         stats["eoas"] += 1
         return
     code = bytes.fromhex(text[2:])
     code_id = store.put_code(code)
-    store.put_address(address, code_id, block)
+    store.put_address(address, code_id, block, origin=origin)
     stats["contracts"] += 1
     if watch is not None:
         alerts = match_watchlist(store, code, min_score=watch)
@@ -96,6 +136,7 @@ def _store_text(address, text, block, store, watch, stats):
                 "seed_address": alert["seed_address"],
                 "label": alert["label"],
                 "score": alert["score"],
+                "origin": origin,
             }
         )
 
@@ -114,9 +155,16 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
 
     Every address stored with code in this call is checked with
     match_watchlist (min_score=watch when watch is not None); each
-    Alert gains the key address (dict with exactly address,
-    seed_address, label, score). Alerts are returned, not printed,
-    sorted by address, and inside one address in match_watchlist order.
+    Alert gains the keys address and origin (dict with exactly address,
+    seed_address, label, score, origin). Alerts are returned, not
+    printed, sorted by address, and inside one address in
+    match_watchlist order.
+
+    Origin (phase 13): candidate_origins(receipts) is computed once per
+    call, and every address this call stores -- contracts and eoas
+    alike, in both the sequential and the workers path -- is stored
+    with put_address(address, code_id or None, block,
+    origin=<its origin>), "created" or "seen".
 
     on_alerts, when given, is called exactly once per ingest_block call
     with that alert list, as its single positional argument, on both
@@ -145,6 +193,7 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
     contracts, eoas, failed, deferred, complete, alerts.
     """
     candidates = discover_candidates(receipts)
+    origins = candidate_origins(receipts)
     stats = {
         "candidates": len(candidates),
         "known": 0,
@@ -180,7 +229,8 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
                     except Exception:
                         stats["failed"] += 1
                         continue
-                    _store_text(address, text, block, store, watch, stats)
+                    _store_text(address, text, block, store, watch, stats,
+                               origins[address])
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
         else:
@@ -197,7 +247,8 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
                 except Exception:
                     stats["failed"] += 1
                     continue
-                _store_text(address, text, block, store, watch, stats)
+                _store_text(address, text, block, store, watch, stats,
+                           origins[address])
     except KeyboardInterrupt:
         # The alerts found before the interruption leave the block; the
         # exception continues on its way unchanged.
