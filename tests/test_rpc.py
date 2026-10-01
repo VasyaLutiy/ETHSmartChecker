@@ -312,7 +312,8 @@ class ConfigPrices(unittest.TestCase):
         msg = "PRICES must be exactly the Infura credit table of TASK_PHASE4"
         self.assertEqual(PRICES, {"eth_blockNumber": 80,
                                   "eth_getBlockReceipts": 1000,
-                                  "eth_getCode": 80}, msg=msg)
+                                  "eth_getCode": 80,
+                                  "eth_getStorageAt": 80}, msg=msg)
 
 
 class InfuraUrlTests(unittest.TestCase):

@@ -450,7 +450,8 @@ class StoreOriginExamples(unittest.TestCase):
         finally:
             conn.close()
         self.assertEqual(
-            columns, ["address", "code_id", "block", "origin"],
+            columns, ["address", "code_id", "block", "origin",
+                      "implementation"],
             msg="example 10: addresses columns %r" % columns,
         )
 
@@ -540,8 +541,8 @@ class StoreOriginExamples(unittest.TestCase):
             after_columns = [row[1] for row in conn.execute(
                 "PRAGMA table_info(addresses)").fetchall()]
             self.assertEqual(
-                after_columns[-1], "origin",
-                msg="example 12: origin must be the last column",
+                after_columns[-2:], ["origin", "implementation"],
+                msg="example 12: origin then implementation (phase 14) last",
             )
             null_count = conn.execute(
                 "SELECT COUNT(*) FROM addresses WHERE origin IS NULL"

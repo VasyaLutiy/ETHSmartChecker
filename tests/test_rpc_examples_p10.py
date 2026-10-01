@@ -120,8 +120,8 @@ class RpcClientPhase10Examples(unittest.TestCase):
         self.assertEqual(
             PRICES,
             {"eth_blockNumber": 80, "eth_getBlockReceipts": 1000,
-             "eth_getCode": 80},
-            msg="PRICES is unchanged: 80 / 1000 / 80")
+             "eth_getCode": 80, "eth_getStorageAt": 80},
+            msg="PRICES: 80 / 1000 / 80 / 80 (phase 14)")
 
 
 if __name__ == "__main__":

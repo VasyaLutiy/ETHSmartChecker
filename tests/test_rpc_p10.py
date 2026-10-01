@@ -95,8 +95,9 @@ class TestConfigPublicnode(unittest.TestCase):
         self.assertEqual(config.PRICES,
                          {"eth_blockNumber": 80,
                           "eth_getBlockReceipts": 1000,
-                          "eth_getCode": 80},
-                         msg="PRICES unchanged")
+                          "eth_getCode": 80,
+                          "eth_getStorageAt": 80},
+                         msg="PRICES with eth_getStorageAt (phase 14)")
 
 
 if __name__ == "__main__":
