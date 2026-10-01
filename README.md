@@ -90,7 +90,7 @@ four decimals.
 
 | command | what it does |
 |---|---|
-| `listen [--source] [--workers K] [--interval S] [--daily-budget N] [--max-calls-per-block N]` | follow the chain from the stored progress (or the head on a fresh store), forever, printing `ALERT` lines as blocks complete |
+| `listen [--source] [--workers K] [--interval S] [--daily-budget N] [--max-calls-per-block N] [--alert-on created\|seen\|all]` | follow the chain from the stored progress (or the head on a fresh store), forever, printing `ALERT` lines as blocks complete; `--alert-on` filters the printed lines only |
 | `backfill --from B --to B [same options]` | the same over a fixed block range |
 | `clusters top [--n N]` | the largest clusters: level, key, member count |
 | `cluster <address>` | every cluster the address belongs to, with members and risk flags |
@@ -98,11 +98,17 @@ four decimals.
 | `seed add <address> --label L [--fetch]` | add a seed; `--fetch` pulls the code from the public node when the address is not in the store, then prints the alerts for that seed |
 | `seed remove <address>` | drop a seed; its code and address stay |
 | `seed list` | the seeds |
-| `recheck [--min S]` | every stored address matching any seed |
+| `recheck [--min S] [--origin created\|seen\|fetched\|unknown]` | every stored address matching any seed |
 | `risk [--flag selfdestruct\|mutable_delegatecall]` | stored addresses whose code carries at least one flag |
 | `report [--out PATH]` | write `PATH.html` and `PATH.json`, print the two paths |
 
-An `ALERT` record is `ALERT <address> <seed_address> <label> <score>`. `cluster` and
+An `ALERT` record is `ALERT <address> <seed_address> <label> <score> <origin>`, where
+`origin` says how the address entered the store: `created` (it was the `contractAddress`
+of a receipt, a fresh deployment), `seen` (it was a transaction target or a log emitter:
+an existing contract that was touched), `fetched` (`seed add --fetch`) or `unknown`
+(stored before this field existed). A `seen` alert on an old contract is as real as a
+`created` one: in the 1 Oct 2026 run a Balancer V1 pool from 2020 alerted when a router
+swapped through it, with the same bytecode as the pool drained in Aug 2026. `cluster` and
 `similar` records end with the risk flags of the address (`selfdestruct`,
 `mutable_delegatecall`, or `-`).
 
@@ -144,15 +150,15 @@ chain's own rate, with an empty stderr over 20 minutes.
   default threshold of 0.8 and the L1 skeleton are what separate a template from an
   interface.
 
-## Numbers from the live runs (30 Sep 2026)
+## Numbers from the live runs (30 Sep – 1 Oct 2026)
 
 | | |
 |---|---|
-| store after one Infura day (500 blocks) + 20 min public node | 9 709 codes, 73 602 addresses |
-| `recheck` over 7 509 codes and 2 seeds | 0.20 s |
-| `report` over 7 509 codes | 13.6 s, html and json byte-identical on rerun |
+| store after one Infura day (500 blocks) + a 10.5 h public-node night | 18 594 codes, 197 257 addresses |
+| `recheck` over 18 594 codes and 8 seeds | 0.54 s |
+| `report` over 18 594 codes | 33 s, html and json byte-identical on rerun |
 | a factory pool seed (`seed add --fetch`) | 0.35 s, alerts printed immediately |
-| test suite | 337 tests, offline, real bytecode fixtures under `tests/fixtures/` |
+| test suite | 357 tests, offline, real bytecode fixtures under `tests/fixtures/` |
 
 ## Project layout
 
@@ -173,7 +179,7 @@ contour.yaml      the behavioural contract every phase is cut from
 
 ## How it was built
 
-The code was produced phase by phase (twelve so far) by the
+The code was produced phase by phase (thirteen so far) by the
 [Morph](https://github.com/VasyaLutiy/mrph) orchestration method: a human operator and
 an orchestrating model write a contract (`contour.yaml`) with examples, cut it into
 cards with file ownership and a shell acceptance, and executor models write the code
