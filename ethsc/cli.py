@@ -74,6 +74,18 @@ stores with origin "fetched". --alert-on on listen/backfill and
 --origin on recheck filter the printed lines only -- they never touch
 what follow_chain hands to on_alerts, the store writes, the progress or
 the exit code.
+
+Standard proxies (phase 14). listen and backfill print one
+"UPGRADE\t<proxy>\t<old>\t<new>\t<block>" record per upgrade of a
+block, after that block's ALERT lines; --alert-on never touches them.
+The ALERT origin field gains "impl"; recheck --origin accepts it too.
+cluster, clusters top, similar and recheck see through a resolved
+proxy's implementation exactly as build_clusters, find_similar and
+recheck_watchlist do -- this module decides none of that itself. seed
+add --fetch also resolves a standard proxy's implementation at
+"latest", fetching it the first time an address is seeded (fresh or
+already held); it does not touch a held proxy that already has one,
+and it does not call the beacon of a beacon proxy.
 """
 
 import argparse
@@ -83,8 +95,8 @@ import time
 
 from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
 from ethsc.config import PRICES, PUBLICNODE_URL
-from ethsc.evm import risk_flags
-from ethsc.ingest import follow_chain
+from ethsc.evm import is_std_proxy, risk_flags
+from ethsc.ingest import fetch_implementation, follow_chain
 from ethsc.report import ChartsUnavailable, build_report
 from ethsc.rpc import RpcClient, RpcError, infura_url
 from ethsc.store import Store
@@ -173,9 +185,11 @@ def _alert_on_sink(alert_on):
 
     A wrapper around _print_alerts, not a change in ingest: "all"
     prints every alert; "created" or "seen" prints only the lines whose
-    origin matches, in the same order. follow_chain always hands the
-    full, unfiltered list to this sink -- the filter touches stdout
-    only, never the store writes, the progress or the stats.
+    origin matches, in the same order -- "impl" included under "all",
+    hidden like any other origin under "created" or "seen" (phase 14).
+    follow_chain always hands the full, unfiltered list to this sink --
+    the filter touches stdout only, never the store writes, the
+    progress or the stats.
     """
     if alert_on == "all":
         return _print_alerts
@@ -184,6 +198,22 @@ def _alert_on_sink(alert_on):
         _print_alerts([a for a in alerts if a["origin"] == alert_on])
 
     return sink
+
+
+def _print_upgrades(upgrades):
+    """Write the block's UPGRADE lines to stdout and flush at once.
+
+    Printed after that block's ALERT lines (follow_chain calls
+    on_alerts, then on_upgrades); never filtered by --alert-on, which
+    touches ALERT lines only (phase 14).
+    """
+    for upgrade in upgrades:
+        sys.stdout.write(
+            "UPGRADE\t%s\t%s\t%s\t%d\n"
+            % (upgrade["address"], upgrade["old"], upgrade["new"],
+               upgrade["block"])
+        )
+    sys.stdout.flush()
 
 
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
@@ -211,6 +241,7 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             code_tag=code_tag,
             workers=workers,
             on_alerts=_alert_on_sink(alert_on),
+            on_upgrades=_print_upgrades,
         )
     except KeyboardInterrupt:
         return None
@@ -345,38 +376,72 @@ def _run_risk(args, store):
 
 
 def _run_seed_add(args, rpc, store):
-    """seed add, with --fetch pulling the code of an address not stored.
+    """seed add, with --fetch pulling or resolving an address's code.
 
-    --fetch is a no-op once store.has_address(args.address) is True (a
-    known EOA still falls through to add_seed's KeyError -> exit 2): no
-    client is built and no rpc call is made. Otherwise exactly two
-    calls are made, in order, on rpc (or a fresh keyless publicnode
-    client when rpc is None); a code answer is stored and seeded, an
-    "0x" answer is stored as an EOA and refused, any other answer or an
-    RpcError leaves nothing stored.
+    --fetch on an address the store does not hold makes exactly two
+    calls, in order -- eth_blockNumber then eth_getCode -- on rpc (or a
+    fresh keyless publicnode client when rpc is None); a code answer is
+    stored and seeded, an "0x" answer is stored as an EOA and refused,
+    any other answer or an RpcError leaves nothing stored.
+
+    Standard proxies (phase 14). When the stored (or freshly fetched)
+    code is a standard proxy, fetch_implementation follows at "latest"
+    -- get_storage = rpc.call("eth_getStorageAt", [address, slot,
+    "latest"]), get_code = rpc.call("eth_getCode", [address,
+    "latest"]) -- storing the implementation with origin "impl". On a
+    held address whose code is a standard proxy with no resolved
+    implementation, --fetch is no longer a no-op: it makes
+    eth_blockNumber and the same fetch_implementation calls, with no
+    eth_getCode of the proxy itself (it is already stored). A held
+    non-proxy, a held EOA, or a held proxy whose implementation is
+    already resolved: --fetch stays a no-op, no client built, no rpc
+    call at all. A slot read that fails or reads zero leaves the seed
+    on the proxy's own code (phase 9), exit 0, nothing on stderr --
+    fetch_implementation never raises.
     """
     _check_address(args.address)
-    if args.fetch and not store.has_address(args.address):
+    address = args.address.lower()
+    known = store.has_address(address)
+    stored_code = store.code_of(address) if known else None
+    needs_resolve = (
+        known and stored_code is not None and is_std_proxy(stored_code)
+        and store.implementation(address) is None
+    )
+    if args.fetch and (not known or needs_resolve):
         if rpc is None:
             rpc = RpcClient(PUBLICNODE_URL, prices={}, max_retries=5)
         try:
             head = rpc.call("eth_blockNumber", [])
-            text = rpc.call("eth_getCode", [args.address.lower(), "latest"])
+            text = None if known else rpc.call(
+                "eth_getCode", [address, "latest"])
         except RpcError as err:
             sys.stderr.write(str(err) + "\n")
             return 1
         block = int(head, 16)
-        if text == "0x":
-            store.put_address(args.address, None, block, origin="fetched")
-            sys.stderr.write(
-                "unknown address or no code: %s\n" % args.address)
-            return 2
-        if not _is_hex_code(text):
-            sys.stderr.write(
-                "eth_getCode returned no code: %s\n" % args.address)
-            return 1
-        code_id = store.put_code(bytes.fromhex(text[2:]))
-        store.put_address(args.address, code_id, block, origin="fetched")
+        code = stored_code
+        if not known:
+            if text == "0x":
+                store.put_address(args.address, None, block,
+                                  origin="fetched")
+                sys.stderr.write(
+                    "unknown address or no code: %s\n" % args.address)
+                return 2
+            if not _is_hex_code(text):
+                sys.stderr.write(
+                    "eth_getCode returned no code: %s\n" % args.address)
+                return 1
+            code = bytes.fromhex(text[2:])
+            code_id = store.put_code(code)
+            store.put_address(args.address, code_id, block,
+                              origin="fetched")
+        if is_std_proxy(code):
+            def get_storage(addr, slot, blk):
+                return rpc.call("eth_getStorageAt", [addr, slot, "latest"])
+
+            def get_code(addr, blk):
+                return rpc.call("eth_getCode", [addr, "latest"])
+
+            fetch_implementation(store, address, block, get_storage, get_code)
     try:
         store.add_seed(args.address, args.label)
     except KeyError:
@@ -486,7 +551,7 @@ def _build_parser():
     recheck.add_argument("--min", type=float, default=0.8)
     recheck.add_argument(
         "--origin",
-        choices=["created", "seen", "fetched", "unknown"],
+        choices=["created", "seen", "fetched", "impl", "unknown"],
         default=None,
     )
 

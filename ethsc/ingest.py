@@ -10,6 +10,18 @@ insertion order. Origin (phase 13): candidate_origins tells "created"
 from "seen" by the receipts alone, never by a trace or a later fetch --
 an address made by a factory inside a transaction is "seen", not
 "created".
+
+Standard proxies (phase 14): a standard proxy's own bytecode never
+matches a watchlist seed (similarity rule 2, unchanged) -- the module
+reads the implementation address out of a storage slot instead, via an
+injected get_storage, and checks the implementation's bytes. get_storage
+is optional (None keeps exactly the phase-9/13 behaviour, no slot ever
+read); when it is given, ingest_block runs two more steps after its
+candidate loop: resolving implementations (and noting an upgrade when a
+known proxy's implementation changes) and the implementation-aware
+alerts. Neither step reads a block tag or a transport: the caller's
+get_storage(address, slot, block) does that, the same way get_code
+already does.
 """
 
 import concurrent.futures
@@ -17,9 +29,18 @@ import datetime
 import threading
 
 from ethsc.cluster import match_watchlist
+from ethsc.evm import is_std_proxy
 from ethsc.rpc import RpcError
 
 _HEX_DIGITS = "0123456789abcdefABCDEF"
+
+# Phase 14: the EIP-1967 implementation and beacon storage slots.
+IMPL_SLOT = (
+    "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+)
+BEACON_SLOT = (
+    "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50"
+)
 
 
 def discover_candidates(receipts):
@@ -96,12 +117,128 @@ def _is_hex_code(text):
     return True
 
 
+def slot_address(word):
+    """The address a storage slot word carries, or None.
+
+    Pure: a str of "0x" plus 64 hex digits whose first 24 digits are
+    zero and whose last 40 are not all zero gives "0x" plus those 40
+    digits lowercased. Anything else -- None, a non-string, the zero
+    word, a short or malformed string, a non-zero prefix -- gives None;
+    never raises (Tolerant Parser).
+    """
+    if not isinstance(word, str) or len(word) != 66:
+        return None
+    if word[:2].lower() != "0x":
+        return None
+    body = word[2:]
+    for char in body:
+        if char not in _HEX_DIGITS:
+            return None
+    if body[:24] != "0" * 24:
+        return None
+    tail = body[24:]
+    if tail == "0" * 40:
+        return None
+    return "0x" + tail.lower()
+
+
+def _store_implementation_code(store, address, text, block):
+    """Store a resolved implementation's code like a fetched candidate.
+
+    Exactly the _store_text shapes -- "0x" as an address without code,
+    hex through put_code/put_address -- with origin "impl" and no
+    watchlist check (step 3 of ingest_block does that, once, with the
+    stored bytes). Not 0x-hex: nothing stored (Tolerant Parser). Returns
+    True iff contract code was stored, so the caller can tell a newly
+    known implementation apart from one merely marked without code.
+    """
+    if not _is_hex_code(text):
+        return False
+    if text == "0x":
+        store.put_address(address, None, block, origin="impl")
+        return False
+    code = bytes.fromhex(text[2:])
+    code_id = store.put_code(code)
+    store.put_address(address, code_id, block, origin="impl")
+    return True
+
+
+def _fetch_implementation(store, address, block, get_storage, get_code):
+    """fetch_implementation's body, also reporting a fresh code fetch.
+
+    Returns (implementation or None, True iff this call stored the
+    implementation's code) -- the second value lets ingest_block tell a
+    newly known implementation from one already held without a second
+    store query. fetch_implementation (the public name) discards it.
+    """
+    if get_storage is None:
+        return None, False
+    try:
+        word = get_storage(address, IMPL_SLOT, block)
+    except Exception:
+        return None, False
+    implementation = slot_address(word)
+    from_impl_slot = implementation is not None
+    if implementation is None:
+        try:
+            word = get_storage(address, BEACON_SLOT, block)
+        except Exception:
+            return None, False
+        implementation = slot_address(word)
+    if implementation is None:
+        return None, False
+    # The resolution is written whether or not the code fetch below
+    # succeeds: a later failure must not clear what was just found.
+    store.set_implementation(address, implementation)
+    if from_impl_slot and not store.has_address(implementation):
+        try:
+            text = get_code(implementation, block)
+        except Exception:
+            return implementation, False
+        return implementation, _store_implementation_code(
+            store, implementation, text, block)
+    return implementation, False
+
+
+def fetch_implementation(store, address, block, get_storage, get_code):
+    """The implementation address a standard proxy delegates through.
+
+    Reads get_storage(address, IMPL_SLOT, block); when the answer is
+    not a usable address and the call did not raise, reads
+    get_storage(address, BEACON_SLOT, block) instead. The first address
+    found is written with store.set_implementation and returned. When
+    it came from IMPL_SLOT and the store does not already hold it, its
+    code is fetched with get_code(implementation, block) and stored
+    with origin "impl"; a beacon address is only ever stored in the
+    column, never fetched (calling the beacon is out of scope). A
+    get_storage or get_code call that raises, or an answer
+    slot_address rejects, ends the attempt there: nothing already
+    stored is cleared, nothing else is stored, and None comes back only
+    when no address was found at all -- no exception ever leaves
+    (Tolerant Parser). get_storage=None means no read at all.
+    """
+    return _fetch_implementation(store, address, block, get_storage,
+                                 get_code)[0]
+
+
 def _deliver_alerts(on_alerts, alerts):
     """Hand a copy of the alerts, sorted by address, to the sink once."""
     if on_alerts is not None:
         on_alerts(
             sorted(alerts, key=lambda alert: alert["address"])
         )
+
+
+def _deliver_upgrades(on_upgrades, upgrades):
+    """Hand a copy of the block's upgrade records to the sink once.
+
+    Called after _deliver_alerts, on the normal return and on the
+    KeyboardInterrupt path alike, with whatever step 2 had found so far
+    (an empty list when the interrupt happened before step 2 ran, since
+    it comes after the whole candidate loop).
+    """
+    if on_upgrades is not None:
+        on_upgrades(list(upgrades))
 
 
 def _store_text(address, text, block, store, watch, stats, origin):
@@ -112,15 +249,17 @@ def _store_text(address, text, block, store, watch, stats, origin):
     every stored code is checked with match_watchlist, each alert gaining
     the keys address and origin (phase 13: origin is the address's own
     origin, "created" or "seen", from candidate_origins). Runs in the
-    calling thread only.
+    calling thread only. Returns the stored code bytes (contracts) or
+    None (an eoa or a failed fetch), so the caller can tell a standard
+    proxy apart without a second store read (phase 14).
     """
     if not _is_hex_code(text):
         stats["failed"] += 1
-        return
+        return None
     if text == "0x":
         store.put_address(address, None, block, origin=origin)
         stats["eoas"] += 1
-        return
+        return None
     code = bytes.fromhex(text[2:])
     code_id = store.put_code(code)
     store.put_address(address, code_id, block, origin=origin)
@@ -139,10 +278,12 @@ def _store_text(address, text, block, store, watch, stats, origin):
                 "origin": origin,
             }
         )
+    return code
 
 
 def ingest_block(block, receipts, get_code, store, max_calls=None,
-                 watch=None, on_alerts=None, workers=None):
+                 watch=None, on_alerts=None, workers=None, get_storage=None,
+                 on_upgrades=None):
     """Fetch and store the codes of one block's candidates.
 
     Candidates already in the store are skipped (known). Each other one
@@ -189,11 +330,45 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
     shut down with cancel_futures=True and wait=False, the alerts found
     so far reach on_alerts once, then the exception propagates.
 
+    Standard proxies (phase 14). get_storage(address, slot, block) is
+    optional; None keeps every step below out of the run, exactly the
+    phase-9/13 behaviour. When it is given, two steps run after the
+    candidate loop above, in candidate order, neither one counted in
+    the stats or capped by max_calls:
+      step 2 resolves implementations with fetch_implementation, for
+      every candidate this call stored with a standard-proxy code and
+      for every already-known candidate that store.implementations()
+      held before this call (that snapshot is read once, before the
+      candidate loop, so a proxy first seen in this call is never
+      double-resolved as both "new" and "known"); a known proxy whose
+      stored implementation changes appends {"address", "old", "new",
+      "block"} to stats["upgrades"] (a NULL that resolves is silent --
+      not an upgrade, a first sighting);
+      step 3 adds alerts match_watchlist does not reach by itself: a
+      proxy stored in this call whose implementation's code is stored
+      (fetched just now or already held) is checked with the
+      implementation's bytes, the alert gaining address = the proxy and
+      origin = the proxy's own origin; an implementation whose code
+      this call fetched is checked with its own bytes, gaining address
+      = the implementation and origin "impl". A known proxy (skipped in
+      the candidate loop) never gains an alert here, even when step 2
+      resolves or re-resolves it -- only a proxy this call actually
+      stored gets checked. These alerts join the candidate-loop ones
+      before the final sort, so on_alerts and the returned list carry
+      both. on_upgrades, when given, is called exactly once per call
+      with stats["upgrades"] (possibly []), after on_alerts, on the
+      normal return and on the KeyboardInterrupt path alike (there it
+      is always [], since step 2 runs only after the candidate loop
+      returns without interruption).
+
     Returns a dict with exactly the keys candidates, known, fetched,
-    contracts, eoas, failed, deferred, complete, alerts.
+    contracts, eoas, failed, deferred, complete, alerts, upgrades.
     """
     candidates = discover_candidates(receipts)
     origins = candidate_origins(receipts)
+    # Read before the candidate loop so a proxy first stored in this
+    # call never also counts as "known" in step 2 below.
+    known_before = store.implementations() if get_storage is not None else {}
     stats = {
         "candidates": len(candidates),
         "known": 0,
@@ -204,9 +379,11 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
         "deferred": 0,
         "complete": True,
         "alerts": [],
+        "upgrades": [],
     }
 
     deferred = 0
+    new_std_proxies = set()
     try:
         if workers is not None and workers > 1:
             fetched = []
@@ -229,8 +406,10 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
                     except Exception:
                         stats["failed"] += 1
                         continue
-                    _store_text(address, text, block, store, watch, stats,
-                               origins[address])
+                    code = _store_text(address, text, block, store, watch,
+                                       stats, origins[address])
+                    if code is not None and is_std_proxy(code):
+                        new_std_proxies.add(address)
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
         else:
@@ -247,14 +426,74 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
                 except Exception:
                     stats["failed"] += 1
                     continue
-                _store_text(address, text, block, store, watch, stats,
-                           origins[address])
+                code = _store_text(address, text, block, store, watch,
+                                   stats, origins[address])
+                if code is not None and is_std_proxy(code):
+                    new_std_proxies.add(address)
     except KeyboardInterrupt:
-        # The alerts found before the interruption leave the block; the
-        # exception continues on its way unchanged.
+        # Steps 2 and 3 live after this loop, so an interruption here
+        # always leaves stats["upgrades"] at [].
         _deliver_alerts(on_alerts, stats["alerts"])
+        _deliver_upgrades(on_upgrades, stats["upgrades"])
         raise
+
+    if get_storage is not None:
+        resolved_new = {}       # new-this-call proxy address -> implementation
+        new_implementations = set()
+        for address in candidates:
+            if address in new_std_proxies:
+                implementation, fetched_new = _fetch_implementation(
+                    store, address, block, get_storage, get_code)
+                if implementation is not None:
+                    resolved_new[address] = implementation
+                if fetched_new:
+                    new_implementations.add(implementation)
+            elif address in known_before:
+                old = known_before[address]["implementation"]
+                implementation, fetched_new = _fetch_implementation(
+                    store, address, block, get_storage, get_code)
+                if fetched_new:
+                    new_implementations.add(implementation)
+                if (old is not None and implementation is not None
+                        and implementation != old):
+                    stats["upgrades"].append(
+                        {"address": address, "old": old,
+                         "new": implementation, "block": block}
+                    )
+
+        for address in sorted(resolved_new):
+            implementation = resolved_new[address]
+            code = store.code_of(implementation)
+            if code is None:
+                continue
+            for alert in match_watchlist(store, code):
+                stats["alerts"].append(
+                    {
+                        "address": address,
+                        "seed_address": alert["seed_address"],
+                        "label": alert["label"],
+                        "score": alert["score"],
+                        "origin": origins[address],
+                    }
+                )
+
+        for implementation in sorted(new_implementations):
+            code = store.code_of(implementation)
+            if code is None:
+                continue
+            for alert in match_watchlist(store, code):
+                stats["alerts"].append(
+                    {
+                        "address": implementation,
+                        "seed_address": alert["seed_address"],
+                        "label": alert["label"],
+                        "score": alert["score"],
+                        "origin": "impl",
+                    }
+                )
+
     _deliver_alerts(on_alerts, stats["alerts"])
+    _deliver_upgrades(on_upgrades, stats["upgrades"])
 
     stats["deferred"] = deferred
     stats["complete"] = deferred == 0
@@ -275,7 +514,8 @@ def _resolve_day(day):
 
 def follow_chain(rpc, store, start=None, stop=None,
                  max_calls_per_block=None, daily_budget=None, day=None,
-                 prices=None, on_alerts=None, workers=None, code_tag=None):
+                 prices=None, on_alerts=None, workers=None, code_tag=None,
+                 on_upgrades=None):
     """One pass from progress (or start) up to the head (or stop).
 
     Polls eth_blockNumber once, then for each block calls
@@ -324,8 +564,25 @@ def follow_chain(rpc, store, start=None, stop=None,
     exception from eth_blockNumber or eth_getBlockReceipts propagates
     as is, progress unchanged.
 
+    Standard proxies (phase 14). Every ingest_block call gets
+    get_storage(address, slot, blk) = rpc.call("eth_getStorageAt",
+    [address, slot, tag]), tag following the eth_getCode rule above,
+    and on_upgrades unchanged. summary["upgrades"] is the concatenation
+    of the blocks' upgrades in block order, the incomplete block
+    included. Before each read the check is spent(day) +
+    price(eth_getStorageAt) + price(eth_getCode) <= daily_budget -- one
+    read and the code fetch it may trigger -- and when it fails
+    get_storage returns None without a call: the implementation stays
+    unresolved, and slot reads never set stopped or cap a block. Each
+    successful read is charged price(eth_getStorageAt); the
+    implementation's eth_getCode goes through this block's get_code
+    (above) and is charged exactly like a candidate's, workers included
+    -- the step 2/3 reads run in the calling thread regardless of
+    workers (allowed to run in the pool, not required), so the existing
+    get_code charging already covers them.
+
     Returns a dict with exactly the keys blocks, stopped, progress,
-    alerts, day.
+    alerts, day, upgrades.
     """
     if prices is None:
         prices = {}
@@ -341,6 +598,7 @@ def follow_chain(rpc, store, start=None, stop=None,
         "progress": store.get_progress(),
         "alerts": [],
         "day": day_value,
+        "upgrades": [],
     }
 
     if not budget_ok(prices.get("eth_blockNumber", 0), day_value):
@@ -408,15 +666,33 @@ def follow_chain(rpc, store, start=None, stop=None,
 
             charge_after = False
 
+        storage_price = prices.get("eth_getStorageAt", 0)
+
+        def get_storage(address, slot, blk, _day=block_day):
+            # One read plus the code fetch it may trigger -- a soft
+            # reservation, not a second check before that fetch.
+            if (daily_budget is not None
+                    and store.spent(_day) + storage_price + code_price
+                    > daily_budget):
+                return None
+            result = rpc.call(
+                "eth_getStorageAt",
+                [address, slot,
+                 hex(blk) if code_tag is None else code_tag])
+            store.spend(_day, "eth_getStorageAt", storage_price)
+            return result
+
         try:
             stats = ingest_block(block, receipts, get_code, store,
                                  max_calls=max_calls, on_alerts=on_alerts,
-                                 workers=workers)
+                                 workers=workers, get_storage=get_storage,
+                                 on_upgrades=on_upgrades)
         finally:
             if charge_after:
                 for _ in range(counter[0]):
                     store.spend(block_day, "eth_getCode", code_price)
         summary["alerts"].extend(stats["alerts"])
+        summary["upgrades"].extend(stats["upgrades"])
         if stats["complete"]:
             store.set_progress(block)
             summary["blocks"] += 1
