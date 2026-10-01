@@ -266,4 +266,67 @@ the comparison with phase 13.
 
 ## 11. Actual
 
-_Filled in after the run._
+One pass, 2 of 2 cards accepted, 1 red acceptance run (the criterion's fault, not the
+code's), 2 generations, Claude Code agents on claude-sonnet-5 (`morph-agent-run`), no
+`mrph run`, no OpenRouter.
+
+| card | acceptance runs | commit | diff | agent wall | API equivalent (ccledger) |
+|---|---|---|---|---|---|
+| proxy (5 modules + helpers + smoke) | 2 (1 red: the probe compared a list of lists with a list of tuples) | ccd3918 | ingest +304, cluster +175, cli +121, store +81, config +1, helpers +22, test_proxy_p14.py +145 (4 tests); 778/−71 | 41.6 min (22:11 → 22:53) | $13.16 (106 calls) |
+| proxy-judge | 1, green | 2acbab9 | test_proxy_examples_p14.py +2014 (28 tests) | 35.5 min (22:54 → 23:29) | $6.16 (60 calls) |
+
+- Tests 357 → **389** (361 after the 5 data-edited tests and the 4 smoke tests, 389 with
+  the judge), all green. The judge found no defect in the code.
+- **Two criterion faults, both the orchestrator's**, found by the executor on its first
+  blocked run and fixed as commit 123726e (7 min): the probe's Follow Chain 12 compared
+  `[c[1][:2] …]` (lists) with tuples — unsatisfiable by any code; and the fixture added as
+  data (`code_impl_72b97171.hex`) broke the phase-11 judge's hard-coded "19 fixtures /
+  361 pairs" (the ripple spike ran before the fixture existed, so it could not see it).
+  Lesson recorded in the orchestrator skill: build `want` with the constructor `got` uses,
+  and run the spike with the new fixtures in place.
+- Executor ambiguities, resolved by it and accepted: the per-candidate `match_watchlist`
+  stays unconditional and steps 2–3 only add alerts; a known proxy re-resolved by a
+  block gets no alert; per-address effective code_id (two proxies of one bytecode may
+  resolve to different implementations); a private `_fetch_implementation` returning
+  `(implementation, fetched_new_code)` behind the public one; **the slot reads stay
+  sequential under workers** (allowed by §6) — which is what the live listen then paid for.
+- Wall: run (executor start 22:11:37 → judge commit 23:29:37) **78 min**, the 7-min
+  criterion fix included; primer → judge commit ≈ 2 h 15 min with the gate and the live
+  measurements before it. Recon: primer + ~14 reads, scout skipped (operator's call), one
+  ripple spike (5 red of 357, all data) plus 4 network measurements (slot of the seed
+  proxy, 120 sibling slots, 60 other proxies, 5 live blocks of candidates).
+- Bill, API equivalent by ccledger over the session journal: **$32.49** — executors
+  $19.32 (166 calls, sonnet: $13.16 + $6.16), orchestrator ≈ $13.17 (68 calls, fable).
+  A subscription pays none of it in cash.
+- Against phase 13 (same path): 2 cards, 30.2 min run, $5.23 executors, $8.04
+  orchestrator, 164 product lines. Here: 2 cards, 78 min, $19.32, $13.17, 682 product
+  lines over 5 modules (+71 removed). Executor cost per product line ~$0.028 vs ~$0.032.
+- Predictions (§9): both cards ≤ 3 runs — **hit** (2 and 1); at least one red run for the
+  executor — **hit, for the wrong reason** (the criterion, not the code); product
+  +260..340 — **missed** (+682: the executor wrote docstrings and a three-step
+  `ingest_block`); helpers ≤ 15 — **missed** (22); smoke ≤ 120 — **missed** (145); judge
+  900..1400 — **missed** (2014); run wall 35..60 — **missed** (78); §3.3 step 2 two
+  recheck lines, the first `0x069c…5ea` at 1.0000 against `impl-seed` — **hit**, exactly;
+  §3.3 step 3 200..600 resolved — **hit** (281); 0..2 UPGRADE — **hit** (0); recheck
+  growth by the seed's siblings — **not testable**: the seed proxy `0x0c01…2cf8` was not
+  touched in the 32 blocks and stays NULL (it needs `seed add --fetch` on the live base).
+
+**Live acceptance (§3.3)**, branch code ccd3918, fresh dbs in `/tmp/p14/live/`, public node:
+
+| step | result |
+|---|---|
+| `seed add --fetch 0x0c01…2cf8 --label proxy-seed` | exit 0, 1.29 s; `implementation` = `0x72b971717e088b59f26d4236be222adb6acd393b`, its code = `code_impl_72b97171.hex`, origins `fetched` / `impl`, seed on code_id `148d598b…cbf28`; stdout exactly `ALERT 0x72b9…393b 0x0c01…2cf8 proxy-seed 1.0000 impl` |
+| second db: `seed add --fetch 0x72b9…393b --label impl-seed` | exit 0, no ALERT |
+| `seed add --fetch 0x069c…5ea --label sibling` | exit 0, stdout `ALERT 0x72b9…393b 0x069c…5ea sibling 1.0000 fetched` |
+| `recheck` | exit 0, exactly two lines: `ALERT 0x069c…5ea 0x72b9…393b impl-seed 1.0000 fetched`, `ALERT 0x72b9…393b 0x069c…5ea sibling 1.0000 fetched` |
+| live copy, first open + `recheck` | 1.15 s, 402 lines; the column added last, 210 952 rows, 210 952 NULL (nothing rewritten); second `recheck` 1.26 s |
+| `listen --source publicnode`, 10 min, progress set to head−1 | 32 blocks (26100288–26100319), **18.8 s per block — behind the 12-s chain**; 281 of 5 168 std-proxy rows resolved (266 old rows by re-read, 15 new), 249 implementations fetched (origin `impl`), 255 distinct implementations, 16 of them beacon-like (address not stored); 0 `UPGRADE`; 3 ALERT (LaunchToken family, `seen`, unrelated to proxies) |
+| after: `recheck` / `build_clusters` | 1.13 s, 405 lines (+3 LaunchToken); 1 971 clusters in 0.57 s, **12 impl clusters** (sizes 7, 7, 5, 3, 2 ×8) |
+
+**The cost of sequential slot reads is the finding of this phase.** 29 known-proxy
+re-reads per block at 0.26 s each are ~7.5 s of the 18.8 s per block; with them in the
+8-worker pool a block would take ~3 s. §6 allowed the executor to keep them sequential
+and it did. Next phase, or a data-only fix: the slot reads of a block under
+`workers > 1` go through the pool like the candidate `eth_getCode` calls (the Contour
+already permits it; one card, ingest only). Until then `listen --source publicnode`
+falls behind by ~7 s per block and `backfill` of a range is ~1.6× slower than before.
