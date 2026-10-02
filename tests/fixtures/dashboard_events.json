@@ -1,0 +1,109 @@
+{
+ "events": [
+  {
+   "address": "0x0be5cfbcbb8a82c8d44af544dd40261b967ab832",
+   "at": "2026-10-02T08:47:50Z",
+   "block": 26103541,
+   "id": 8,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0xe632d85c48722af13ac953683535568506458049",
+   "at": "2026-10-02T08:46:38Z",
+   "block": 26103535,
+   "id": 7,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0x9fe05530ba423e2f8e14c907ce7c95f2d6ca7a9d",
+   "at": "2026-10-02T08:46:21Z",
+   "block": 26103534,
+   "id": 6,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0xabb78cdc385cb7dbf18ab6ce1e3feef4d3bec700",
+   "at": "2026-10-02T08:46:13Z",
+   "block": 26103533,
+   "id": 5,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0xaf8c1adff803e359ba0f65dccbb48a5115a3b2ae",
+   "at": "2026-10-02T08:44:31Z",
+   "block": 26103524,
+   "id": 4,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0x6dc07a9c0036693c97d1065b87e13d1698f76b26",
+   "at": "2026-10-02T08:44:17Z",
+   "block": 26103522,
+   "id": 3,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0xf7834abaca27b5f754ca614e0971f19f35de097a",
+   "at": "2026-10-02T08:43:33Z",
+   "block": 26103518,
+   "id": 2,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  },
+  {
+   "address": "0x8aa3f8310be7b9ed79ecb4509489adc73df6163b",
+   "at": "2026-10-02T08:43:33Z",
+   "block": 26103518,
+   "id": 1,
+   "kind": "ALERT",
+   "label": "LaunchToken family",
+   "new_impl": null,
+   "old_impl": null,
+   "origin": "seen",
+   "score": 1.0,
+   "seed_address": "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"
+  }
+ ],
+ "last_id": 8
+}
