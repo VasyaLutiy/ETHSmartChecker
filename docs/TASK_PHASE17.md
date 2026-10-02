@@ -219,4 +219,62 @@ failed (`ui-look`), 1 skipped (`ui-look-judge`).**
   wheel); its diagnosis markers (`Error`, `assert`, …) catch vitest's `AssertionError` lines but
   not its `FAIL` lines.
 
-**Cut 2**: _(after the run)_
+**Cut 2, run `20261002-134420-41d96e0f`**, glm, 13:44–13:51, **6 min, $0.029: 3 of 3 written,
+0 failed, 0 skipped**, 2 generations, 12 requests, **0 cut** (input 11–21 k tokens instead of
+~90 k; the longest answer 6 894 output tokens).
+
+| gen | card | attempts | first red step of each failed variant |
+|---|---|---|---|
+| 1 | ui-shell | 2 (r1.v2) | v1, v2, r1.v1: rejected unread, `tests/shell.test.ts` returned twice in one answer |
+| 2 | ui-style | 2 (r1.v1) | v1/v2 browser probe: "Style Page ex5: hidden row 8 is 27 px high" (the `display:grid` vs `[hidden]` trap the instruction named), "Style Page ex4: row 8 height 29.19" (the 28-px cap) |
+| 2 | ui-shell-judge | 2 (r1.v1) | the judge's own tests: an assumed child order in `#events` (an extra rule), a fresh page that reused the old one |
+
+- Both phases together: cut 1 + cut 2 = 0 + 3 cards accepted, **$0.142**, 52 min.
+- What changed between the cuts, and what it bought: one card per file (by the envelope) and
+  the card's Function inlined instead of `contour.yaml` in the slice. Output per answer fell
+  from 48 000 (cap) to 2 843..6 894 tokens; the time from 46 min to 6 min.
+- Product: `main.ts` +137 −17, `style.css` 466 lines (the instruction asked 150..300; not
+  enforced), `dist/assets`: CSS 6.64 KB, JS 12.47 KB (was 10.87). Tests: **104 vitest** (89 + 4
+  smoke + 11 judge), `tsc` clean; Python untouched.
+- **A criterion gap of mine**: Style Page asks the kind badge in its kind colour and the origin
+  badge in its origin colour, but `layout.mjs` never checks either. The live page shows the
+  "seen" badge with a grey left border, not `--o-seen`: unchecked, so unflagged.
+- Seen on the screenshot, not in the contract: the kind select keeps the browser's white
+  default style and touches the feed-meta text.
+
+**One-variable experiment** (operator's request, run `20261002-141417-7aad2428`, branch
+`exp/p17-ctx` off the cut-2 `ui-shell` commit 8f04cc3, 3 min, $0.049): the cut-2 `ui-style` card
+unchanged except `contour.yaml` added to its slice (and 4 variants instead of 2, for a larger
+sample). Input 88–98 k tokens, as in cut 1. **0 of 8 answers cut**; output 2 449–4 211 tokens.
+Accepted on r1.v1; the 4 first-round variants all failed the same check ("Style Page ex5:
+hidden row 8 is 25–28 px high", the `[hidden]` trap). **So the large context did not cause cut
+1's runaway: the card's width did** (two files, CSS from scratch plus a `main.ts` edit, an open
+aesthetic brief). Cut 2's speed-up came from the split; dropping `contour.yaml` cut the bill
+(input) but not the output.
+
+**§3.3 step 0**: `npm run build` → `dist/index.html` 0.32 kB + `assets/index-*.css` 6.64 kB +
+`assets/index-*.js` 12.47 kB, no map; 104 tests, tsc clean.
+
+**§3.3 step 1** (live), copy of `smoke/20261001-night2/ethsc.sqlite`, progress head−1
+(26104757), `dashboard` + `listen --source publicnode`, headless Chrome at 1400 × 900, sampled
+every 30 s (12:52–13:03 UTC):
+
+| check | result |
+|---|---|
+| health | "live" in every sample, progress 26104757 → 26104796 |
+| ALERT rows without reload | 0 → 5 rows (ids 1..5); **listen printed 5 ALERT lines, the same 5 addresses** (sorted lists equal); 1 navigation entry; the first row's node kept |
+| impl table | 0 → 20 rows |
+| backend stopped 20 s | red "backend unreachable" bands on health and events (the 5-s panels), data kept |
+| backend restarted 65 s | every band gone |
+
+Screenshots: `docs/phase17-live.png` (10 min), `docs/phase17-live-down.png` (backend down); the
+rest in `decks/phase17-tooling/live/`.
+
+- **A semantic gap the live page shows**: while the backend is down, the health strip keeps
+  its last good answer, so the pill still says "live" and "age 23 s" under the red band. The
+  age is the server's, frozen at the last answer. A next phase could count the age on the
+  client from `now` of the last answer, or turn the pill "unknown" while unreachable.
+- Predictions (§9): 2 cards, `ui-look` in 2..3 attempts — **missed** (cut 1 failed; cut 2: 3
+  cards, each in 2); ≥ 1 regeneration on the browser probe, on column alignment or `[hidden]`
+  — **hit** (`[hidden]` and row height); judge in 1..2 — **hit**; 94..110 tests — **hit**
+  (104); CSS 3..10 KB — **hit** (6.64); JS grows < 2 KB — **hit** (+1.6).
