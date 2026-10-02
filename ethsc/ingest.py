@@ -687,6 +687,23 @@ def follow_chain(rpc, store, start=None, stop=None,
     workers (allowed to run in the pool, not required), so the existing
     get_code charging already covers them.
 
+    Phase 15 (events). Every ingest_block call gets sinks of
+    follow_chain's own instead of on_alerts / on_upgrades: each records
+    what it receives, in order, in a block-local list and forwards the
+    same list to the caller's sink when that is given. After the
+    ingest_block call -- on the normal return, on an incomplete block
+    and on the KeyboardInterrupt path alike (try/finally, after the
+    ledger charges, the interrupt then propagates) -- when the block
+    delivered at least one alert or upgrade, follow_chain calls
+    store.add_events once with the block's ALERTs first and then its
+    UPGRADEs, each in the order delivered: an ALERT is the alert dict
+    plus kind "ALERT", block and at; an UPGRADE is {kind "UPGRADE",
+    address, old_impl = old, new_impl = new}, block and at; every event
+    of the block carries the same at, the UTC time of the write as
+    "YYYY-MM-DDTHH:%M:%SZ" format "%Y-%m-%dT%H:%M:%SZ". The events of a
+    complete block are written before its set_progress. Nothing is
+    written when the block delivered nothing.
+
     Returns a dict with exactly the keys blocks, stopped, progress,
     alerts, day, upgrades.
     """
@@ -815,17 +832,53 @@ def follow_chain(rpc, store, start=None, stop=None,
                 store.spend(_day, "eth_getStorageAt", storage_price)
                 return result
 
+        recorded_alerts = []
+        recorded_upgrades = []
+
+        def record_alerts(alerts):
+            recorded_alerts.extend(alerts)
+            if on_alerts is not None:
+                on_alerts(alerts)
+
+        def record_upgrades(upgrades):
+            recorded_upgrades.extend(upgrades)
+            if on_upgrades is not None:
+                on_upgrades(upgrades)
+
         try:
             stats = ingest_block(block, receipts, get_code, store,
-                                 max_calls=max_calls, on_alerts=on_alerts,
+                                 max_calls=max_calls,
+                                 on_alerts=record_alerts,
                                  workers=workers, get_storage=get_storage,
-                                 on_upgrades=on_upgrades)
+                                 on_upgrades=record_upgrades)
         finally:
             if charge_after:
                 for _ in range(counter[0]):
                     store.spend(block_day, "eth_getCode", code_price)
                 for _ in range(storage_counter[0]):
                     store.spend(block_day, "eth_getStorageAt", storage_price)
+            if recorded_alerts or recorded_upgrades:
+                at = datetime.datetime.now(
+                    datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                events = []
+                for alert in recorded_alerts:
+                    event = dict(alert)
+                    event["kind"] = "ALERT"
+                    event["block"] = block
+                    event["at"] = at
+                    events.append(event)
+                for upgrade in recorded_upgrades:
+                    events.append(
+                        {
+                            "kind": "UPGRADE",
+                            "block": block,
+                            "at": at,
+                            "address": upgrade["address"],
+                            "old_impl": upgrade["old"],
+                            "new_impl": upgrade["new"],
+                        }
+                    )
+                store.add_events(events)
         summary["alerts"].extend(stats["alerts"])
         summary["upgrades"].extend(stats["upgrades"])
         if stats["complete"]:
