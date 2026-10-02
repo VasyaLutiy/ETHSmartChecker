@@ -2,6 +2,8 @@
 // global fetch and the timer functions are named here and nowhere else in
 // src/.
 
+import "./style.css";
+
 import type {
   ApiResult,
   ClustersPage,
@@ -14,6 +16,8 @@ import type {
 } from "./api";
 import { getClusters, getEvents, getHealth, getSummary } from "./api";
 import { mergeEvents } from "./feed";
+import { formatTime, originShares, statusOf } from "./format";
+import type { OriginKey } from "./format";
 import { renderClusters } from "./render/clusters";
 import { renderEvents } from "./render/events";
 import { renderHealth } from "./render/health";
@@ -36,10 +40,46 @@ const defaultClock: Clock = {
   }
 };
 
-function divWithId(doc: Document, id: string): HTMLElement {
-  const el = doc.createElement("div");
-  el.id = id;
-  return el;
+const ZERO_ORIGINS: Record<OriginKey, number> = {
+  created: 0,
+  seen: 0,
+  impl: 0,
+  fetched: 0,
+  unknown: 0
+};
+
+const LEGEND_ORDER: readonly string[] = originShares(ZERO_ORIGINS).map(
+  (s) => s.origin
+);
+
+const FEED_HEAD: readonly string[] = [
+  "kind",
+  "time UTC",
+  "block",
+  "label",
+  "score",
+  "origin",
+  "address"
+];
+
+interface PanelSpec {
+  id: string;
+  title: string;
+  caption: string;
+}
+
+const PANELS: readonly PanelSpec[] = [
+  { id: "health", title: "Listener", caption: "indexer progress, live or behind" },
+  { id: "events", title: "Events", caption: "times UTC, newest first" },
+  { id: "summary", title: "Summary", caption: "counters and origin shares" },
+  { id: "clusters", title: "Impl clusters", caption: "addresses sharing an implementation" }
+];
+
+interface PanelRoots {
+  health: HTMLElement;
+  events: HTMLElement;
+  summary: HTMLElement;
+  clusters: HTMLElement;
 }
 
 function buildKindFilter(doc: Document): HTMLSelectElement {
@@ -56,24 +96,72 @@ function buildKindFilter(doc: Document): HTMLSelectElement {
   return select;
 }
 
+function buildPanels(doc: Document, host: HTMLElement): PanelRoots {
+  const roots: PanelRoots = {
+    health: doc.createElement("div"),
+    events: doc.createElement("div"),
+    summary: doc.createElement("div"),
+    clusters: doc.createElement("div")
+  };
+  const byId = new Map<string, HTMLElement>([
+    ["health", roots.health],
+    ["events", roots.events],
+    ["summary", roots.summary],
+    ["clusters", roots.clusters]
+  ]);
+  for (const spec of PANELS) {
+    const section = doc.createElement("section");
+    section.className = "panel";
+    section.id = spec.id;
+    const title = doc.createElement("h2");
+    title.className = "panel-title";
+    title.textContent = spec.title;
+    const caption = doc.createElement("p");
+    caption.className = "panel-caption";
+    caption.textContent = spec.caption;
+    section.appendChild(title);
+    section.appendChild(caption);
+    section.appendChild(byId.get(spec.id) as HTMLElement);
+    host.appendChild(section);
+  }
+  return roots;
+}
+
 export function start(
   doc: Document,
   fetchFn: FetchLike,
   clock: Clock = defaultClock
 ): () => void {
   const host = doc.getElementById("app") ?? doc.body;
+  host.classList.add("dash");
+  doc.title = "ethsc";
 
-  const healthEl = divWithId(doc, "health");
-  const eventsEl = divWithId(doc, "events");
-  const summaryEl = divWithId(doc, "summary");
-  const clustersEl = divWithId(doc, "clusters");
+  const { health, events, summary, clusters } = buildPanels(doc, host);
+
   const select = buildKindFilter(doc);
+  const feedMeta = doc.createElement("span");
+  feedMeta.setAttribute("data-field", "feed-meta");
+  feedMeta.textContent = "no events yet";
+  const feedHead = doc.createElement("div");
+  feedHead.className = "feed-head";
+  for (const text of FEED_HEAD) {
+    const cell = doc.createElement("span");
+    cell.textContent = text;
+    feedHead.appendChild(cell);
+  }
+  events.appendChild(select);
+  events.appendChild(feedMeta);
+  events.appendChild(feedHead);
 
-  host.appendChild(healthEl);
-  host.appendChild(eventsEl);
-  host.appendChild(summaryEl);
-  host.appendChild(clustersEl);
-  host.appendChild(select);
+  const legend = doc.createElement("ul");
+  legend.className = "legend";
+  for (const origin of LEGEND_ORDER) {
+    const li = doc.createElement("li");
+    li.setAttribute("data-legend", origin);
+    li.textContent = origin;
+    legend.appendChild(li);
+  }
+  summary.appendChild(legend);
 
   const healthPanel: Panel<Health> = { data: null, error: null };
   const summaryPanel: Panel<Summary> = { data: null, error: null };
@@ -90,7 +178,16 @@ export function start(
   let clustersBusy = false;
 
   function applyEvents(): void {
-    renderEvents(eventsEl, eventsKept, kind, eventsError);
+    renderEvents(events, eventsKept, kind, eventsError);
+    if (eventsKept.length === 0) {
+      feedMeta.textContent = "no events yet";
+    } else {
+      feedMeta.textContent =
+        String(eventsKept.length) +
+        " events \u00B7 newest " +
+        formatTime(eventsKept[0].at) +
+        " UTC";
+    }
   }
 
   async function pollHealth(): Promise<void> {
@@ -102,10 +199,16 @@ export function start(
     if (result.ok) {
       healthPanel.data = result.data;
       healthPanel.error = null;
+      doc.title =
+        statusOf(result.data.seconds_since_progress) +
+        " \u00B7 " +
+        String(result.data.progress) +
+        " \u00B7 ethsc";
     } else {
       healthPanel.error = result.error;
+      doc.title = "unreachable \u00B7 ethsc";
     }
-    renderHealth(healthEl, healthPanel);
+    renderHealth(health, healthPanel);
     healthBusy = false;
   }
 
@@ -138,7 +241,7 @@ export function start(
     } else {
       summaryPanel.error = result.error;
     }
-    renderSummary(summaryEl, summaryPanel);
+    renderSummary(summary, summaryPanel);
     summaryBusy = false;
   }
 
@@ -154,7 +257,7 @@ export function start(
     } else {
       clustersPanel.error = result.error;
     }
-    renderClusters(clustersEl, clustersPanel);
+    renderClusters(clusters, clustersPanel);
     clustersBusy = false;
   }
 
