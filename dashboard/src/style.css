@@ -1,1 +1,466 @@
 /* Phase 17: the rules are written by the ui-style card (contour.yaml, dashboard-ui, Style Page). */
+
+/* 1. Theme: the dataviz reference palette, dark mode (validated 2026-10-02). */
+:root {
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --link: #6ea8ec;
+
+  --live: #0ca30c;
+  --behind: #fab219;
+  --stalled: #d03b3b;
+  --unknown: #898781;
+
+  --o-created: #3987e5;
+  --o-seen: #d95926;
+  --o-impl: #199e70;
+  --o-fetched: #c98500;
+  --o-unknown: #6b6a65;
+
+  --k-alert: #ec835a;
+  --k-upgrade: #9085e9;
+}
+
+/* 2. Page base. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink-2);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* 3. Layout grid: health strip on top, events left (about two thirds),
+   summary over clusters on the right. Never scrolls sideways at 1024 px. */
+#app.dash {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-areas:
+    "health health"
+    "events summary"
+    "events clusters";
+  gap: 12px;
+  padding: 12px;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+#app.dash > .panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#health {
+  grid-area: health;
+}
+
+#events {
+  grid-area: events;
+}
+
+#summary {
+  grid-area: summary;
+}
+
+#clusters {
+  grid-area: clusters;
+}
+
+/* 4. Panels. */
+section.panel {
+  background: var(--surface);
+  padding: 12px 14px;
+  border-radius: 4px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel-caption {
+  margin: 2px 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 5. Health strip: one flex row of labelled fields. */
+#health [data-role="data"] {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 16px;
+}
+
+#health [data-field="progress"] {
+  font-size: 24px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#health [data-field="progress"]::before {
+  content: "block";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#health [data-field="progress_at"]::before {
+  content: "at";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#health [data-field="age"]::before {
+  content: "age";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#health [data-field="age"],
+#health [data-field="progress_at"] {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#health [data-field="status"] {
+  display: inline-block;
+  font-size: 24px;
+  line-height: 1;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--unknown);
+  color: #0d0d0d;
+  white-space: nowrap;
+}
+
+#health [data-field="status"][data-status="live"] {
+  background: var(--live);
+  color: #0d0d0d;
+}
+
+#health [data-field="status"][data-status="behind"] {
+  background: var(--behind);
+  color: #0d0d0d;
+}
+
+#health [data-field="status"][data-status="stalled"] {
+  background: var(--stalled);
+  color: #ffffff;
+}
+
+#health [data-field="status"][data-status="unknown"] {
+  background: var(--unknown);
+  color: #0d0d0d;
+}
+
+/* 6. The feed: the head and the ALERT rows share one column template
+   (kind, time, block, label, score, origin, address). */
+#events .feed-head,
+#events [data-role="list"] > [data-kind="ALERT"] {
+  display: grid;
+  grid-template-columns:
+    64px
+    96px
+    96px
+    minmax(0, 1fr)
+    64px
+    88px
+    116px;
+  column-gap: 10px;
+  align-items: baseline;
+  line-height: 1.25;
+  padding: 4px 0;
+}
+
+#events .feed-head {
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--grid);
+  padding: 2px 0;
+}
+
+#events [data-role="list"] > [data-kind="UPGRADE"] {
+  display: grid;
+  grid-template-columns:
+    64px
+    96px
+    96px
+    minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: baseline;
+  line-height: 1.25;
+  padding: 4px 0;
+}
+
+#events [data-role="list"] > [data-id] + [data-id] {
+  border-top: 1px solid var(--grid);
+}
+
+#events [data-field],
+#events [data-badge] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+#events [data-field="time"],
+#events [data-field="block"],
+#events [data-field="score"] {
+  font-variant-numeric: tabular-nums;
+}
+
+#events [data-badge="kind"] {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+#events [data-kind="ALERT"] [data-badge="kind"] {
+  background: var(--k-alert);
+  color: #0d0d0d;
+}
+
+#events [data-kind="UPGRADE"] [data-badge="kind"] {
+  background: var(--k-upgrade);
+  color: #0d0d0d;
+}
+
+#events [data-badge="origin"] {
+  border-left: 3px solid var(--o-unknown);
+  padding-left: 5px;
+}
+
+#events [data-badge="origin"][data-origin="created"] {
+  border-left-color: var(--o-created);
+}
+
+#events [data-badge="origin"][data-origin="seen"] {
+  border-left-color: var(--o-seen);
+}
+
+#events [data-badge="origin"][data-origin="impl"] {
+  border-left-color: var(--o-impl);
+}
+
+#events [data-badge="origin"][data-origin="fetched"] {
+  border-left-color: var(--o-fetched);
+}
+
+/* The grid display above must never override the hidden attribute. */
+#events [data-id][hidden],
+#events [hidden] {
+  display: none;
+}
+
+/* 7. Summary: counters, bars, legend. */
+#summary [data-role="data"] {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 16px;
+}
+
+#summary [data-field="addresses"],
+#summary [data-field="codes"],
+#summary [data-field="seeds"],
+#summary [data-field="implementations_resolved"] {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#summary [data-field="addresses"]::before {
+  content: "addresses";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#summary [data-field="codes"]::before {
+  content: "codes";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#summary [data-field="seeds"]::before {
+  content: "seeds";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#summary [data-field="implementations_resolved"]::before {
+  content: "proxies resolved";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#summary [data-bar] {
+  display: flex;
+  position: relative;
+  flex: 1 1 100%;
+  height: 10px;
+  margin-top: 16px;
+  background: var(--grid);
+  border-radius: 2px;
+  overflow: visible;
+}
+
+#summary [data-bar="origins"]::before {
+  content: "all addresses";
+  position: absolute;
+  top: -13px;
+  left: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+#summary [data-bar="recent"]::before {
+  content: "last 300 blocks";
+  position: absolute;
+  top: -13px;
+  left: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+#summary [data-bar] > span {
+  display: block;
+  flex: none;
+  height: 10px;
+  background: var(--o-unknown);
+}
+
+#summary [data-bar] > span[data-origin="created"] {
+  background: var(--o-created);
+}
+
+#summary [data-bar] > span[data-origin="seen"] {
+  background: var(--o-seen);
+}
+
+#summary [data-bar] > span[data-origin="impl"] {
+  background: var(--o-impl);
+}
+
+#summary [data-bar] > span[data-origin="fetched"] {
+  background: var(--o-fetched);
+}
+
+#summary [data-bar] > span[data-origin="unknown"] {
+  background: var(--o-unknown);
+}
+
+ul.legend {
+  display: flex;
+  flex-wrap: nowrap;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  gap: 12px;
+  max-height: 24px;
+  overflow: hidden;
+}
+
+ul.legend li {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+ul.legend li::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 2px;
+  background: var(--o-unknown);
+}
+
+ul.legend li[data-legend="created"]::before {
+  background: var(--o-created);
+}
+
+ul.legend li[data-legend="seen"]::before {
+  background: var(--o-seen);
+}
+
+ul.legend li[data-legend="impl"]::before {
+  background: var(--o-impl);
+}
+
+ul.legend li[data-legend="fetched"]::before {
+  background: var(--o-fetched);
+}
+
+ul.legend li[data-legend="unknown"]::before {
+  background: var(--o-unknown);
+}
+
+/* 8. Impl clusters table. */
+#clusters table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#clusters td {
+  padding: 4px 0;
+}
+
+#clusters td[data-field="members"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-left: 16px;
+}
+
+/* 9. Links and the unreachable band. */
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.unreachable {
+  display: block;
+  background: var(--stalled);
+  color: #ffffff;
+  padding: 4px 10px;
+  border-radius: 3px;
+  min-height: 14px;
+  box-sizing: border-box;
+}
