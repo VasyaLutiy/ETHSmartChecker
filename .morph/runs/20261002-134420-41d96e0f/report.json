@@ -1,0 +1,253 @@
+{
+  "deck_id": "20261002-134420-41d96e0f",
+  "completed_at": "2026-10-02T13:51:06.030",
+  "branch": "morph/20261002-134420-41d96e0f",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ui-shell"
+    ],
+    [
+      "ui-shell-judge",
+      "ui-style"
+    ]
+  ],
+  "batch_ids": [
+    "local-185a21b067ba41f480646190681eb1b5",
+    "local-2e2243ec29694b6f8355bd32cfcd5610",
+    "local-2c5fd4d99fed4bc888822d88043f7033",
+    "local-81e162a6ec4747fb9cd3aa090bf3731f"
+  ],
+  "outcomes": {
+    "ui-shell": {
+      "custom_id": "ui-shell",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/main.ts",
+        "./dashboard/tests/shell.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-shell.r1.v2",
+      "acceptance_output": null,
+      "earlier_failures": "The previous answer returned dashboard/tests/shell.test.ts more than once, so there is no telling which body was meant. Answer again with exactly one 'FILE: <path>' block per file, for: dashboard/src/main.ts, dashboard/tests/shell.test.ts.",
+      "commit": "3a2951b64dd5da9ac92ae1c35c8144de622972f4",
+      "diffstat": [
+        {
+          "path": "dashboard/src/main.ts",
+          "insertions": 120,
+          "deletions": 17
+        },
+        {
+          "path": "dashboard/tests/shell.test.ts",
+          "insertions": 124,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/main.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/shell.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-shell-judge": {
+      "custom_id": "ui-shell-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/look.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-shell-judge.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\n== guard\n== judge\n FAIL  tests/look.examples.test.ts > Wire Page phase 17 (layout) > Wire Page ex6: panel structure, titles, select place, feed head, legend\nAssertionError: expected [ <h2 class=\"panel-title\"></h2>, <p class=\"panel-caption\"></p>, …(1) ] to include <select id=\"kind-filter\"><option value=\"ALL\"></option>\n FAIL  tests/look.examples.test.ts > Wire Page phase 17 (layout) > Wire Page ex7: feed-meta counts and newest time, or 'no events yet'\nAssertionError: expected '8 events · newest 08:47:50 UTC' to be 'no events yet' // Object.is equality\n FAIL  tests/look.examples.test.ts > Wire Page phase 17 (layout) > Wire Page ex10 (extra): feed-meta updates after an events poll appends an event\nAssertionError: expected '8 events · newest 08:47:50 UTC' to be '9 events · newest 08:00:00 UTC' // Object.is equality\n FAIL  tests/look.examples.test.ts > Wire Page phase 17 (layout) > Wire Page ex14 (extra): feed-head precedes the renderer's list in #events\nAssertionError: expected -1 to be less than -1\n FAIL  tests/look.examples.test.ts > Wire Page phase 17 (layout) > Wire Page ex15 (extra): legend sits before the renderer's data in #summary\nAssertionError: expected -1 to be less than -1\n Test Files  1 failed (1)\n      Tests  5 failed | 6 passed (11)\n",
+      "commit": "8f04cc315affc636b3fd79620a18fc6ae017742f",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/look.examples.test.ts",
+          "insertions": 243,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/look.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-style": {
+      "custom_id": "ui-style",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/style.css"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-style.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== build\n== layout (headless Chrome, Style Page examples 1-8)\nStyle Page ex4: row 8 height 29.1875\nStyle Page ex4: row 7 height 29.1875\nStyle Page ex4: row 6 height 29.1875\nStyle Page ex4: row 5 height 29.1875\nStyle Page ex4: row 4 height 29.1875\nStyle Page ex4: row 3 height 29.1875\nStyle Page ex4: row 2 height 29.1875\nStyle Page ex4: row 1 height 29.1875\nStyle Page ex5: hidden row 8 is 29 px high\nStyle Page ex5: hidden row 7 is 29 px high\nStyle Page ex5: hidden row 6 is 29 px high\nStyle Page ex5: hidden row 5 is 29 px high\nStyle Page ex5: hidden row 4 is 29 px high\nStyle Page ex5: hidden row 3 is 29 px high\nStyle Page ex5: hidden row 2 is 29 px high\nStyle Page ex5: hidden row 1 is 29 px high\n",
+      "commit": "b1209a5c2fc0c444a5a0d4be13c6c557db85b192",
+      "diffstat": [
+        {
+          "path": "dashboard/src/style.css",
+          "insertions": 465,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/style.css",
+            "level": "tree-sitter",
+            "status": "skipped",
+            "line": null,
+            "message": "grammar wheel not installed (pip install tree-sitter-css)"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "ui-shell.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945061-EECJAbo7xiXOXglBPULT",
+      "input_tokens": 14796,
+      "output_tokens": 4875,
+      "cost": 0.00279414,
+      "finish_reason": "stop"
+    },
+    "ui-shell.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945061-vSX2CwsNgL8kBUShrRgv",
+      "input_tokens": 14796,
+      "output_tokens": 5607,
+      "cost": 0.00301374,
+      "finish_reason": "stop"
+    },
+    "ui-shell.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945139-2bKIArUHJX3yi0HSStDA",
+      "input_tokens": 14882,
+      "output_tokens": 4839,
+      "cost": 0.00279108,
+      "finish_reason": "stop"
+    },
+    "ui-shell.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945139-18QxPrtkx7KOMaCQ4RmZ",
+      "input_tokens": 14882,
+      "output_tokens": 6894,
+      "cost": 0.002974428,
+      "finish_reason": "stop"
+    },
+    "ui-style.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945246-c5asphSO25yAwYQ8j6QI",
+      "input_tokens": 11389,
+      "output_tokens": 4213,
+      "cost": 0.00228891,
+      "finish_reason": "stop"
+    },
+    "ui-style.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945246-jaKIKXj5HAeeKr6HLIye",
+      "input_tokens": 11389,
+      "output_tokens": 2843,
+      "cost": 0.00187791,
+      "finish_reason": "stop"
+    },
+    "ui-shell-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945246-QJKG75f3a5Da0ox4qyeQ",
+      "input_tokens": 11940,
+      "output_tokens": 3807,
+      "cost": 0.0022167,
+      "finish_reason": "stop"
+    },
+    "ui-shell-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945246-REbsvIXLM2eR5HCQGtXw",
+      "input_tokens": 11940,
+      "output_tokens": 3954,
+      "cost": 0.0022608,
+      "finish_reason": "stop"
+    },
+    "ui-style.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945362-mV9PQSOA0FcyfYRPZ8X0",
+      "input_tokens": 20790,
+      "output_tokens": 3531,
+      "cost": 0.0029304,
+      "finish_reason": "stop"
+    },
+    "ui-shell-judge.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945362-BQKHkRZEwdaj9iCmklys",
+      "input_tokens": 16111,
+      "output_tokens": 3383,
+      "cost": 0.00246489,
+      "finish_reason": "stop"
+    },
+    "ui-style.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945362-Zqtih7Iw4Nz76jGH6vKR",
+      "input_tokens": 20790,
+      "output_tokens": 3835,
+      "cost": 0.001841952,
+      "finish_reason": "stop"
+    },
+    "ui-shell-judge.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790945362-LFaD9FtshvxWSw2y5s3h",
+      "input_tokens": 16111,
+      "output_tokens": 4610,
+      "cost": 0.001708638,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 179816,
+    "output_tokens": 52391,
+    "cost": 0.029163587999999997,
+    "requests": 12,
+    "requests_with_usage": 12
+  },
+  "orchestrator_usage": {}
+}
