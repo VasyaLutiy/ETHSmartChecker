@@ -41,11 +41,16 @@ Standard library only, Python 3.9+, one SQLite file, no key required.
      with different parameters.
    - **proxy** — EIP-1167 minimal clones grouped by implementation target.
    - **eip7702** — delegating EOAs grouped by delegation target.
+   - **impl** — standard EIP-1967 / UUPS / beacon proxies grouped by the address in
+     their implementation (or beacon) slot, once that slot has been read.
 4. **Similarity.** The Jaccard index of two contracts' selector sets, with three rules:
    when either side is an EIP-1167 clone or an EIP-7702 designator the score is 1.0 if both
    are delegations with the same kind and target and 0.0 otherwise; a standard EIP-1967 /
    UUPS / beacon proxy scores 0.0 against everything (its selectors say nothing about the
    protocol behind it); otherwise the plain Jaccard of the two non-empty selector sets.
+   Since phase 14 a standard proxy whose implementation slot has been read is scored by
+   its implementation's code instead: `similar`, `cluster`, `recheck` and the live alerts
+   see through it, and a seed on a proxy is a seed on its implementation.
 5. **Watchlist.** A *seed* is a stored contract with a label. Every new contract is
    scored against every seed as its block is ingested; a score at or above the
    threshold (default 0.8) is an `ALERT` line, printed before the next block is fetched.
@@ -98,15 +103,18 @@ four decimals.
 | `seed add <address> --label L [--fetch]` | add a seed; `--fetch` pulls the code from the public node when the address is not in the store, then prints the alerts for that seed |
 | `seed remove <address>` | drop a seed; its code and address stay |
 | `seed list` | the seeds |
-| `recheck [--min S] [--origin created\|seen\|fetched\|unknown]` | every stored address matching any seed |
+| `recheck [--min S] [--origin created\|seen\|fetched\|impl\|unknown]` | every stored address matching any seed |
 | `risk [--flag selfdestruct\|mutable_delegatecall]` | stored addresses whose code carries at least one flag |
 | `report [--out PATH]` | write `PATH.html` and `PATH.json`, print the two paths |
 
 An `ALERT` record is `ALERT <address> <seed_address> <label> <score> <origin>`, where
 `origin` says how the address entered the store: `created` (it was the `contractAddress`
 of a receipt, a fresh deployment), `seen` (it was a transaction target or a log emitter:
-an existing contract that was touched), `fetched` (`seed add --fetch`) or `unknown`
-(stored before this field existed). A `seen` alert on an old contract is as real as a
+an existing contract that was touched), `fetched` (`seed add --fetch`), `impl` (the
+implementation of a standard proxy, fetched on the proxy's behalf) or `unknown`
+(stored before this field existed). An `UPGRADE <proxy> <old_impl> <new_impl> <block>`
+record is printed by `listen` and `backfill` when a known proxy's implementation slot
+reads a different address than the one stored. A `seen` alert on an old contract is as real as a
 `created` one: in the 1 Oct 2026 run a Balancer V1 pool from 2020 alerted when a router
 swapped through it, with the same bytecode as the pool drained in Aug 2026. `cluster` and
 `similar` records end with the risk flags of the address (`selfdestruct`,
@@ -134,11 +142,16 @@ chain's own rate, with an empty stderr over 20 minutes.
   instances of a *bug class*. Good seeds are contracts that are deployed serially:
   factory pools, vault and strategy templates, token templates, clone families. A
   unique protocol contract as a seed will never alert.
-- **Standard proxies are invisible on purpose.** Since a TransparentUpgradeableProxy
-  seed produced 380 false alerts on the first live base, any code carrying the EIP-1967
-  implementation or beacon slot scores 0.0. Families whose instances are such proxies
-  (Ajna, Arrakis, Yearn V3 strategies, …) cannot be caught by selector similarity; that
-  needs resolving the implementation slot, which is not implemented.
+- **Standard proxies are seen through their implementation slot.** A
+  TransparentUpgradeableProxy seed produced 380 false alerts on the first live base, so
+  since phase 9 any code carrying the EIP-1967 implementation or beacon slot scores 0.0
+  by itself. Since phase 14 the slot is read (`eth_getStorageAt`, one call per new proxy
+  and per known proxy touched by a block) and the proxy is scored by its implementation:
+  on the 1 Oct base the seed proxy's implementation is shared by 23 of 120 proxies with
+  the same bytecode, and a seed on the implementation finds every one of them. A proxy
+  whose slot cannot be read, a beacon proxy (the beacon is stored, not called), a UUPS
+  implementation carrying the slot constant itself, and a clone with immutable args (the
+  Ajna pools: 182-byte code, no slot) still score 0.0.
 - **EIP-1167 clones are caught by target.** Two minimal proxies pointing at the same
   implementation score 1.0, so one Abracadabra cauldron or one Kashi pair as a seed
   covers the whole clone family.
@@ -158,7 +171,8 @@ chain's own rate, with an empty stderr over 20 minutes.
 | `recheck` over 18 594 codes and 8 seeds | 0.54 s |
 | `report` over 18 594 codes | 33 s, html and json byte-identical on rerun |
 | a factory pool seed (`seed add --fetch`) | 0.35 s, alerts printed immediately |
-| test suite | 357 tests, offline, real bytecode fixtures under `tests/fixtures/` |
+| test suite | 389 tests, offline, real bytecode fixtures under `tests/fixtures/` |
+| `listen --source publicnode` with the slot reads (phase 14, 10 min, 1 Oct) | 32 blocks, 281 of 5 168 proxy rows resolved, 0 `UPGRADE`; 18.8 s per block, behind the chain — the ~29 slot re-reads per block run sequentially |
 
 ## Project layout
 
@@ -167,7 +181,7 @@ ethsc/
   evm.py          disassembly, metadata stripping, selectors, proxy detection, skeleton, risk flags
   fingerprint.py  the Fingerprint record and the similarity score
   store.py        SQLite: codes by content hash, addresses, seeds, progress, credit ledger
-  cluster.py      L0/L1/proxy/eip7702 clusters, similar, watchlist match and recheck
+  cluster.py      L0/L1/proxy/eip7702/impl clusters, similar, watchlist match and recheck
   rpc.py          the only module that touches the network: JSON-RPC, retries, credits
   ingest.py       one block: candidates → get_code → store → alerts; follow_chain
   cli.py          python -m ethsc

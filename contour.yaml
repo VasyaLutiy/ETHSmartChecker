@@ -410,10 +410,10 @@ System:
               when: 'score_fingerprints is called'
               then: '0.0 all three times'
               ref: 'similarity(b"", code) == 0.0'
-            - given: 'the 19 fixtures tests/fixtures/code_*.hex'
-              when: 'score_fingerprints(fingerprint(a), fingerprint(b)) and similarity(a, b) are called for all 361 ordered pairs (a, b), a == b included'
-              then: 'the two floats are equal (==) on all 361 pairs'
-              ref: 'on the live 30.09 base: 15018 recheck pairs, 0 mismatches (measured 30.09)'
+            - given: 'the 20 fixtures tests/fixtures/code_*.hex (19 of phase 11 plus code_impl_72b97171.hex of phase 14)'
+              when: 'score_fingerprints(fingerprint(a), fingerprint(b)) and similarity(a, b) are called for all 400 ordered pairs (a, b), a == b included'
+              then: 'the two floats are equal (==) on all 400 pairs'
+              ref: 'on the live 30.09 base: 15018 recheck pairs, 0 mismatches (measured 30.09); 361 pairs of 19 fixtures until phase 14'
         - name: Similarity Score
           description: >
             similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: a

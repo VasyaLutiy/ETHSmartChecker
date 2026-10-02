@@ -8,7 +8,10 @@ every list the store returns is sorted; addresses are stored lowercase.
 Origin (phase 13): the store only carries the text a caller gives it
 (put_address's origin) and reads it back through origins(); it never
 decides what "created" or "seen" means, and it never rewrites the
-origin of a row already stored.
+origin of a row already stored. Implementation (phase 14): the
+"implementation" column carries whatever address a caller gives
+set_implementation; the store never reads a slot and never decides
+what the value means -- that is ingest's job.
 """
 
 import json
@@ -34,7 +37,8 @@ CREATE TABLE IF NOT EXISTS addresses (
     address TEXT PRIMARY KEY,
     code_id TEXT,
     block INTEGER,
-    origin TEXT
+    origin TEXT,
+    implementation TEXT
 );
 CREATE INDEX IF NOT EXISTS addresses_code_id ON addresses(code_id);
 CREATE TABLE IF NOT EXISTS progress (
@@ -73,6 +77,14 @@ class Store(object):
             # in the file and reads back as "unknown" through origins().
             self._conn.execute(
                 "ALTER TABLE addresses ADD COLUMN origin TEXT")
+            self._conn.commit()
+            address_columns.append("origin")
+        if "implementation" not in address_columns:
+            # Phase 14: no UPDATE of old rows -- their implementation
+            # stays NULL in the file; set_implementation is the one
+            # write that changes a stored row.
+            self._conn.execute(
+                "ALTER TABLE addresses ADD COLUMN implementation TEXT")
             self._conn.commit()
         self._fill_std_proxy()
         self._conn.commit()
@@ -186,6 +198,57 @@ class Store(object):
             for address, origin in rows
         }
 
+    def set_implementation(self, address: str, implementation: str) -> None:
+        """Write the implementation address a proxy delegates through.
+
+        The one write that changes a stored row (phase 14): UPDATE, both
+        values lowercased, committed. Nothing is decided here -- the
+        caller gives the address exactly as it means it (an
+        EIP-1967/UUPS implementation or a beacon address). An address
+        the store does not hold changes nothing and does not raise; a
+        later call overwrites (the upgrade case).
+        """
+        self._conn.execute(
+            "UPDATE addresses SET implementation = ? WHERE address = ?",
+            (implementation.lower(), address.lower()),
+        )
+        self._conn.commit()
+
+    def implementation(self, address: str) -> Optional[str]:
+        """The stored implementation of address, or None.
+
+        None for an unknown address, a stored NULL, or an address whose
+        code is not a standard proxy -- the column is written for
+        standard proxies only, but this reader does not check that.
+        """
+        row = self._conn.execute(
+            "SELECT implementation FROM addresses WHERE address = ?",
+            (address.lower(),),
+        ).fetchone()
+        if row is None:
+            return None
+        return row[0]
+
+    def implementations(self) -> dict:
+        """{address: {"implementation", "code_id"}} over standard proxies.
+
+        One SELECT joining addresses with codes (std_proxy = 1) and, by
+        implementation, with addresses again for the implementation's
+        code_id (None when the implementation is unknown, not stored,
+        or stored without code). An address without code, or whose code
+        is not a standard proxy, is absent. An empty database gives {}.
+        """
+        rows = self._conn.execute(
+            "SELECT a.address, a.implementation, i.code_id"
+            " FROM addresses a JOIN codes c ON a.code_id = c.code_id"
+            " LEFT JOIN addresses i ON i.address = a.implementation"
+            " WHERE c.std_proxy = 1"
+        ).fetchall()
+        return {
+            address: {"implementation": implementation, "code_id": code_id}
+            for address, implementation, code_id in rows
+        }
+
     # -- Read Codes In Bulk --------------------------------------------------
 
     def fingerprints(self) -> List[dict]:
@@ -254,6 +317,14 @@ class Store(object):
         Raises KeyError(address) when the address has no stored code
         (unknown, or an EOA). Adding twice keeps one seed with the
         latest label.
+
+        Seeding through the implementation (phase 14): when address is a
+        standard proxy whose implementations() entry carries a code_id
+        (its implementation is stored with code), the seed's code_id is
+        the implementation's -- the seed row's address stays the
+        proxy's address. Otherwise the address's own code_id, as
+        before. Read at the time of the call; a later set_implementation
+        does not move the seed.
         """
         address = address.lower()
         row = self._conn.execute(
@@ -261,10 +332,14 @@ class Store(object):
         ).fetchone()
         if row is None or row[0] is None:
             raise KeyError(address)
+        code_id = row[0]
+        impl_entry = self.implementations().get(address)
+        if impl_entry is not None and impl_entry["code_id"] is not None:
+            code_id = impl_entry["code_id"]
         self._conn.execute(
             "INSERT OR REPLACE INTO seeds (address, code_id, label)"
             " VALUES (?, ?, ?)",
-            (address, row[0], label),
+            (address, code_id, label),
         )
         self._conn.commit()
 

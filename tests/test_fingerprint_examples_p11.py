@@ -86,11 +86,11 @@ class TestFingerprintExamplesP11(unittest.TestCase):
                          msg="Score Fingerprints example 4: None both")
 
     def test_score_fingerprints_example_5(self):
-        """Score Fingerprints example 5: over all 361 ordered pairs of the
-        19 code_*.hex fixtures, score_fingerprints(fingerprint(a),
+        """Score Fingerprints example 5: over all 400 ordered pairs of the
+        20 code_*.hex fixtures (19 + code_impl_72b97171.hex of phase 14), score_fingerprints(fingerprint(a),
         fingerprint(b)) == similarity(a, b)."""
         paths = sorted(glob.glob(os.path.join(FIXTURES, "code_*.hex")))
-        self.assertEqual(len(paths), 19, msg="Score Fingerprints example 5: 19 fixtures")
+        self.assertEqual(len(paths), 20, msg="Score Fingerprints example 5: 20 fixtures")
         codes = [load_hex(os.path.basename(path)) for path in paths]
         fingerprints = [fingerprint(code) for code in codes]
         count = 0
@@ -101,7 +101,7 @@ class TestFingerprintExamplesP11(unittest.TestCase):
                                             codes[fingerprints.index(fp_b)]),
                                  msg="Score Fingerprints example 5: pair %d" % count)
                 count += 1
-        self.assertEqual(count, 361, msg="Score Fingerprints example 5: 361 pairs")
+        self.assertEqual(count, 400, msg="Score Fingerprints example 5: 400 pairs")
 
 
 if __name__ == "__main__":

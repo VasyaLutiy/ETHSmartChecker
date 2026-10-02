@@ -94,9 +94,9 @@ class FakeRpc(object):
     """A duck-typed rpc for ethsc.ingest.follow_chain, offline.
 
     FakeRpc(codes=None, receipts=None, head="0x18dea21", fail=None,
-    null_receipts=False) -- .call(method, params) answers from the
-    fixture data: codes=None defaults to block_codes(), receipts=None
-    to block_receipts(); eth_blockNumber returns head;
+    null_receipts=False, storage=None) -- .call(method, params) answers
+    from the fixture data: codes=None defaults to block_codes(),
+    receipts=None to block_receipts(); eth_blockNumber returns head;
     eth_getBlockReceipts returns the receipt list, or None when
     null_receipts is True (the call is still recorded); eth_getCode
     returns codes[params[0]] (KeyError for an address outside the
@@ -105,15 +105,24 @@ class FakeRpc(object):
     call, answered or not, is recorded in self.calls as a
     (method, list(params)) pair, appended under a lock, because
     phase-10 code calls this object from worker threads.
+
+    Phase 14: eth_getStorageAt answers storage[params[0]][params[1]]
+    when storage is a dict, the zero word ("0x" + 64 zeros) when the
+    address or the slot is absent from it, and raises KeyError(method)
+    -- as every other unhandled method already did -- when storage is
+    None (the default: a node that refuses the slot, keeping phase 9).
     """
 
+    _ZERO_WORD = "0x" + "0" * 64
+
     def __init__(self, codes=None, receipts=None, head="0x18dea21",
-                 fail=None, null_receipts=False):
+                 fail=None, null_receipts=False, storage=None):
         self._codes = codes
         self._receipts = receipts
         self._head = head
         self._fail = fail
         self._null_receipts = null_receipts
+        self._storage = storage
         self.calls = []
         self._lock = threading.Lock()
 
@@ -136,6 +145,11 @@ class FakeRpc(object):
             else:
                 codes = self._codes
             return codes[params[0]]
+        if method == "eth_getStorageAt":
+            if self._storage is None:
+                raise KeyError(method)
+            return self._storage.get(params[0], {}).get(
+                params[1], self._ZERO_WORD)
         raise KeyError(method)
 
 
