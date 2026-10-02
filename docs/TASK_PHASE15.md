@@ -267,4 +267,57 @@ final test count; the glm bill (executors) separate from the scout's bill; the l
 
 ## 11. Actual
 
-_(after the run)_
+**Run** `20261002-085045-7982de96`, glm (z-ai/glm-5.3-flash), route sync. It ran 08:50:45–09:38:55,
+**48 min** over 4 generations. **9 of 9 cards accepted, 0 failed, 0 skipped.** 19 requests,
+**$0.160** for the executors. The scout is a separate bill: $0.0187, 14.4 min, `spent` reads 6 /
+calls 30 / rounds 9, `stop_reason` "budget ran out", seed `--seed-from-primer` plus a ripple
+question in the task.
+
+| gen | card | result |
+|---|---|---|
+| 1 | store | v1, 1st attempt |
+| 1 | helpers-p15 | retry 1: the first answer called an undefined `_fingerprint` |
+| 2 | ingest | v1, 1st attempt |
+| 2 | store-judge | v1, 1st attempt |
+| 2 | dashboard | retry 1, v2; 3 red variants before it: L0 mixed with other levels and the level filter ignored (15 L0 rows instead of 7; `impl` answered L1 rows); `text/html` without `; charset=utf-8`; `/assets/app.js` answered 404 |
+| 3 | cli | v1, 1st attempt |
+| 3 | dashboard-judge | v1, 1st attempt |
+| 3 | ingest-judge | retry 1: its own test compared a list nested one level too deep |
+| 4 | cli-judge | 1st attempt |
+
+- Every red attempt was a fault in the code (or in the judge's own test), caught by the probe or
+  the judge file. **0 criterion faults**: the dry runs before the gate (stub targets, and a stub
+  `dashboard.py` for the dashboard and cli probes) went red per example with readable lines.
+- Product +730/−9 lines: `dashboard.py` 362 (new), `store.py` +268, `ingest.py` +57, `cli.py` +52.
+  Helpers +91. Tests: 4 smoke files +441, 4 judges +1473. **448 tests** (393 + 55), all green,
+  also with the live fixtures added.
+- Recon: of the existing files the deck changes, the scout named **3 of 4** (store, ingest, cli; it
+  cannot name the new files). **One role moved**: `tests/helpers.py`, context for the scout, a
+  target here (`helpers-p15`, `legacy_db`). The ripple spike (0 of 393 red) agreed with the scout.
+  `deck check` caught one slice error of mine (store read `tests/helpers.py`, which `helpers-p15`
+  rewrites in generation 0), fixed before the run (commit 39df4ac).
+
+**Live acceptance (§3.3)**, branch code, copy of `smoke/20261001-night2/ethsc.sqlite`,
+public node:
+
+| step | result |
+|---|---|
+| 0. `dashboard` alone on the old phase-13 file | sha256 unchanged, no `-wal`/`-shm`/`-journal`; Ctrl-C exit 0, stderr only `serving http://127.0.0.1:8090/`; summary 0.126 s, clusters impl 0.354 s cold / 0.002 s warm, health 0.016 s |
+| first writable open, progress set to head−1 (26103517) | migrated in place (events, `updated_at`), journal mode `wal` |
+| 1. `listen --source publicnode` 10 min (09:43:25–09:53:25 BST) + `dashboard` + a poller once a second over health, events (`after=last_id`, limit 500), summary (545 rounds) | **0 "database is locked"** in listen stderr (empty), dashboard stderr (one start line) and the poller (0 errors, 0 non-200); listen exit 0 on SIGINT; **52 blocks in 600 s (11.5 s per block, keeps up)**; lag 4 blocks, measured 38 s after the stop (≈ 3 new chain blocks in that time; ≈ 1 at the stop, not measured directly) |
+| 2. printed lines vs events | 8 ALERT lines (LaunchToken family, origin seen), 0 UPGRADE; **8 events, ids 1..8, the same fields, each exactly once** |
+| 3. timings on 217 009 addresses | poller max: summary 0.164 s, health 0.017 s, events 0.004 s; after the listen: summary 0.126 s, clusters impl **0.337 s cold** (20 rows; 454 implementations resolved), 0.001 s warm |
+| 3. heartbeat | `seconds_since_progress` median 6, **max 34; 3 of 545 samples > 30** |
+| 4. fixtures | `tests/fixtures/dashboard_{health,events,summary,clusters_impl}.json`: health from the poller during the run, the other three after it |
+
+- **One criterion missed: "seconds_since_progress < 30".** listen polls the head every 12 s
+  (`--interval 12`). When the chain skips a slot, the next block comes 24 s after the last one,
+  and a poll can land just before it is ingested: 24 + up to 12 > 30. That is how the bound was
+  written, not a stall: the 52 blocks were all walked, with no lag. The right bound for an alive
+  listener is about 2 × slot + interval ≈ 36 s, or better, "progress lag in blocks" from a head
+  the dashboard does not have. A frontend should show "behind" at about 60 s, not 30.
+- Predictions (§9): 9 cards, each ≤ 3 attempts — **hit** (max 2); at least one regeneration on
+  store or dashboard — **hit** (dashboard); tests 440..495 — **hit** (448); 0 "locked" —
+  **hit**; summary 0.2..0.8 s — **missed** (0.126 s, faster); clusters impl cold 0.4..1.0 s —
+  **missed** (0.337 s, faster), warm < 0.05 s — **hit**; 0..5 ALERT lines — **missed** (8, all
+  in events).

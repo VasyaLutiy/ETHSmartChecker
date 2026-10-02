@@ -11,11 +11,18 @@ decides what "created" or "seen" means, and it never rewrites the
 origin of a row already stored. Implementation (phase 14): the
 "implementation" column carries whatever address a caller gives
 set_implementation; the store never reads a slot and never decides
-what the value means -- that is ingest's job.
+what the value means -- that is ingest's job. Phase 15: a writable
+open switches the file to journal_mode=WAL, records the live stream
+in the events table (add_events / events / event_counts), stamps
+set_progress with the UTC time read back by progress_at, aggregates
+origins through origin_counts, and Store(path, readonly=True) opens
+an existing file for reading only, raising ReadOnlyStoreError from
+every write method and never migrating the file.
 """
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from ethsc.evm import is_std_proxy
@@ -43,7 +50,8 @@ CREATE TABLE IF NOT EXISTS addresses (
 CREATE INDEX IF NOT EXISTS addresses_code_id ON addresses(code_id);
 CREATE TABLE IF NOT EXISTS progress (
     key TEXT PRIMARY KEY,
-    block INTEGER
+    block INTEGER,
+    updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS seeds (
     address TEXT PRIMARY KEY,
@@ -55,14 +63,58 @@ CREATE TABLE IF NOT EXISTS ledger (
     method TEXT,
     credits INTEGER
 );
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY,
+    kind TEXT,
+    block INTEGER,
+    at TEXT,
+    address TEXT,
+    seed_address TEXT,
+    label TEXT,
+    score REAL,
+    origin TEXT,
+    old_impl TEXT,
+    new_impl TEXT
+);
 """
+
+_EVENT_KINDS = ("ALERT", "UPGRADE")
+
+
+class ReadOnlyStoreError(Exception):
+    """Raised by a write method of a Store opened with readonly=True."""
+
+
+def _low(value):
+    """Lowercase an address-like text; pass None through."""
+    if isinstance(value, str):
+        return value.lower()
+    return value
 
 
 class Store(object):
     """One SQLite file holding the Code Database."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, readonly: bool = False) -> None:
+        self._readonly = readonly
+        if readonly:
+            self._conn = sqlite3.connect(
+                "file:" + path + "?mode=ro", uri=True)
+            # Tolerate exactly the three newest additions missing from an
+            # older file: a read cannot add them, so the readers ask these
+            # flags instead of writing. Detected once, at open.
+            self._ro_no_events = not self._has_table("events")
+            self._ro_no_updated = (
+                "updated_at" not in self._columns("progress"))
+            self._ro_no_impl = (
+                "implementation" not in self._columns("addresses"))
+            return
         self._conn = sqlite3.connect(path)
+        # WAL first, before anything else touches the file: a reader then
+        # never blocks the listener's writes and the listener never blocks
+        # a reader. The pragma is persistent in the file; an already-WAL
+        # file is left as it is.
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         columns = [row[1] for row in
                    self._conn.execute("PRAGMA table_info(codes)").fetchall()]
@@ -86,8 +138,32 @@ class Store(object):
             self._conn.execute(
                 "ALTER TABLE addresses ADD COLUMN implementation TEXT")
             self._conn.commit()
+        progress_columns = [row[1] for row in self._conn.execute(
+            "PRAGMA table_info(progress)").fetchall()]
+        if "updated_at" not in progress_columns:
+            # Phase 15: no UPDATE of old rows -- the progress row keeps
+            # NULL until the next set_progress stamps it.
+            self._conn.execute(
+                "ALTER TABLE progress ADD COLUMN updated_at TEXT")
+            self._conn.commit()
         self._fill_std_proxy()
         self._conn.commit()
+
+    def _columns(self, table: str) -> List[str]:
+        return [row[1] for row in
+                self._conn.execute(
+                    "PRAGMA table_info(%s)" % table).fetchall()]
+
+    def _has_table(self, name: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (name,),
+        ).fetchone()
+        return row is not None
+
+    def _guard_write(self) -> None:
+        if self._readonly:
+            raise ReadOnlyStoreError("store opened read-only")
 
     def _fill_std_proxy(self) -> None:
         """Fill every NULL std_proxy from is_std_proxy of the stored code.
@@ -121,6 +197,7 @@ class Store(object):
         Repeated calls with the same code return the same code_id, add
         no rows and do not raise.
         """
+        self._guard_write()
         fp = fingerprint(code)
         code_id = fp["code_id"]
         self._conn.execute(
@@ -149,6 +226,7 @@ class Store(object):
         included) and do not raise. origin is stored verbatim (None as
         NULL); the store does not validate the text.
         """
+        self._guard_write()
         self._conn.execute(
             "INSERT OR IGNORE INTO addresses (address, code_id, block,"
             " origin) VALUES (?, ?, ?, ?)",
@@ -198,6 +276,27 @@ class Store(object):
             for address, origin in rows
         }
 
+    def origin_counts(self, since_block: Optional[int] = None) -> dict:
+        """{origin: count} over the addresses table (phase 15).
+
+        One SELECT ... GROUP BY; a NULL origin counts under "unknown".
+        With since_block given, only the rows whose block >= since_block
+        count. Every addresses row counts, with or without code. An
+        empty database gives {}.
+        """
+        if since_block is None:
+            rows = self._conn.execute(
+                "SELECT COALESCE(origin, 'unknown') AS o, COUNT(*)"
+                " FROM addresses GROUP BY o"
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT COALESCE(origin, 'unknown') AS o, COUNT(*)"
+                " FROM addresses WHERE block >= ? GROUP BY o",
+                (since_block,),
+            ).fetchall()
+        return {origin: int(count) for origin, count in rows}
+
     def set_implementation(self, address: str, implementation: str) -> None:
         """Write the implementation address a proxy delegates through.
 
@@ -208,6 +307,7 @@ class Store(object):
         the store does not hold changes nothing and does not raise; a
         later call overwrites (the upgrade case).
         """
+        self._guard_write()
         self._conn.execute(
             "UPDATE addresses SET implementation = ? WHERE address = ?",
             (implementation.lower(), address.lower()),
@@ -221,6 +321,8 @@ class Store(object):
         code is not a standard proxy -- the column is written for
         standard proxies only, but this reader does not check that.
         """
+        if self._readonly and self._ro_no_impl:
+            return None
         row = self._conn.execute(
             "SELECT implementation FROM addresses WHERE address = ?",
             (address.lower(),),
@@ -238,6 +340,18 @@ class Store(object):
         or stored without code). An address without code, or whose code
         is not a standard proxy, is absent. An empty database gives {}.
         """
+        if self._readonly and self._ro_no_impl:
+            # A phase-13 file read-only: the column cannot be added, so
+            # every standard-proxy address reads as unresolved.
+            rows = self._conn.execute(
+                "SELECT a.address FROM addresses a"
+                " JOIN codes c ON a.code_id = c.code_id"
+                " WHERE c.std_proxy = 1"
+            ).fetchall()
+            return {
+                address: {"implementation": None, "code_id": None}
+                for (address,) in rows
+            }
         rows = self._conn.execute(
             "SELECT a.address, a.implementation, i.code_id"
             " FROM addresses a JOIN codes c ON a.code_id = c.code_id"
@@ -302,12 +416,34 @@ class Store(object):
         return row[0]
 
     def set_progress(self, block: int) -> None:
-        """Store (overwrite) the last fully ingested block."""
+        """Store (overwrite) the last fully ingested block.
+
+        Phase 15: also writes updated_at, the UTC time of the call as
+        text "YYYY-MM-DDTHH:MM:SSZ" -- the listener's heartbeat.
+        """
+        self._guard_write()
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._conn.execute(
-            "INSERT OR REPLACE INTO progress (key, block) VALUES (?, ?)",
-            ("progress", block),
+            "INSERT OR REPLACE INTO progress (key, block, updated_at)"
+            " VALUES (?, ?, ?)",
+            ("progress", block, now),
         )
         self._conn.commit()
+
+    def progress_at(self) -> Optional[str]:
+        """The updated_at of the progress row, or None (phase 15).
+
+        None on a fresh db, and None for a progress row written before
+        phase 15 until the next set_progress stamps it.
+        """
+        if self._readonly and self._ro_no_updated:
+            return None
+        row = self._conn.execute(
+            "SELECT updated_at FROM progress WHERE key = ?", ("progress",)
+        ).fetchone()
+        if row is None:
+            return None
+        return row[0]
 
     # -- Manage Watchlist ---------------------------------------------------
 
@@ -326,6 +462,7 @@ class Store(object):
         before. Read at the time of the call; a later set_implementation
         does not move the seed.
         """
+        self._guard_write()
         address = address.lower()
         row = self._conn.execute(
             "SELECT code_id FROM addresses WHERE address = ?", (address,)
@@ -362,6 +499,7 @@ class Store(object):
         that address stay as they were, so the address can be seeded
         again with add_seed and no rpc call.
         """
+        self._guard_write()
         address = address.lower()
         cursor = self._conn.execute(
             "DELETE FROM seeds WHERE address = ?", (address,)
@@ -373,6 +511,7 @@ class Store(object):
 
     def spend(self, day: str, method: str, credits: int) -> None:
         """Add credits to the ledger of a UTC day ("YYYY-MM-DD")."""
+        self._guard_write()
         self._conn.execute(
             "INSERT INTO ledger (day, method, credits) VALUES (?, ?, ?)",
             (day, method, credits),
@@ -426,3 +565,120 @@ class Store(object):
             " GROUP BY day ORDER BY day ASC"
         ).fetchall()
         return [{"day": row[0], "credits": int(row[1])} for row in rows]
+
+    # -- Record Events -------------------------------------------------------
+
+    def add_events(self, events: List[dict]) -> None:
+        """Write a list of Event dicts in one transaction (phase 15).
+
+        Each element carries kind ("ALERT" or "UPGRADE"), block and at,
+        plus the fields of its kind: an ALERT carries address,
+        seed_address, label, score, origin; an UPGRADE carries address,
+        old_impl, new_impl. A key the element lacks is stored NULL;
+        extra keys are ignored. Addresses are stored lowercase. The
+        rows get increasing ids in list order. The whole list is one
+        transaction: a kind other than ALERT or UPGRADE anywhere in it
+        raises ValueError and nothing of the list is written.
+        add_events([]) writes nothing and does not raise.
+        """
+        self._guard_write()
+        if not events:
+            return
+        rows = []
+        for event in events:
+            kind = event.get("kind")
+            if kind not in _EVENT_KINDS:
+                raise ValueError("bad event kind: %r" % (kind,))
+            rows.append(
+                (
+                    kind,
+                    event.get("block"),
+                    event.get("at"),
+                    _low(event.get("address")),
+                    _low(event.get("seed_address")),
+                    event.get("label"),
+                    event.get("score"),
+                    event.get("origin"),
+                    _low(event.get("old_impl")),
+                    _low(event.get("new_impl")),
+                )
+            )
+        self._conn.executemany(
+            "INSERT INTO events (kind, block, at, address, seed_address,"
+            " label, score, origin, old_impl, new_impl)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        self._conn.commit()
+
+    def events(self, after_id: int = 0, limit: int = 100) -> List[dict]:
+        """The newest `limit` events with id > after_id, id descending.
+
+        Each Event is a dict with exactly the eleven keys id, kind,
+        block, at, address, seed_address, label, score, origin,
+        old_impl, new_impl; a stored NULL reads back as None, score as
+        a float. A file without the events table (read-only open of an
+        older db) gives [].
+        """
+        if self._readonly and self._ro_no_events:
+            return []
+        rows = self._conn.execute(
+            "SELECT id, kind, block, at, address, seed_address, label,"
+            " score, origin, old_impl, new_impl FROM events"
+            " WHERE id > ? ORDER BY id DESC LIMIT ?",
+            (after_id, limit),
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "kind": row[1],
+                "block": row[2],
+                "at": row[3],
+                "address": row[4],
+                "seed_address": row[5],
+                "label": row[6],
+                "score": None if row[7] is None else float(row[7]),
+                "origin": row[8],
+                "old_impl": row[9],
+                "new_impl": row[10],
+            }
+            for row in rows
+        ]
+
+    def event_counts(self) -> dict:
+        """Counts per kind and per seed of the events table (phase 15).
+
+        {"kinds": {"ALERT": a, "UPGRADE": u}, "seeds": [{"label",
+        "seed_address", "count"}, ...]}: kinds has both keys always
+        (0 when absent); seeds groups the ALERT rows by (seed_address,
+        label), sorted by count descending, then label, then
+        seed_address. A file without the events table gives zeros.
+        """
+        no_events = self._readonly and self._ro_no_events
+        if no_events:
+            kinds = {}
+        else:
+            kinds = dict(self._conn.execute(
+                "SELECT kind, COUNT(*) FROM events GROUP BY kind"
+            ).fetchall())
+        if no_events:
+            seeds = []
+        else:
+            rows = self._conn.execute(
+                "SELECT seed_address, label, COUNT(*) FROM events"
+                " WHERE kind = 'ALERT' GROUP BY seed_address, label"
+            ).fetchall()
+            seeds = [
+                {"label": label, "seed_address": seed_address,
+                 "count": int(count)}
+                for seed_address, label, count in rows
+            ]
+        seeds.sort(key=lambda s: (-s["count"], s["label"],
+                                  s["seed_address"]))
+        return {
+            "kinds": {
+                "ALERT": int(kinds.get("ALERT", 0)),
+                "UPGRADE": int(kinds.get("UPGRADE", 0)),
+            },
+            "seeds": seeds,
+        }
