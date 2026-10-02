@@ -78,8 +78,10 @@ is `dashboard/dist/`, which `ethsc dashboard --static` already serves (default
 - `dashboard/tests/helpers.ts` (the one stub module; signatures are the contract):
   - `type FixtureName = "health" | "events" | "summary" | "clusters_impl"`;
     `loadFixture(name): unknown` — a fresh `JSON.parse` of
-    `tests/fixtures/dashboard_<name>.json`, the path resolved from `import.meta.url`
-    (`../../tests/fixtures/`), never a copy.
+    `tests/fixtures/dashboard_<name>.json`, the path built with `node:path` from
+    `fileURLToPath(import.meta.url)` (`../../tests/fixtures/` from `dashboard/tests/`), never
+    a copy. Not `new URL(…)`: under the happy-dom environment the global `URL` is happy-dom's,
+    and `fs.readFileSync` refuses it ("The URL must be of scheme file", measured 02.10).
   - `interface FixtureEvent` — the eleven Event keys with the TypeScript types of
     `DashEvent` (declared here, structurally equal; helpers does not import `src/`).
   - `fixtureEvents(): FixtureEvent[]` — fresh copies of the 8 fixture events.
@@ -190,7 +192,8 @@ tree.
 
 - Cards by file ownership, generations by physical reading. Run A: `ui-scaffold`. Run B,
   generation 0: `ui-api`, `ui-format`, `ui-feed` (each reads only the scaffold and the
-  fixtures; feed is generic over `{id}` / `{kind}` and reads no `api.ts`). Generation 1:
+  fixtures; feed is generic over `{id}` / `{kind}` and format types its origin parameter
+  itself, so neither imports anything). Generation 1:
   `ui-render` (reads `api.ts`, `format.ts`) and the judges of generation 0. Generation 2:
   `ui-main` (reads `api.ts`, `feed.ts`, `render/*.ts`) and `ui-render-judge`. Generation 3:
   `ui-main-judge`. No file written in a generation is in the slice of a neighbour in it.

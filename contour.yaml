@@ -3277,8 +3277,8 @@ System:
             A fetcher never throws and never logs: a rejected fetch, a status
             outside 200..299 (the error text names the status), a json()
             that rejects and a body its parser refuses all give {ok: false,
-            error: a non-empty one-line string}. Only this module calls
-            fetch, and it calls only the fetchFn it is given.
+            error: a non-empty one-line string}. It never names the global
+            fetch: it calls only the fetchFn it is given.
           guardrails: [Frontend Isolation]
           steps:
             - reads: Dashboard JSON
@@ -3366,9 +3366,11 @@ System:
             "live" | "behind" | "stalled" | "unknown"; shortAddress(address:
             string) -> string; etherscanUrl(address: string) -> string;
             formatTime(at: string) -> string; originShares(counts:
-            OriginCounts) -> {origin: OriginKey, count: number, percent:
-            number}[] (OriginCounts and OriginKey imported as types from
-            ./api).
+            Readonly<Record<"created" | "seen" | "impl" | "fetched" |
+            "unknown", number>>) -> {origin: string, count: number, percent:
+            number}[]. The module imports nothing (an OriginCounts of ./api
+            is assignable to the parameter), so it is cut in the same
+            generation as api.ts.
           behavior: >
             formatScore: four decimals (toFixed(4)), "" for null. formatAge:
             under 60 "<n> s", under 3600 "<floor(n/60)> min", otherwise
@@ -3950,12 +3952,14 @@ Guardrail:
     description: >
       In dashboard/src (phase 16): no explicit any; no innerHTML,
       outerHTML, insertAdjacentHTML or document.write (data reaches the DOM
-      through textContent and setAttribute only); only src/api.ts names
-      fetch, XMLHttpRequest or WebSocket; only src/main.ts names
-      setInterval, setTimeout, clearInterval, document or window;
-      src/format.ts and src/feed.ts import nothing but types from ./api;
-      no module imports a package (relative imports only). Checked on the
-      TypeScript syntax tree, never on the text.
+      through textContent and setAttribute only); no console; only
+      src/main.ts names the globals fetch, XMLHttpRequest, WebSocket,
+      setInterval, setTimeout, clearInterval, clearTimeout, document,
+      window or globalThis (api.ts calls the fetchFn it is given, render
+      reaches the DOM through root.ownerDocument); src/format.ts and
+      src/feed.ts import nothing; no module imports a package (relative
+      imports only). Checked on the TypeScript syntax tree, never on the
+      text.
   - name: No Network In Core
     description: >
       Only ethsc/rpc.py imports urllib, http or socket. Every other module
