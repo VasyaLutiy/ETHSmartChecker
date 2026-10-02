@@ -265,4 +265,71 @@ vitest count; the glm bill per run; whether the syntax gate ran on `.ts`; the li
 
 ## 11. Actual
 
-_(after the run)_
+**Run A** `20261002-113200-c11806d4`, glm, route sync, 11:32–11:33, **1.7 min**: `ui-scaffold`
+accepted on retry 1 (v1 tsc: a FakeReply union without `jsonError` on one arm, setup.ts
+assigning functions to `XMLHttpRequest`/`WebSocket`; v2 tsc: a type annotation on a constructor;
+r1.v1 probe: WebSocket not blocked; r1.v2 green). 4 requests, **$0.0226**. Then
+`dashboard/package-lock.json` (npm's output, 111 packages) committed as data (9bb4504).
+
+**Run B** `20261002-113535-0ad30337`, glm, 11:35–11:50, **14 min** over 4 generations.
+**10 of 10 accepted, 0 failed, 0 skipped.** 30 requests, **$0.1237**. Both runs: 11/11 cards,
+**$0.146**, $0.013 per accepted card (Python here: $0.0145).
+
+| gen | card | attempts | first red step of each failed variant |
+|---|---|---|---|
+| 1 | ui-api | 1 (v2) | v1: own test (a URL assertion of its own) |
+| 1 | ui-format | 1 | — |
+| 1 | ui-feed | 1 | — |
+| 2 | ui-feed-judge | 1 (v1) | v2: guard, 1 `test` call (a loop) for 5 examples |
+| 2 | ui-api-judge | 2 | guard: assigned a global fetch ×2; tsc: a `Mock` type |
+| 2 | ui-format-judge | 2 | judge file: its own extra rule test expected `0x1234…90a` (the code's `…890a` is right) ×2 |
+| 2 | ui-render | 2 | probe: rows `hidden` under "ALL"; tsc: `FixtureEvent.kind` is `string` |
+| 3 | ui-render-judge | 2 | tsc: `Element` vs `HTMLElement`; tsc: `FixtureEvent` vs `DashEvent` |
+| 3 | ui-main | 3 | probe: no panels in `#app`; tsc: `Timeout` vs `number` ×2; own test ×2 |
+| 4 | ui-main-judge | 1 | — |
+
+- Regenerations: 7 retries over 11 cards (**0.64 per card**; Python here 0.52). By first red
+  step over every failed variant: **tsc 8**, guard 3, probe 3, own test/judge file 5. tsc is the
+  main teacher on TypeScript, as predicted.
+- **One criterion fault of mine**, cost ≈ 2 tsc reds: the scaffold probe checked the helpers'
+  values, not their types. glm declared `FixtureEvent.kind: string` (§2.3 says the types of
+  `DashEvent`), so every test that hands fixture events to `renderEvents` needed a cast. A
+  probe for a structurally equal type should hold a type-level assertion
+  (`const _: DashEvent = fixtureEvents()[0]` under tsc).
+- **One product gap of mine**: §6 left CSS "not specified" and no card owned a stylesheet.
+  The page works, but it is raw: no panel headings, no column separators, the origin bars have
+  width and no background (invisible). See the screenshot. A follow-up card should own
+  `dashboard/src/style.css` (imported by main.ts) plus panel titles.
+- Syntax gate: **tree-sitter `passed`** on every `.ts` target of both runs (skipped only on
+  `.json`/`.html`: no grammar wheel). It passed `setup.ts` with TS1093, which tsc caught.
+- Product: `src/` 893 lines (api 362 with its test, render 368, main 264 …). Tests: **89 vitest**
+  (22 smoke, 67 judge) in 1.25 s. Python: `ethsc/` and `tests/` untouched (empty diff vs master),
+  448 unchanged.
+- Recon: no scout (every target new); the scout named 0, I moved 0 roles. The ripple spike
+  (448/448 green with a `dashboard/` tree) found nothing either.
+
+**§3.4 step 0**: `rm -rf node_modules dist && npm ci && tsc --noEmit && vitest run && npm run
+build` exit 0; `dist/` = `index.html` (0.25 kB) + `assets/index-B275kLxx.js` (10.87 kB, 3.32 kB
+gzip), no `.map`, 11 117 bytes in total.
+
+**§3.4 step 1**, copy of `smoke/20261001-night2/ethsc.sqlite` in `/tmp/p16/live/`, progress set
+to head−1 (26104179), `dashboard --static dashboard/dist --port 8090` + `listen --source
+publicnode`, headless Chrome driven over CDP (`/tmp/p16/live/cdp.mjs`), sampled every 30 s
+(10:56–11:07 UTC):
+
+| check | result |
+|---|---|
+| health strip | status "live" in all 22 samples, age 1..28 s, progress 26104179 → 26104216 |
+| ALERT rows without reload | 0 → 6 rows (ids 1..6) as listen printed **6 ALERT lines: the same 6 addresses, labels, scores**; 1 navigation entry all along; the first row's node is the same object in every sample |
+| impl table | 0 → 16 rows as listen resolved proxies |
+| summary | addresses 214 132 → 216 482 |
+| backend stopped 20 s | `.unreachable` on health and events (5-s panels), data kept; summary and clusters had not polled yet in that window (30 s / 60 s), so they still showed their last data without the mark — as the contract says: a panel learns of the outage from its own request |
+| backend restarted, 65 s | no `.unreachable` anywhere, progress moving, clusters 16 |
+
+Screenshot (backend down): `docs/phase16-live.png`. Page console errors were not captured
+(the CDP script read the DOM only).
+
+- Predictions (§9): 11 cards, each ≤ 3 attempts — **hit** (max 3, ui-main); ≥ 2 regenerations,
+  one on tsc — **hit** (7, tsc first on 8 variants); 0.5..1.2 regenerations per card — **hit**
+  (0.64); 41..121 vitest tests — **hit** (89); Python 448 — **hit**; dist one JS < 40 KB —
+  **hit** (10.9 KB); gate `passed` on `.ts` — **hit**.
