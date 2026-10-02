@@ -242,6 +242,16 @@ failed (`ui-look`), 1 skipped (`ui-look-judge`).**
 - Seen on the screenshot, not in the contract: the kind select keeps the browser's white
   default style and touches the feed-meta text.
 
+**One-variable experiment** (operator's request, run `20261002-141417-7aad2428`, branch
+`exp/p17-ctx` off the cut-2 `ui-shell` commit 8f04cc3, 3 min, $0.049): the cut-2 `ui-style` card
+unchanged except `contour.yaml` added to its slice (and 4 variants instead of 2, for a larger
+sample). Input 88–98 k tokens, as in cut 1. **0 of 8 answers cut**; output 2 449–4 211 tokens.
+Accepted on r1.v1; the 4 first-round variants all failed the same check ("Style Page ex5:
+hidden row 8 is 25–28 px high", the `[hidden]` trap). **So the large context did not cause cut
+1's runaway: the card's width did** (two files, CSS from scratch plus a `main.ts` edit, an open
+aesthetic brief). Cut 2's speed-up came from the split; dropping `contour.yaml` cut the bill
+(input) but not the output.
+
 **§3.3 step 0**: `npm run build` → `dist/index.html` 0.32 kB + `assets/index-*.css` 6.64 kB +
 `assets/index-*.js` 12.47 kB, no map; 104 tests, tsc clean.
 
