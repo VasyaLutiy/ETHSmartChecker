@@ -1,0 +1,751 @@
+{
+  "deck_id": "20261002-113535-0ad30337",
+  "completed_at": "2026-10-02T11:49:59.915",
+  "branch": "morph/20261002-113535-0ad30337",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ui-api",
+      "ui-feed",
+      "ui-format"
+    ],
+    [
+      "ui-api-judge",
+      "ui-feed-judge",
+      "ui-format-judge",
+      "ui-render"
+    ],
+    [
+      "ui-main",
+      "ui-render-judge"
+    ],
+    [
+      "ui-main-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-4352e4c534e144409a8f8479219ddf90",
+    "local-71432d1a6c8144b8aea268ad615f17c0",
+    "local-b58233e5b7724d239c701cc622a1ac26",
+    "local-b0381e9e0d644ee5903f54b4b3785749",
+    "local-63b9d3a010eb4db88e1662cd160f3fb1",
+    "local-badd315caf164a5999375937fecfc8b7",
+    "local-d5c47797697f4f5ea7d22b463f1151e8"
+  ],
+  "outcomes": {
+    "ui-api": {
+      "custom_id": "ui-api",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/api.ts",
+        "./dashboard/tests/api.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ui-api.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "fc2d8e61b48a90458416706dc1b220744cc1ade3",
+      "diffstat": [
+        {
+          "path": "dashboard/src/api.ts",
+          "insertions": 306,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/api.test.ts",
+          "insertions": 56,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/api.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/api.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-feed": {
+      "custom_id": "ui-feed",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/feed.ts",
+        "./dashboard/tests/feed.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ui-feed",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "207d63d40bb123b669a016e903de19b6a5666eca",
+      "diffstat": [
+        {
+          "path": "dashboard/src/feed.ts",
+          "insertions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/feed.test.ts",
+          "insertions": 44,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/feed.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/feed.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-format": {
+      "custom_id": "ui-format",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/format.ts",
+        "./dashboard/tests/format.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ui-format",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "2213bfa39b3ffee73408660baf51916e713c0770",
+      "diffstat": [
+        {
+          "path": "dashboard/src/format.ts",
+          "insertions": 70,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/format.test.ts",
+          "insertions": 61,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/format.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/format.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-feed-judge": {
+      "custom_id": "ui-feed-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/feed.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ui-feed-judge.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "77c1f9080a959111c2acf51ee5f0b67417aa0b35",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/feed.examples.test.ts",
+          "insertions": 94,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/feed.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-api-judge": {
+      "custom_id": "ui-api-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/api.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-api-judge.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\ntests/api.examples.test.ts(23,5): error TS2322: Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>' is not assignable to type 'Mock<Procedure>'.\n  The types returned by 'withImplementation(...)' are incompatible between these types.\n    Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }> | Promise<MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>>' is not assignable to type 'Mock<Procedure> | Promise<Mock<Procedure>>'.\n      Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>' is not assignable to type 'Mock<Procedure> | Promise<Mock<Procedure>>'.\ntests/api.examples.test.ts(24,5): error TS2322: Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>' is not assignable to type 'Mock<Procedure>'.\n  The types returned by 'withImplementation(...)' are incompatible between these types.\n    Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }> | Promise<MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>>' is not assignable to type 'Mock<Procedure> | Promise<Mock<Procedure>>'.\n      Type 'MockInstance<{ (...data: any[]): void; (message?: any, ...optionalParams: any[]): void; }>' is not assignable to type 'Mock<Procedure> | Promise<Mock<Procedure>>'.\n",
+      "commit": "812db8666fce9cbfce77cc78fca0f3727a37e941",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/api.examples.test.ts",
+          "insertions": 373,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/api.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-format-judge": {
+      "custom_id": "ui-format-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/format.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-format-judge.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\n== guard\n== judge\n FAIL  tests/format.examples.test.ts > Format Values > Format Values rule: shortAddress boundary at 12 characters\nAssertionError: expected '0x1234…890a' to be '0x1234…90a' // Object.is equality\n Test Files  1 failed (1)\n      Tests  1 failed | 13 passed (14)\n",
+      "commit": "50339a1d5bedc75e78c2e1a5a04eca589398c565",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/format.examples.test.ts",
+          "insertions": 148,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/format.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-render": {
+      "custom_id": "ui-render",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/render/health.ts",
+        "./dashboard/src/render/events.ts",
+        "./dashboard/src/render/summary.ts",
+        "./dashboard/src/render/clusters.ts",
+        "./dashboard/tests/render.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-render.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\ntests/render.test.ts(46,23): error TS2322: Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n  Types of property 'kind' are incompatible.\n    Type 'string' is not assignable to type 'Kind'.\n",
+      "commit": "82608a57a7484bf88345d3e98416659f57abb90c",
+      "diffstat": [
+        {
+          "path": "dashboard/src/render/clusters.ts",
+          "insertions": 55,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/src/render/events.ts",
+          "insertions": 111,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/src/render/health.ts",
+          "insertions": 61,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/src/render/summary.ts",
+          "insertions": 67,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/render.test.ts",
+          "insertions": 74,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/render/health.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/src/render/events.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/src/render/summary.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/src/render/clusters.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/render.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-render-judge": {
+      "custom_id": "ui-render-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/render.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-render-judge.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\ntests/render.examples.test.ts(158,24): error TS2345: Argument of type 'FixtureEvent[]' is not assignable to parameter of type 'readonly DashEvent[]'.\n  Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n    Types of property 'kind' are incompatible.\n      Type 'string' is not assignable to type 'Kind'.\ntests/render.examples.test.ts(222,24): error TS2345: Argument of type 'FixtureEvent[]' is not assignable to parameter of type 'readonly DashEvent[]'.\n  Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n    Types of property 'kind' are incompatible.\n      Type 'string' is not assignable to type 'Kind'.\ntests/render.examples.test.ts(229,14): error TS2769: No overload matches this call.\n  Overload 1 of 2, '(...items: ConcatArray<DashEvent>[]): DashEvent[]', gave the following error.\n    Argument of type 'FixtureEvent[]' is not assignable to parameter of type 'ConcatArray<DashEvent>'.\n      The types returned by 'slice(...)' are incompatible between these types.\n        Type 'FixtureEvent[]' is not assignable to type 'DashEvent[]'.\n          Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n            Types of property 'kind' are incompatible.\n              Type 'string' is not assignable to type 'Kind'.\n  Overload 2 of 2, '(...items: (DashEvent | ConcatArray<DashEvent>)[]): DashEvent[]', gave the following error.\n    Argument of type 'FixtureEvent[]' is not assignable to parameter of type 'DashEvent | ConcatArray<DashEvent>'.\n      Type 'FixtureEvent[]' is not assignable to type 'ConcatArray<DashEvent>'.\n        The types returned by 'slice(...)' are incompatible between these types.\n          Type 'FixtureEvent[]' is not assignable to type 'DashEvent[]'.\n            Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n              Types of property 'kind' are incompatible.\n                Type 'string' is not assignable to type 'Kind'.\ntests/render.examples.test.ts(252,11): error TS2322: Type 'FixtureEvent[]' is not assignable to type 'DashEvent[]'.\n  Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n    Types of property 'kind' are incompatible.\n      Type 'string' is not assignable to type 'Kind'.\ntests/render.examples.test.ts(386,24): error TS2345: Argument of type 'FixtureEvent[]' is not assignable to parameter of type 'readonly DashEvent[]'.\n  Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n    Types of property 'kind' are incompatible.\n      Type 'string' is not assignable to type 'Kind'.\ntests/render.examples.test.ts(396,11): error TS2322: Type 'FixtureEvent[]' is not assignable to type 'DashEvent[]'.\n  Type 'FixtureEvent' is not assignable to type 'DashEvent'.\n    Types of property 'kind' are incompatible.\n      Type 'string' is not assignable to type 'Kind'.\n",
+      "commit": "15c14f98c570ab75d8c42113e4bad3aee3c92668",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/render.examples.test.ts",
+          "insertions": 408,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/render.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-main": {
+      "custom_id": "ui-main",
+      "status": "written",
+      "paths": [
+        "./dashboard/src/main.ts",
+        "./dashboard/tests/main.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": "ui-main.r2.v1",
+      "acceptance_output": null,
+      "earlier_failures": "== tsc\n== guard\n== probe\n== own test\n FAIL  tests/main.test.ts > the events poll continues with after = last_id\nAssertionError: expected '/api/health' to be '/api/events?after=8&limit=500' // Object.is equality\n Test Files  1 failed (1)\n      Tests  1 failed | 2 passed (3)\n",
+      "commit": "4cc0683c07118752c3b1b4a0298970d5abea94e2",
+      "diffstat": [
+        {
+          "path": "dashboard/src/main.ts",
+          "insertions": 195,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/main.test.ts",
+          "insertions": 69,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/src/main.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/main.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    },
+    "ui-main-judge": {
+      "custom_id": "ui-main-judge",
+      "status": "written",
+      "paths": [
+        "./dashboard/tests/main.examples.test.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ui-main-judge.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "024902425b506c27d0a60aaa13cd87d1e98d5386",
+      "diffstat": [
+        {
+          "path": "dashboard/tests/main.examples.test.ts",
+          "insertions": 351,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/tests/main.examples.test.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "ui-feed": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937336-LvW2pz8VOh1x9Zveol3R",
+      "input_tokens": 81876,
+      "output_tokens": 820,
+      "cost": 0.002232696,
+      "finish_reason": "stop"
+    },
+    "ui-format": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937336-pRMNJyAe7iv3R4Hh0Kdj",
+      "input_tokens": 80771,
+      "output_tokens": 1148,
+      "cost": 0.00761379,
+      "finish_reason": "stop"
+    },
+    "ui-api.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937336-yHdONXrxasdhrLD7PeuN",
+      "input_tokens": 85540,
+      "output_tokens": 2660,
+      "cost": 0.002372568,
+      "finish_reason": "stop"
+    },
+    "ui-api.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937336-NtuQdi3O0VIwyJUVKnZM",
+      "input_tokens": 85540,
+      "output_tokens": 3125,
+      "cost": 0.003253956,
+      "finish_reason": "stop"
+    },
+    "ui-feed-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937414-9a7AKK0SA2HHjLeFVP7x",
+      "input_tokens": 81989,
+      "output_tokens": 1365,
+      "cost": 0.002461662,
+      "finish_reason": "stop"
+    },
+    "ui-feed-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937414-lEqFxkaRW2uHvorBHFxO",
+      "input_tokens": 81989,
+      "output_tokens": 1444,
+      "cost": 0.001909362,
+      "finish_reason": "stop"
+    },
+    "ui-api-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937414-TzaHtASAzyO7HKfWbY4y",
+      "input_tokens": 87628,
+      "output_tokens": 3831,
+      "cost": 0.004833324,
+      "finish_reason": "stop"
+    },
+    "ui-format-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937445-QiyFrPhKGbQGrOyYqgL3",
+      "input_tokens": 81222,
+      "output_tokens": 1814,
+      "cost": 0.002006628,
+      "finish_reason": "stop"
+    },
+    "ui-format-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937441-0M2IyxZySiVBbpaasQgG",
+      "input_tokens": 81222,
+      "output_tokens": 2317,
+      "cost": 0.002678232,
+      "finish_reason": "stop"
+    },
+    "ui-api-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937414-MHXJIcBMbj06aR1oJHO0",
+      "input_tokens": 87628,
+      "output_tokens": 4671,
+      "cost": 0.003306636,
+      "finish_reason": "stop"
+    },
+    "ui-render.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937471-gArX4VyIvW17dtDhWXVk",
+      "input_tokens": 88353,
+      "output_tokens": 5750,
+      "cost": 0.004349922,
+      "finish_reason": "stop"
+    },
+    "ui-render.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937474-oH8T96ZF9fa54B8LSr1e",
+      "input_tokens": 88353,
+      "output_tokens": 9361,
+      "cost": 0.00527655,
+      "finish_reason": "stop"
+    },
+    "ui-format-judge.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937660-XIM4Ehy4eU78t03svQzl",
+      "input_tokens": 85475,
+      "output_tokens": 1891,
+      "cost": 0.002933202,
+      "finish_reason": "stop"
+    },
+    "ui-format-judge.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937660-K2ErHeCkKiDOsqujPVsv",
+      "input_tokens": 85475,
+      "output_tokens": 1890,
+      "cost": 0.003794598,
+      "finish_reason": "stop"
+    },
+    "ui-api-judge.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937660-jGSPsCmwUjRL0DsXCybq",
+      "input_tokens": 91962,
+      "output_tokens": 3711,
+      "cost": 0.00938988,
+      "finish_reason": "stop"
+    },
+    "ui-api-judge.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937660-fMcovN5cNp0q9nvNGdUc",
+      "input_tokens": 91962,
+      "output_tokens": 3864,
+      "cost": 0.002818692,
+      "finish_reason": "stop"
+    },
+    "ui-render.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937692-P4rQsnOerHJwe6SRMv0L",
+      "input_tokens": 97195,
+      "output_tokens": 3750,
+      "cost": 0.004545702,
+      "finish_reason": "stop"
+    },
+    "ui-render.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937693-HvpxcUDTCEAjr9avr66L",
+      "input_tokens": 97195,
+      "output_tokens": 3964,
+      "cost": 0.002941806,
+      "finish_reason": "stop"
+    },
+    "ui-main.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937770-DF23L4EAsfLoja7V6A6q",
+      "input_tokens": 87271,
+      "output_tokens": 3582,
+      "cost": 0.003602142,
+      "finish_reason": "stop"
+    },
+    "ui-main.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937771-CRO1zAXcFHkRPao0AzxO",
+      "input_tokens": 87271,
+      "output_tokens": 4895,
+      "cost": 0.003996042,
+      "finish_reason": "stop"
+    },
+    "ui-render-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937770-93UzI9LwLRXlNFpzXNDM",
+      "input_tokens": 90435,
+      "output_tokens": 5616,
+      "cost": 0.00434043,
+      "finish_reason": "stop"
+    },
+    "ui-render-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937770-LaKHLHCzisQ4RJhriyhE",
+      "input_tokens": 90435,
+      "output_tokens": 5799,
+      "cost": 0.004353858,
+      "finish_reason": "stop"
+    },
+    "ui-main.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937876-BR2W2hdSjC4BJy66VNYO",
+      "input_tokens": 93101,
+      "output_tokens": 1987,
+      "cost": 0.003648342,
+      "finish_reason": "stop"
+    },
+    "ui-main.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937876-HtAxmu8ME13K5iDID8cQ",
+      "input_tokens": 93101,
+      "output_tokens": 2115,
+      "cost": 0.00901359,
+      "finish_reason": "stop"
+    },
+    "ui-render-judge.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937876-qUYQZggMhsYvH5SS9hzB",
+      "input_tokens": 94934,
+      "output_tokens": 4725,
+      "cost": 0.00346428,
+      "finish_reason": "stop"
+    },
+    "ui-render-judge.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937876-Q7De7c9QmsJoDRxn9QvH",
+      "input_tokens": 94934,
+      "output_tokens": 4752,
+      "cost": 0.0040023,
+      "finish_reason": "stop"
+    },
+    "ui-main.r2.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937964-TWBzYYaL0Lcdsle8NE6M",
+      "input_tokens": 93187,
+      "output_tokens": 2290,
+      "cost": 0.003714726,
+      "finish_reason": "stop"
+    },
+    "ui-main.r2.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937964-LhRZwM1Qv7RAd4gD3bH9",
+      "input_tokens": 93187,
+      "output_tokens": 2282,
+      "cost": 0.00255111,
+      "finish_reason": "stop"
+    },
+    "ui-main-judge.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790938044-lXzF3h3fKVZx1piIMsAt",
+      "input_tokens": 87556,
+      "output_tokens": 4201,
+      "cost": 0.00914034,
+      "finish_reason": "stop"
+    },
+    "ui-main-judge.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790938093-kCGPSUz5Qg6AaDBdCZiN",
+      "input_tokens": 87556,
+      "output_tokens": 5222,
+      "cost": 0.003142896,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 2654343,
+    "output_tokens": 104842,
+    "cost": 0.12368926200000002,
+    "requests": 30,
+    "requests_with_usage": 30
+  },
+  "orchestrator_usage": {}
+}
