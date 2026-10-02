@@ -3219,6 +3219,412 @@ System:
             seed_address str, count int}], recent {blocks 300, by_origin
             {the five origin keys: int}}}; clusters {level str, n int,
             clusters [Cluster]}; every error {error str}.
+    - name: dashboard-ui
+      language: typescript
+      description: >
+        The live dashboard frontend (phase 16): one page that polls the four
+        JSON endpoints of group dashboard and shows a health strip, an event
+        feed, a summary and the impl clusters. A separate tree dashboard/
+        with its own package.json (Vite + TypeScript strict, vitest with
+        happy-dom, no UI framework); its only product is dashboard/dist/
+        (index.html plus assets/, no source maps), which `ethsc dashboard
+        --static` serves. Node runs on the operator's machine only. The
+        shapes it reads are the dataObject Dashboard JSON of group
+        dashboard, recorded as tests/fixtures/dashboard_{health,events,
+        summary,clusters_impl}.json: those four files are the source of
+        truth for every type here. Modules: dashboard/src/api.ts (types,
+        parsing, fetch), dashboard/src/format.ts and dashboard/src/feed.ts
+        (pure), dashboard/src/render/{health,events,summary,clusters}.ts
+        (DOM per panel), dashboard/src/main.ts (wiring and timers only).
+        Every function below is named as exported; a test imports it from
+        the module named in its description.
+      requirements: [Frontend Tree]
+      guardrails: [Frontend Isolation]
+      functions:
+        - name: Fetch Endpoints
+          description: >
+            dashboard/src/api.ts. Types: Health {progress: number | null,
+            progress_at: string | null, seconds_since_progress: number |
+            null, now: string}; Kind = "ALERT" | "UPGRADE"; DashEvent {the
+            eleven keys of Event: id number, kind Kind, block number, at
+            string, address string, seed_address, label, origin, old_impl,
+            new_impl string | null, score number | null}; EventsPage {events:
+            DashEvent[], last_id: number}; OriginKey = "created" | "seen" |
+            "impl" | "fetched" | "unknown"; OriginCounts = Record<OriginKey,
+            number>; Summary {addresses, codes, seeds,
+            implementations_resolved: number, origins: OriginCounts,
+            alerts_by_seed: {label: string, seed_address: string, count:
+            number}[], recent: {blocks: number, by_origin: OriginCounts}};
+            Cluster {level: string, key: string, members: string[]};
+            ClustersPage {level: string, n: number, clusters: Cluster[]};
+            ApiResult<T> = {ok: true, data: T} | {ok: false, error: string};
+            Panel<T> = {data: T | null, error: string | null}; FetchLike =
+            (url: string) => Promise<{ok: boolean, status: number, json():
+            Promise<unknown>}>. Parsers parseHealth, parseEvents,
+            parseSummary, parseClusters (x: unknown) -> the type or null.
+            Fetchers getHealth(fetchFn), getEvents(after, fetchFn),
+            getSummary(fetchFn), getClusters(level, n, fetchFn) ->
+            Promise<ApiResult<...>>.
+          behavior: >
+            A parser checks every key the type names, with its JS type (a
+            number for every int, null only where the type allows it; kind
+            exactly "ALERT" or "UPGRADE"; all five origin keys present), and
+            ignores keys the type does not name. Anything else gives null; a
+            parser never throws and never logs. The fetchers request same-
+            origin relative URLs, exactly "/api/health",
+            "/api/events?after=<after>&limit=500", "/api/summary" and
+            "/api/clusters?level=<level>&n=<n>", one call each, then parse.
+            A fetcher never throws and never logs: a rejected fetch, a status
+            outside 200..299 (the error text names the status), a json()
+            that rejects and a body its parser refuses all give {ok: false,
+            error: a non-empty one-line string}. Only this module calls
+            fetch, and it calls only the fetchFn it is given.
+          guardrails: [Frontend Isolation]
+          steps:
+            - reads: Dashboard JSON
+          examples:
+            - given: 'the parsed JSON of tests/fixtures/dashboard_health.json; console.error and console.warn spied'
+              when: 'parseHealth is called on it'
+              then: >
+                not null: progress 26103569, progress_at
+                "2026-10-02T08:53:15Z", seconds_since_progress 24, now
+                "2026-10-02T08:53:39Z"; no console call
+              ref: 'phase 15 §3.3 step 4, the recorded health answer'
+            - given: 'the parsed JSON of tests/fixtures/dashboard_events.json; console.error and console.warn spied'
+              when: 'parseEvents is called on it'
+              then: >
+                not null: last_id 8, 8 events, ids [8, 7, 6, 5, 4, 3, 2, 1];
+                events[0] has kind "ALERT", block 26103541, at
+                "2026-10-02T08:47:50Z", address
+                "0x0be5cfbcbb8a82c8d44af544dd40261b967ab832", label
+                "LaunchToken family", score 1, origin "seen", seed_address
+                "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6", old_impl null,
+                new_impl null; no console call
+            - given: 'the parsed JSON of tests/fixtures/dashboard_summary.json; console.error and console.warn spied'
+              when: 'parseSummary is called on it'
+              then: >
+                not null: addresses 217009, codes 20374, seeds 8,
+                implementations_resolved 454, origins {"created": 109,
+                "fetched": 0, "impl": 387, "seen": 19256, "unknown": 197257},
+                alerts_by_seed one entry {count 8, label "LaunchToken family",
+                seed_address "0x0312eaa7791b5b15a12157b2a6e01d8e30c8b1b6"},
+                recent.blocks 300, recent.by_origin {"created": 16,
+                "fetched": 0, "impl": 387, "seen": 2474, "unknown": 0}; no
+                console call
+            - given: 'the parsed JSON of tests/fixtures/dashboard_clusters_impl.json; console.error and console.warn spied'
+              when: 'parseClusters is called on it'
+              then: >
+                not null: level "impl", n 20, 20 clusters; clusters[0] has
+                level "impl", key "0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598"
+                and 14 members, the first
+                "0x0752163d221d3d5d4b6e98bd616b22bd2b453964"; the member
+                counts in order are 14, 8, 5, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                2, 2, 2, 2, 2, 2, 2; no console call
+            - given: >
+                the answers of a fresh db (dashboard Answer Request example 2):
+                {"now": "2026-10-02T08:00:00Z", "progress": null,
+                "progress_at": null, "seconds_since_progress": null},
+                {"events": [], "last_id": 0} and a summary with every count 0,
+                alerts_by_seed [] and both origin maps all five keys 0
+              when: 'parseHealth, parseEvents and parseSummary are called on them'
+              then: 'none is null; health progress null and seconds_since_progress null; events [] with last_id 0; summary addresses 0 and recent.by_origin.seen 0'
+              ref: 'the backend before the listener has run'
+            - given: >
+                malformed values: the health fixture with progress "x"; the
+                health fixture without the key now; the events fixture with
+                events[3].kind "FOO"; {"events": []} (no last_id); the summary
+                fixture with origins.unknown removed; the clusters fixture
+                with clusters[0].members "x"; and null, 42, "x", [] for each
+                parser
+              when: 'each is given to its parser'
+              then: 'null every time; no parser throws; no console call'
+            - given: 'a fake fetch answering the four fixtures on "/api/health", "/api/events?after=0&limit=500", "/api/summary" and "/api/clusters?level=impl&n=20", recording the URLs it is called with'
+              when: 'getHealth(f), getEvents(0, f), getSummary(f) and getClusters("impl", 20, f) are awaited in that order'
+              then: >
+                each {ok: true}: health data.progress 26103569, events
+                data.last_id 8 with 8 events, summary data.codes 20374,
+                clusters data.clusters length 20; the recorded URLs are
+                exactly those four in that order; getEvents(8, f) records
+                "/api/events?after=8&limit=500"
+            - given: >
+                fake fetches that (a) reject with TypeError("Failed to fetch"),
+                (b) answer status 500 with body {"error": "boom"}, (c) answer
+                status 200 whose json() rejects with SyntaxError, (d) answer
+                status 200 with body {"x": 1}; console.error and console.warn
+                spied
+              when: 'getHealth, getEvents(0, ...), getSummary and getClusters("impl", 20, ...) are awaited with each'
+              then: >
+                every result is {ok: false} with error a non-empty string
+                holding no line break; for (b) the error contains "500";
+                nothing throws, every promise resolves; no console call
+              ref: 'phase 16: a failed request shows "backend unreachable" and keeps the last good data'
+        - name: Format Values
+          description: >
+            dashboard/src/format.ts, pure functions on scalars:
+            formatScore(score: number | null) -> string; formatAge(seconds:
+            number | null) -> string; statusOf(seconds: number | null) ->
+            "live" | "behind" | "stalled" | "unknown"; shortAddress(address:
+            string) -> string; etherscanUrl(address: string) -> string;
+            formatTime(at: string) -> string; originShares(counts:
+            OriginCounts) -> {origin: OriginKey, count: number, percent:
+            number}[] (OriginCounts and OriginKey imported as types from
+            ./api).
+          behavior: >
+            formatScore: four decimals (toFixed(4)), "" for null. formatAge:
+            under 60 "<n> s", under 3600 "<floor(n/60)> min", otherwise
+            "<floor(n/3600)> h", "n/a" for null. statusOf: under 60 "live",
+            60..299 "behind", 300 and more "stalled", null "unknown" (phase
+            15 §11: a skipped slot makes up to 36 s normal, so the 30-s bound
+            of phase 15 is not used). shortAddress: the first 6 characters,
+            "…" (U+2026), the last 4; a string of 12 characters or fewer is
+            returned unchanged. etherscanUrl:
+            "https://etherscan.io/address/" plus the address lowercased.
+            formatTime: the "HH:MM:SS" of a "YYYY-MM-DDTHH:MM:SSZ" text (UTC,
+            as the backend writes it), any other text unchanged.
+            originShares: one entry per origin in the fixed order created,
+            seen, impl, fetched, unknown; percent = Math.round(count * 1000 /
+            total) / 10 where total is the sum of the five, and 0 for every
+            entry when total is 0. No DOM, no fetch, no timer, no Date.now.
+          guardrails: [Frontend Isolation]
+          examples:
+            - given: 'the scores 1, 0.8666666666666667, 0 and null'
+              when: 'formatScore is called on each'
+              then: '"1.0000", "0.8667", "0.0000", ""'
+              ref: 'events fixture score 1.0; Record Events example 1 score 13/15'
+            - given: 'the seconds 0, 8, 24, 59, 60, 150, 3599, 3600, 7300 and null'
+              when: 'formatAge is called on each'
+              then: '"0 s", "8 s", "24 s", "59 s", "1 min", "2 min", "59 min", "1 h", "2 h", "n/a"'
+            - given: 'the seconds 0, 24, 36, 59, 60, 299, 300, 86400 and null'
+              when: 'statusOf is called on each'
+              then: '"live", "live", "live", "live", "behind", "behind", "stalled", "stalled", "unknown"'
+              ref: 'phase 15 §11: up to 36 s between blocks is normal'
+            - given: '"0x0be5cfbcbb8a82c8d44af544dd40261b967ab832", "0x1234" and the 12-character "0x1234567890"'
+              when: 'shortAddress is called on each'
+              then: '"0x0be5…b832", "0x1234", "0x1234567890"'
+            - given: '"0x0be5cfbcbb8a82c8d44af544dd40261b967ab832" and "0x1807090DD15A6F58E00FD769E32EBF20EE610385"'
+              when: 'etherscanUrl is called on each'
+              then: '"https://etherscan.io/address/0x0be5cfbcbb8a82c8d44af544dd40261b967ab832" and "https://etherscan.io/address/0x1807090dd15a6f58e00fd769e32ebf20ee610385"'
+            - given: '"2026-10-02T08:47:50Z", "2026-10-02T23:59:59Z" and "garbage"'
+              when: 'formatTime is called on each'
+              then: '"08:47:50", "23:59:59", "garbage"'
+            - given: 'the origins and the recent.by_origin of tests/fixtures/dashboard_summary.json, and the five keys all 0'
+              when: 'originShares is called on each'
+              then: >
+                origins: origins in order created, seen, impl, fetched,
+                unknown; counts 109, 19256, 387, 0, 197257; percents 0.1,
+                8.9, 0.2, 0, 90.9. recent: counts 16, 2474, 387, 0, 0;
+                percents 0.6, 86, 13.5, 0, 0. All zero: five entries, every
+                percent 0 (no NaN)
+              ref: 'origins total 217009, recent total 2877, computed 2026-10-02'
+        - name: Merge Feed
+          description: >
+            dashboard/src/feed.ts, pure: mergeEvents<T extends {id: number}>(kept:
+            readonly T[], incoming: readonly T[], cap = 500) -> T[];
+            filterByKind<T extends {kind: string}>(events: readonly T[],
+            kind: "ALL" | "ALERT" | "UPGRADE") -> T[].
+          behavior: >
+            mergeEvents returns a new array: the union of kept and incoming
+            without a repeated id (when an id is in both, the element of kept
+            is the one returned, the same object), ordered by id descending,
+            cut to the cap largest ids. It mutates neither argument.
+            filterByKind returns a new array of the elements of that kind in
+            their order, every element for "ALL". No DOM, no fetch, no timer.
+          guardrails: [Frontend Isolation]
+          examples:
+            - given: 'the 8 events of tests/fixtures/dashboard_events.json'
+              when: 'mergeEvents([], events) is called, then mergeEvents(result, events)'
+              then: 'ids [8, 7, 6, 5, 4, 3, 2, 1] both times; the second result is a new array whose elements are the same objects as the first; neither argument changed length'
+              ref: 'phase 16 polling: the next poll may repeat the last id'
+            - given: 'three events with ids 1, 2, 3 given in that ascending order'
+              when: 'mergeEvents([], them)'
+              then: 'ids [3, 2, 1]'
+            - given: '600 events with ids 1..600 (copies of the first fixture event with id and block changed)'
+              when: 'mergeEvents([], them), and mergeEvents([], them, 3)'
+              then: 'length 500 with first id 600 and last id 101; then ids [600, 599, 598]'
+              ref: 'phase 16: at most 500 events kept in memory'
+            - given: 'kept = the 8 fixture events; incoming = a copy of event 8 with label "changed" and an event with id 9'
+              when: 'mergeEvents(kept, incoming)'
+              then: 'ids [9, 8, 7, 6, 5, 4, 3, 2, 1]; the element with id 8 is the kept object, label "LaunchToken family"'
+            - given: >
+                the 8 fixture events plus the UPGRADE {"id": 9, "kind":
+                "UPGRADE", "block": 26077729, "at": "2026-10-02T08:00:00Z",
+                "address": "0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "seed_address": null, "label": null, "score": null, "origin":
+                null, "old_impl": "0x72b971717e088b59f26d4236be222adb6acd393b",
+                "new_impl": "0xe440cc08a71694c8229323803f59024e3144630e"},
+                merged
+              when: 'filterByKind with "ALL", "ALERT" and "UPGRADE"'
+              then: '9 elements, ids [9, 8, ..., 1]; 8 elements, ids [8, ..., 1]; 1 element, id 9'
+              ref: 'the UPGRADE is Record Events example 1'
+        - name: Render Panels
+          description: >
+            dashboard/src/render/health.ts renderHealth(root: HTMLElement,
+            panel: Panel<Health>): void; dashboard/src/render/events.ts
+            renderEvents(root: HTMLElement, events: readonly DashEvent[],
+            kind: "ALL" | "ALERT" | "UPGRADE", error: string | null): void;
+            dashboard/src/render/summary.ts renderSummary(root: HTMLElement,
+            panel: Panel<Summary>): void; dashboard/src/render/clusters.ts
+            renderClusters(root: HTMLElement, panel: Panel<ClustersPage>):
+            void. Types from ../api, text from ../format.
+          behavior: >
+            Every element is created with root.ownerDocument.createElement
+            (never the global document) and every piece of data is set with
+            textContent or setAttribute: no innerHTML, outerHTML,
+            insertAdjacentHTML or document.write. When error is not null the
+            root holds exactly one element with class "unreachable" and
+            textContent "backend unreachable", and the last data given
+            (panel.data, or the events) is still shown; when error is null
+            no such element exists. The selectors below are the contract the
+            tests read.
+            Health: elements [data-field="progress"] (the number as text,
+            "" for null), [data-field="progress_at"] (the text, "" for null),
+            [data-field="age"] (formatAge of seconds_since_progress) and
+            [data-field="status"] (text and attribute data-status both
+            statusOf(seconds_since_progress)).
+            Events: one row per event, each an element with data-id (the id)
+            and data-kind (the kind), in the order given (newest first); a
+            row whose kind does not pass the filter has hidden = true, the
+            others hidden = false. Every row has [data-badge="kind"] (the
+            kind), [data-field="time"] (formatTime of at) and
+            [data-field="block"]. An ALERT row also has [data-field="label"],
+            [data-field="score"] (formatScore), [data-badge="origin"] (the
+            origin) and one link for address. An UPGRADE row has links for
+            address, old_impl and new_impl, in that order, with "→" between
+            old_impl and new_impl. Every link is an <a> whose href is
+            etherscanUrl(address), textContent shortAddress(address) and
+            title the full address. renderEvents keys rows by id: a row
+            already in root for an id still in events is the same node
+            after the call (moved if needed, never rebuilt); rows for ids no
+            longer in events are removed.
+            Summary: [data-field="addresses"], [data-field="codes"],
+            [data-field="seeds"], [data-field="implementations_resolved"]
+            (the numbers as text); two bars [data-bar="origins"] (origins)
+            and [data-bar="recent"] (recent.by_origin, labelled with
+            recent.blocks), each holding five segments [data-origin="<key>"]
+            in originShares order, with attribute data-count (the count) and
+            style.width "<percent>%".
+            Clusters: a table with one row per cluster in order, each with
+            attribute data-key (the key), an <a> for the key (the link rule
+            above) and [data-field="members"] (the member count).
+          guardrails: [Frontend Isolation]
+          examples:
+            - given: 'a div from a fresh happy-dom document; the health fixture parsed; panel {data: it, error: null}'
+              when: 'renderHealth(div, panel)'
+              then: '[data-field="progress"] "26103569", [data-field="progress_at"] "2026-10-02T08:53:15Z", [data-field="age"] "24 s", [data-field="status"] text "live" and data-status "live"; no .unreachable'
+            - given: 'the health fixture with seconds_since_progress 75, then 400, then the fresh-db health (every field null but now)'
+              when: 'renderHealth is called on each, on the same div'
+              then: 'status "behind" and age "1 min"; status "stalled" and age "6 min"; status "unknown", age "n/a" and progress ""'
+              ref: 'phase 16 thresholds 60 s and 300 s'
+            - given: 'the health fixture as data'
+              when: 'renderHealth(div, {data, error: "HTTP 500"}), then renderHealth(div, {data, error: null}), then renderHealth(div, {data: null, error: "Failed to fetch"})'
+              then: 'first exactly one .unreachable with text "backend unreachable" and progress still "26103569"; then no .unreachable; then one .unreachable and no exception'
+            - given: 'the 8 fixture events'
+              when: 'renderEvents(div, events, "ALL", null)'
+              then: >
+                8 rows [data-id], ids in order 8..1, none hidden; the row of
+                id 8 has data-kind "ALERT", [data-badge="kind"] "ALERT",
+                [data-badge="origin"] "seen", [data-field="time"] "08:47:50",
+                [data-field="block"] "26103541", [data-field="label"]
+                "LaunchToken family", [data-field="score"] "1.0000", and
+                exactly one a with href
+                "https://etherscan.io/address/0x0be5cfbcbb8a82c8d44af544dd40261b967ab832",
+                text "0x0be5…b832" and title the full address
+            - given: 'the UPGRADE of Merge Feed example 5 (id 9) alone'
+              when: 'renderEvents(div, [it], "ALL", null)'
+              then: >
+                one row, data-kind "UPGRADE", [data-badge="kind"] "UPGRADE";
+                its a elements have hrefs, in order, etherscanUrl of
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8",
+                "0x72b971717e088b59f26d4236be222adb6acd393b" and
+                "0xe440cc08a71694c8229323803f59024e3144630e"; the row text
+                contains "→"; no [data-badge="origin"]
+            - given: 'the 8 fixture events rendered into div; r8 = the row of id 8'
+              when: 'renderEvents(div, [a copy of event 8 with id 9, ...the 8 events], "ALL", null), then renderEvents(div, the events with ids 9..3, "ALL", null)'
+              then: '9 rows with id 9 first and the row of id 8 is r8 (same node); then 7 rows, ids 9..3, still r8 for id 8, no row for 2 or 1'
+              ref: 'phase 16: appended without reloading the list'
+            - given: 'the 8 fixture events and the UPGRADE id 9, newest first'
+              when: 'renderEvents with kind "UPGRADE", then "ALERT", then "ALL"'
+              then: '9 rows each time; UPGRADE: the 8 ALERT rows hidden and row 9 visible; ALERT: row 9 hidden, the 8 visible; ALL: none hidden'
+            - given: 'event 8 with label "<img src=x onerror=alert(1)>"'
+              when: 'renderEvents(div, [it], "ALL", "HTTP 503")'
+              then: '[data-field="label"] textContent is exactly that string; div.querySelector("img") is null; one .unreachable "backend unreachable" and the row is still there'
+            - given: 'the summary fixture, panel {data, error: null}'
+              when: 'renderSummary(div, panel)'
+              then: >
+                addresses "217009", codes "20374", seeds "8",
+                implementations_resolved "454"; [data-bar="origins"] has five
+                segments with data-origin in order created, seen, impl,
+                fetched, unknown, the seen one data-count "19256" and width
+                "8.9%"; [data-bar="recent"] impl data-count "387" width
+                "13.5%", seen width "86%", unknown width "0%"
+            - given: 'the fresh-db summary (all counts 0)'
+              when: 'renderSummary(div, {data, error: null}), then with error "HTTP 500"'
+              then: 'every segment width "0%"; div.innerHTML does not contain "NaN"; then one .unreachable and addresses still "0"'
+            - given: 'the clusters fixture, panel {data, error: null}'
+              when: 'renderClusters(div, panel), then renderClusters(div, {data, error: "HTTP 500"})'
+              then: >
+                20 rows [data-key] in fixture order; the first data-key
+                "0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598", its
+                [data-field="members"] "14", its a href
+                "https://etherscan.io/address/0x985462c9aa4d6c3ad59ae6e1e9c0c11347ed1598";
+                then still 20 rows and one .unreachable
+        - name: Wire Page
+          description: >
+            dashboard/src/main.ts: start(doc: Document, fetchFn: FetchLike,
+            clock: {setInterval(fn: () => void, ms: number): number,
+            clearInterval(id: number): void} = the global pair) -> () =>
+            void (stop). The module calls start(document, the global fetch)
+            itself only when import.meta.env.MODE is not "test".
+          behavior: >
+            start builds the page inside doc.getElementById("app"), or
+            doc.body when there is none: four panel elements with ids
+            "health", "events", "summary" and "clusters", and a <select
+            id="kind-filter"> with options "ALL", "ALERT", "UPGRADE" (ALL
+            selected). It requests at once, in this order, /api/health,
+            /api/events?after=0&limit=500, /api/summary and
+            /api/clusters?level=impl&n=20 through the api fetchers, then
+            registers exactly four intervals on clock: health 5000, events
+            5000, summary 30000, clusters 60000. Each panel keeps its last
+            good data; a failed fetch renders that panel with the error and
+            the kept data. Events: the next after is the last_id of the last
+            good events answer; the kept list is mergeEvents(kept, new,
+            500), rendered with the selected kind; a change of the select
+            re-renders the kept list with the new kind and fetches nothing.
+            A poll whose previous request of the same panel is still pending
+            is skipped. stop clears the four intervals. No exception and no
+            unhandled rejection escapes, nothing is logged. main.ts holds no
+            formatting or merging logic of its own: it calls api, feed and
+            render.
+          guardrails: [Frontend Isolation]
+          steps:
+            - calls: Fetch Endpoints
+            - calls: Merge Feed
+            - calls: Render Panels
+          examples:
+            - given: 'a fresh happy-dom document with <div id="app">; a fake fetch answering the four fixtures; a fake clock recording (fn, ms) and returning ids 1, 2, 3, 4'
+              when: 'stop = start(doc, f, clock) and pending promises are flushed'
+              then: >
+                #health, #events, #summary, #clusters and select#kind-filter
+                exist inside #app, the select options "ALL", "ALERT",
+                "UPGRADE"; the recorded URLs are exactly "/api/health",
+                "/api/events?after=0&limit=500", "/api/summary",
+                "/api/clusters?level=impl&n=20"; the sorted interval delays
+                are [5000, 5000, 30000, 60000]; #health
+                [data-field="progress"] "26103569"; #events has 8 rows
+                [data-id]; #clusters has 20 rows [data-key]
+            - given: 'the page of example 1; the fake fetch now answers the events URL with after=8 by {"events": [a copy of fixture event 8 with id 9 and block 26103550], "last_id": 9}; r8 = the row of id 8'
+              when: 'the fake clock fires its 5000-ms intervals and promises are flushed; then fires them again'
+              then: 'the first firing requests "/api/events?after=8&limit=500" and #events has 9 rows, id 9 first, the row of id 8 is r8; the second firing requests "/api/events?after=9&limit=500"'
+              ref: 'phase 16: polled with after=<last_id>, appended without reloading'
+            - given: 'the page of example 1; console.error spied; the fake fetch now rejects every call with TypeError("Failed to fetch")'
+              when: 'every recorded interval is fired once and promises are flushed'
+              then: 'each of the four panels holds one .unreachable "backend unreachable"; #health progress still "26103569", #events still 8 rows, #clusters still 20 rows; console.error not called; no unhandled rejection'
+            - given: 'the page of example 1 with the UPGRADE of Merge Feed example 5 delivered by one events poll'
+              when: 'select#kind-filter value is set to "UPGRADE" and a "change" event is dispatched'
+              then: 'no new URL is recorded; in #events only the row of id 9 is visible, the 8 ALERT rows hidden'
+            - given: 'the page of example 1'
+              when: 'stop() is called'
+              then: 'clock.clearInterval was called with 1, 2, 3 and 4, each once'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
@@ -3499,6 +3905,34 @@ Requirement:
       matplotlib only draws. The package imports and every subcommand but
       report runs with matplotlib absent; report then exits 2 with one line
       on stderr.
+      This requirement covers the Python package ethsc/ and the Python
+      tests in tests/. The dashboard frontend in dashboard/ (phase 16) is a
+      separate Node project bound by Frontend Tree; nothing in ethsc/ or
+      tests/ imports, builds or runs it.
+  - name: Frontend Tree
+    description: >
+      dashboard/ is a Node project of its own (phase 16): package.json,
+      package-lock.json, tsconfig.json (strict, noEmit, types vite/client),
+      vite.config.ts (the build and the vitest config: environment
+      happy-dom, include tests/**/*.test.ts only, setupFiles
+      tests/setup.ts, chaiConfig.truncateThreshold 200, build.sourcemap
+      false),
+      index.html (a div id "app" and one module script src/main.ts), src/
+      and tests/. No runtime dependency; the devDependencies are pinned
+      exactly: typescript 5.9.3, vite 7.3.6, vitest 3.2.7, happy-dom
+      20.14.5, @types/node 22.20.5 (latest of each line on 2026-10-02;
+      typescript 7 and vitest 5 were not taken: the guard reads the
+      TypeScript compiler API). Every command runs inside dashboard/:
+      `npm ci && npx tsc --noEmit && npx vitest run && npm run build` exits
+      0 and dashboard/dist then holds index.html and assets/ and nothing
+      else, no .map file. tests/setup.ts makes globalThis.fetch,
+      XMLHttpRequest, WebSocket and node:net connect throw unless a test
+      stubs them; tests/helpers.ts is the one module of shared stubs
+      (fixture loader, fake fetch, fake clock, synthetic events), imported
+      explicitly. Tests read tests/fixtures/dashboard_*.json of the Python
+      tree in place, never a copy. node_modules and dist are not committed;
+      Node 23 / npm 11 run on the operator's machine only, the server gets
+      the built dist/.
   - name: Offline Tests
     description: >
       No test opens a network connection beyond the loopback interface:
@@ -3512,6 +3946,16 @@ Requirement:
       source (Sourcify-verified ABI, Etherscan label, published selector,
       Infura credit table, byte diff of fixtures); none is invented.
 Guardrail:
+  - name: Frontend Isolation
+    description: >
+      In dashboard/src (phase 16): no explicit any; no innerHTML,
+      outerHTML, insertAdjacentHTML or document.write (data reaches the DOM
+      through textContent and setAttribute only); only src/api.ts names
+      fetch, XMLHttpRequest or WebSocket; only src/main.ts names
+      setInterval, setTimeout, clearInterval, document or window;
+      src/format.ts and src/feed.ts import nothing but types from ./api;
+      no module imports a package (relative imports only). Checked on the
+      TypeScript syntax tree, never on the text.
   - name: No Network In Core
     description: >
       Only ethsc/rpc.py imports urllib, http or socket. Every other module
