@@ -293,7 +293,7 @@ describe("Wire Page", () => {
 
     const app = doc.getElementById("app")!;
     const ids = Array.from(app.children).map((c) => c.id);
-    expect(ids).toEqual(["health", "events", "summary", "clusters", "kind-filter"]);
+    expect(ids).toEqual(["health", "events", "summary", "clusters"]);
   });
 
   test("Wire Page ex11 (extra): exactly four intervals are registered", async () => {
