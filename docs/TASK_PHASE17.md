@@ -90,7 +90,10 @@ and removed on exit, vitest failures filtered to one line each.
   `#app` become `["health", "events", "summary", "clusters"]` (one line; the select moves into
   `#events` by the new contract). Committed by hand as data.
 
-### 3.1. ui-look (main.ts + style.css + smoke test)
+- (cut 2) `dashboard/src/style.css`: a one-line placeholder comment, so `main.ts` can import
+  it before `ui-style` writes its rules. Committed by hand as data.
+
+### 3.1. Cut 1 (failed, see §11): ui-look (main.ts + style.css + smoke test)
 
 1. `tsc --noEmit`.
 2. The phase-16 guard over `src/` (Frontend Isolation, AST) and over `tests/look.test.ts`
@@ -110,7 +113,18 @@ and removed on exit, vitest failures filtered to one line each.
    `Style Page exN: …`. A screenshot of each attempt goes to `/tmp/morph/ui-look-p17/`.
 7. `git diff --quiet HEAD` over everything outside the three targets; no untracked file.
 
-### 3.2. ui-look-judge
+### 3.1b. Cut 2: ui-shell, then ui-style
+
+- `ui-shell` (`main.ts` + `tests/shell.test.ts`): steps 1–5 of 3.1 (tsc, guard, the probe of
+  Wire Page 1–9, own test, full suite, build without the CSS-asset check), `style.css` frozen.
+- `ui-style` (`style.css` only), depends on `ui-shell`: build with one `.js` + one `.css`, the
+  browser probe (step 6), then tsc and the full suite; `main.ts` and everything else frozen.
+- Neither slice holds `contour.yaml` (291 KB, ~75 % of cut 1's 90 k-token input): the
+  instruction carries the card's Function, Frontend Tree and Frontend Isolation verbatim, read
+  from `contour.yaml` by the builder. The `ui-style` instruction is a closed list of nine rule
+  groups instead of an open aesthetic brief.
+
+### 3.2. ui-look-judge (cut 2: ui-shell-judge, same file and checks)
 
 `tsc`; the guard: 4..16 tests (Wire Page examples 6–9, + 12), no `any`, no own stubs; the
 judge file; the full suite; `dashboard/src` and the rest unchanged; no untracked file.
@@ -126,9 +140,11 @@ judge file; the full suite; `dashboard/src` and the rest unchanged; no untracked
 
 ## 4. Constraints
 
-- One card owns `main.ts` and `style.css`: the stylesheet styles the structure `main.ts`
-  builds, an invariant across two files (skill rule). Envelope: `main.ts` +40..70 lines over
-  206, `style.css` 150..300 new. `variants: 2`.
+- Cut 1: one card owned `main.ts` and `style.css` (the invariant across two files). It failed
+  on the envelope (§11). Cut 2: the structure `style.css` depends on is pinned in the Contour
+  (ids, classes, data attributes), so the invariant is held by the Contour and the files have
+  one card each, in two generations: `ui-shell` (+40..70 lines on `main.ts`), then `ui-style`
+  (150..300 new lines) and `ui-shell-judge`. `variants: 2`.
 - The judge (`ui-look-judge`) reads `main.ts` and the Contour, depends on `ui-look`.
 - The deck is cut by `mrph plan --component dashboard-ui --judge` and filtered to these two
   cards (`decks/phase17-deck.json`, `mrph deck add`): a plain `--add` would re-cut every
@@ -159,7 +175,7 @@ judge file; the full suite; `dashboard/src` and the rest unchanged; no untracked
 
 ## 8. How to run
 
-`python3 /tmp/p17/build.py` (map entries + `decks/phase17-deck.json`), commit; `mrph deck
+`python3 decks/phase17-tooling/build.py` (map entries + `decks/phase17-deck.json`), commit; `mrph deck
 clear && mrph deck reset && mrph deck add --file decks/phase17-deck.json && mrph deck check`;
 `mrph run --processor glm`. `git checkout master` by hand after the run; push and merge are the
 operator's.
@@ -181,4 +197,26 @@ misses against §9.
 
 ## 11. Actual
 
-_(after the run)_
+**Cut 1, run `20261002-124824-a6c26459`**, glm, 12:48–13:34, **46 min, $0.113: 0 written, 1
+failed (`ui-look`), 1 skipped (`ui-look-judge`).**
+
+| request | output tokens | finish | result |
+|---|---|---|---|
+| ui-look.v1 | 7 253 | stop | tsc, guard, probe Wire Page 1–8 green; **ex9 red**: the tab title was not "ethsc" before the first health answer |
+| ui-look.v2, r1.v1, r1.v2, r2.v1, r2.v2 | **48 000 each** | **length** | cut off, discarded unread (no acceptance ran) |
+
+- 5 of 6 answers ran to the output cap. Over the 22 earlier runs of this project, 3 of 236
+  answers were cut, the longest finished one 23 111 tokens. Input was ~90 k tokens, as in phase
+  16 (88 k), of which `contour.yaml` is ~75 %. Morph keeps no copy of a cut answer, so what the
+  model generated in those 48 000 tokens is unknown.
+- The one complete answer was nearly right (8 of 9 Wire Page examples, a 3.2 KB stylesheet); it
+  never reached the build or the browser probe. **The criterion faults: none seen. The fault was
+  the cut**: one card for two files with ~350 new lines against the skill's 60-line envelope
+  gate, chosen by the "invariant across two files" rule. The brief was deliberately plain
+  language (the operator's test of how the orchestrator turns it into a contract).
+- Side findings: the snapshot directory of cut 1 was `/tmp/morph/ui-look-p16/` (the phase-16
+  builder's suffix; fixed in cut 2: `-p17`); Morph's syntax gate skips `.css` (no grammar
+  wheel); its diagnosis markers (`Error`, `assert`, …) catch vitest's `AssertionError` lines but
+  not its `FAIL` lines.
+
+**Cut 2**: _(after the run)_
