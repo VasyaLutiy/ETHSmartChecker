@@ -2,7 +2,7 @@
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
 clusters top, cluster, similar, seed add, seed list, recheck, risk,
-report. Output is plain text, one record per line, tab-separated, fully
+report, dashboard. Output is plain text, one record per line, tab-separated, fully
 ordered; every float is printed "%.4f". ALERT lines are printed from the
 on_alerts sink of follow_chain as each block ends and flushed at once,
 so an alert reaches the log before the next block is fetched and
@@ -86,13 +86,20 @@ add --fetch also resolves a standard proxy's implementation at
 "latest", fetching it the first time an address is seeded (fresh or
 already held); it does not touch a held proxy that already has one,
 and it does not call the beacon of a beacon proxy.
+
+Dashboard (phase 15). dashboard --db PATH [--host H] [--port P]
+[--static DIR] serves the store of that file read-only on localhost
+through ethsc.dashboard: it never opens a writable Store, so the
+database is neither migrated nor switched to WAL by it.
 """
 
 import argparse
+import os
 import re
 import sys
 import time
 
+from ethsc import dashboard
 from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
 from ethsc.config import PRICES, PUBLICNODE_URL
 from ethsc.evm import is_std_proxy, risk_flags
@@ -492,6 +499,39 @@ def _run_report(args, store):
     return 0
 
 
+def _run_dashboard(args):
+    """Serve the dashboard of args.db; blocks until Ctrl-C (phase 15).
+
+    It never opens a writable Store: main branches here before the
+    Store(args.db) every other subcommand opens, so an old database is
+    neither migrated nor switched to WAL by it. A --db path that is not
+    an existing file is exit 2 with one stderr line naming the path and
+    no file created; an OSError from make_server (a busy port, a host
+    it cannot bind) is exit 2 with one stderr line. On success exactly
+    one stderr line announces the address, then serve_forever blocks;
+    KeyboardInterrupt (Ctrl-C) closes the server and exits 0. stdout
+    stays empty.
+    """
+    if not os.path.isfile(args.db):
+        sys.stderr.write("no such database file: %s\n" % args.db)
+        return 2
+    try:
+        # Through the module attribute, so a test that patches
+        # ethsc.dashboard.make_server takes effect.
+        server = dashboard.make_server(args.db, args.host, args.port,
+                                       args.static)
+    except OSError as err:
+        sys.stderr.write("%s\n" % err)
+        return 2
+    try:
+        sys.stderr.write("serving http://%s:%d/\n" % server.server_address)
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    server.server_close()
+    return 0
+
+
 def _build_parser():
     parser = _Parser(prog="ethsc", description="ETHSmartChecker CLI")
     parser.add_argument("--db", default="ethsc.sqlite")
@@ -558,6 +598,11 @@ def _build_parser():
     report = sub.add_parser("report")
     report.add_argument("--out", default="ethsc-report")
 
+    dash = sub.add_parser("dashboard")
+    dash.add_argument("--host", default="127.0.0.1")
+    dash.add_argument("--port", type=int, default=8080)
+    dash.add_argument("--static", default="dashboard/dist")
+
     return parser
 
 
@@ -597,6 +642,11 @@ def main(argv=None, rpc=None, sleep=None) -> int:
     except SystemExit:
         # --help and --version print and exit(0); keep that exit code.
         return 0
+
+    # The dashboard branches before any Store is opened: it never
+    # migrates or re-journals the database.
+    if args.command == "dashboard":
+        return _run_dashboard(args)
 
     # The rpc client is built only on the paths that talk to the chain;
     # every other subcommand runs without a key and never calls
