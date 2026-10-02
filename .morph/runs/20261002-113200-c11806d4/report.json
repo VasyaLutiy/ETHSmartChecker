@@ -1,0 +1,161 @@
+{
+  "deck_id": "20261002-113200-c11806d4",
+  "completed_at": "2026-10-02T11:33:40.452",
+  "branch": "morph/20261002-113200-c11806d4",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "ui-scaffold"
+    ]
+  ],
+  "batch_ids": [
+    "local-89be4042211e4a71bacfb680a7d875b2",
+    "local-f91e08f901504f1f864b0086368ae2fa"
+  ],
+  "outcomes": {
+    "ui-scaffold": {
+      "custom_id": "ui-scaffold",
+      "status": "written",
+      "paths": [
+        "./dashboard/package.json",
+        "./dashboard/tsconfig.json",
+        "./dashboard/vite.config.ts",
+        "./dashboard/index.html",
+        "./dashboard/tests/setup.ts",
+        "./dashboard/tests/helpers.ts"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "ui-scaffold.r1.v2",
+      "acceptance_output": null,
+      "earlier_failures": "== npm install\n== tsc\ntests/setup.ts(14,18): error TS1093: Type annotation cannot appear on a constructor declaration.\n",
+      "commit": "b8f8e9cb53017fe787ca4fce291aa89d66c04310",
+      "diffstat": [
+        {
+          "path": "dashboard/index.html",
+          "insertions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/package.json",
+          "insertions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/helpers.ts",
+          "insertions": 172,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tests/setup.ts",
+          "insertions": 26,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/tsconfig.json",
+          "insertions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "dashboard/vite.config.ts",
+          "insertions": 17,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "dashboard/package.json",
+            "level": "tree-sitter",
+            "status": "skipped",
+            "line": null,
+            "message": "grammar wheel not installed (pip install tree-sitter-json)"
+          },
+          {
+            "path": "dashboard/tsconfig.json",
+            "level": "tree-sitter",
+            "status": "skipped",
+            "line": null,
+            "message": "grammar wheel not installed (pip install tree-sitter-json)"
+          },
+          {
+            "path": "dashboard/vite.config.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/index.html",
+            "level": "tree-sitter",
+            "status": "skipped",
+            "line": null,
+            "message": "grammar wheel not installed (pip install tree-sitter-html)"
+          },
+          {
+            "path": "dashboard/tests/setup.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "dashboard/tests/helpers.ts",
+            "level": "tree-sitter",
+            "status": "passed",
+            "line": null,
+            "message": null
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "ui-scaffold.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937122-ize6ibeG2FokQxD7NLFn",
+      "input_tokens": 84481,
+      "output_tokens": 2506,
+      "cost": 0.00835509,
+      "finish_reason": "stop"
+    },
+    "ui-scaffold.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937121-dcuDpCOrkuLbGMXvfasa",
+      "input_tokens": 84475,
+      "output_tokens": 3513,
+      "cost": 0.00865665,
+      "finish_reason": "stop"
+    },
+    "ui-scaffold.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937185-ga4HHsxvaS7yJJwOu1jy",
+      "input_tokens": 91073,
+      "output_tokens": 1869,
+      "cost": 0.00285903,
+      "finish_reason": "stop"
+    },
+    "ui-scaffold.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1790937185-vDGwmDzBLAkmNpLWtRIM",
+      "input_tokens": 91073,
+      "output_tokens": 1945,
+      "cost": 0.002715942,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 351102,
+    "output_tokens": 9833,
+    "cost": 0.022586712,
+    "requests": 4,
+    "requests_with_usage": 4
+  },
+  "orchestrator_usage": {}
+}
