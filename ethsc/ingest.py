@@ -200,6 +200,98 @@ def _fetch_implementation(store, address, block, get_storage, get_code):
     return implementation, False
 
 
+def _read_slot(get_storage, address, slot, block):
+    """One get_storage call as (word, raised) -- never raises Exception."""
+    try:
+        return get_storage(address, slot, block), False
+    except Exception:
+        return None, True
+
+
+def _resolve_in_pool(store, targets, block, get_storage, get_code, workers):
+    """Step 2's _fetch_implementation calls, with the network in a pool.
+
+    targets are the addresses step 2 resolves, in candidate order. The
+    reads run in at most ``workers`` threads, in three waves -- every
+    IMPL_SLOT read, then the BEACON_SLOT reads of the targets whose
+    IMPL_SLOT word was not an address and did not raise, then one
+    get_code per distinct implementation the store does not hold yet --
+    and every store write happens afterwards in the calling thread, in
+    targets order, exactly as the sequential _fetch_implementation does
+    it: set_implementation for each found address, the implementation's
+    code stored once (the first target that needs it stores it; a later
+    one finds it held). Returns address -> (implementation or None,
+    fetched_new), the pair _fetch_implementation returns. The only
+    difference from the sequential run is under failure: a get_code of
+    an implementation that raised is not retried for a second proxy of
+    the same implementation in the same block.
+    """
+    results = {}
+    if not targets:
+        return results
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    try:
+        impl_reads = [executor.submit(_read_slot, get_storage, address,
+                                      IMPL_SLOT, block)
+                      for address in targets]
+        impl_words = [future.result() for future in impl_reads]
+        beacon_needed = [address for address, (word, raised)
+                         in zip(targets, impl_words)
+                         if not raised and slot_address(word) is None]
+        beacon_reads = [executor.submit(_read_slot, get_storage, address,
+                                        BEACON_SLOT, block)
+                        for address in beacon_needed]
+        beacon_words = dict(zip(beacon_needed,
+                                [future.result() for future in beacon_reads]))
+
+        found = []  # (address, implementation or None, from_impl_slot)
+        for address, (word, raised) in zip(targets, impl_words):
+            if raised:
+                found.append((address, None, False))
+                continue
+            implementation = slot_address(word)
+            if implementation is not None:
+                found.append((address, implementation, True))
+                continue
+            word, raised = beacon_words[address]
+            found.append((address, None if raised else slot_address(word),
+                          False))
+
+        to_fetch = []
+        for _, implementation, from_impl_slot in found:
+            if (from_impl_slot and implementation not in to_fetch
+                    and not store.has_address(implementation)):
+                to_fetch.append(implementation)
+
+        def fetch(implementation):
+            try:
+                return get_code(implementation, block), False
+            except Exception:
+                return None, True
+
+        code_reads = [executor.submit(fetch, implementation)
+                      for implementation in to_fetch]
+        texts = dict(zip(to_fetch, [future.result() for future in code_reads]))
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    for address, implementation, from_impl_slot in found:
+        if implementation is None:
+            results[address] = (None, False)
+            continue
+        store.set_implementation(address, implementation)
+        if from_impl_slot and not store.has_address(implementation):
+            text, raised = texts.get(implementation, (None, True))
+            if raised:
+                results[address] = (implementation, False)
+                continue
+            results[address] = (implementation, _store_implementation_code(
+                store, implementation, text, block))
+            continue
+        results[address] = (implementation, False)
+    return results
+
+
 def fetch_implementation(store, address, block, get_storage, get_code):
     """The implementation address a standard proxy delegates through.
 
@@ -335,7 +427,10 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
     phase-9/13 behaviour. When it is given, two steps run after the
     candidate loop above, in candidate order, neither one counted in
     the stats or capped by max_calls:
-      step 2 resolves implementations with fetch_implementation, for
+      step 2 resolves implementations with fetch_implementation (with
+      workers K > 1 its slot reads and implementation code fetches run in
+      the same kind of K-thread pool as get_code, store writes stay in
+      the calling thread in candidate order -- phase 14.1), for
       every candidate this call stored with a standard-proxy code and
       for every already-known candidate that store.implementations()
       held before this call (that snapshot is read once, before the
@@ -440,18 +535,29 @@ def ingest_block(block, receipts, get_code, store, max_calls=None,
     if get_storage is not None:
         resolved_new = {}       # new-this-call proxy address -> implementation
         new_implementations = set()
+        if workers is not None and workers > 1:
+            pooled = _resolve_in_pool(
+                store,
+                [a for a in candidates
+                 if a in new_std_proxies or a in known_before],
+                block, get_storage, get_code, workers)
+
+            def resolve(address):
+                return pooled[address]
+        else:
+            def resolve(address):
+                return _fetch_implementation(
+                    store, address, block, get_storage, get_code)
         for address in candidates:
             if address in new_std_proxies:
-                implementation, fetched_new = _fetch_implementation(
-                    store, address, block, get_storage, get_code)
+                implementation, fetched_new = resolve(address)
                 if implementation is not None:
                     resolved_new[address] = implementation
                 if fetched_new:
                     new_implementations.add(implementation)
             elif address in known_before:
                 old = known_before[address]["implementation"]
-                implementation, fetched_new = _fetch_implementation(
-                    store, address, block, get_storage, get_code)
+                implementation, fetched_new = resolve(address)
                 if fetched_new:
                     new_implementations.add(implementation)
                 if (old is not None and implementation is not None
@@ -668,19 +774,46 @@ def follow_chain(rpc, store, start=None, stop=None,
 
         storage_price = prices.get("eth_getStorageAt", 0)
 
-        def get_storage(address, slot, blk, _day=block_day):
-            # One read plus the code fetch it may trigger -- a soft
-            # reservation, not a second check before that fetch.
-            if (daily_budget is not None
-                    and store.spent(_day) + storage_price + code_price
-                    > daily_budget):
-                return None
-            result = rpc.call(
-                "eth_getStorageAt",
-                [address, slot,
-                 hex(blk) if code_tag is None else code_tag])
-            store.spend(_day, "eth_getStorageAt", storage_price)
-            return result
+        if workers is not None and workers > 1:
+            # Pool path (phase 14.1): the reads run in worker threads, and
+            # the sqlite store must not be touched there. The budget is
+            # checked against the day's spend read once here plus what
+            # this block has called so far; the reads are charged after
+            # ingest_block, like the pooled eth_getCode calls.
+            storage_counter = [0]
+            spent_before = store.spent(block_day)
+
+            def get_storage(address, slot, blk):
+                if daily_budget is not None:
+                    with counter_lock:
+                        projected = (spent_before
+                                     + counter[0] * code_price
+                                     + storage_counter[0] * storage_price)
+                    if projected + storage_price + code_price > daily_budget:
+                        return None
+                result = rpc.call(
+                    "eth_getStorageAt",
+                    [address, slot,
+                     hex(blk) if code_tag is None else code_tag])
+                with counter_lock:
+                    storage_counter[0] += 1
+                return result
+        else:
+            storage_counter = None
+
+            def get_storage(address, slot, blk, _day=block_day):
+                # One read plus the code fetch it may trigger -- a soft
+                # reservation, not a second check before that fetch.
+                if (daily_budget is not None
+                        and store.spent(_day) + storage_price + code_price
+                        > daily_budget):
+                    return None
+                result = rpc.call(
+                    "eth_getStorageAt",
+                    [address, slot,
+                     hex(blk) if code_tag is None else code_tag])
+                store.spend(_day, "eth_getStorageAt", storage_price)
+                return result
 
         try:
             stats = ingest_block(block, receipts, get_code, store,
@@ -691,6 +824,8 @@ def follow_chain(rpc, store, start=None, stop=None,
             if charge_after:
                 for _ in range(counter[0]):
                     store.spend(block_day, "eth_getCode", code_price)
+                for _ in range(storage_counter[0]):
+                    store.spend(block_day, "eth_getStorageAt", storage_price)
         summary["alerts"].extend(stats["alerts"])
         summary["upgrades"].extend(stats["upgrades"])
         if stats["complete"]:
