@@ -14,3 +14,8 @@ contour-reference/
 docs/contour.svg
 docs/contour-detailed.svg
 smoke/
+
+# phase 16 frontend: npm install output, the build, the acceptance probes
+dashboard/node_modules/
+dashboard/dist/
+dashboard/probe/
