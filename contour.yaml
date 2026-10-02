@@ -3597,6 +3597,25 @@ System:
             unhandled rejection escapes, nothing is logged. main.ts holds no
             formatting or merging logic of its own: it calls api, feed and
             render.
+            Phase 17 (layout): main.ts imports "./style.css" (Style Page) and
+            builds a page someone keeps open: #app gets class "dash"; each of
+            the four panels is a <section class="panel"> (ids unchanged)
+            whose first child is <h2 class="panel-title"> ("Listener",
+            "Events", "Summary", "Impl clusters"), followed by one <p
+            class="panel-caption"> (free text, e.g. "times UTC, newest
+            first"). The select moves into #events (after its caption,
+            before the list the renderer adds), next to
+            [data-field="feed-meta"]: "<n> events · newest <formatTime of
+            the newest kept event> UTC", or "no events yet" when nothing is
+            kept, updated after every events poll and filter change. #events
+            also holds a static .feed-head row naming the ALERT columns, so
+            the column grid of Style Page aligns it with the rows. #summary
+            holds a static ul.legend, one li[data-legend=<origin>] per
+            origin in originShares order, text the origin. doc.title is
+            "ethsc" until the first health answer, then "<statusOf(seconds)>
+            · <progress> · ethsc" after each good one and "unreachable ·
+            ethsc" after a failed one. The renderers are unchanged: they
+            append into these sections and never remove what main put there.
           guardrails: [Frontend Isolation]
           steps:
             - calls: Fetch Endpoints
@@ -3627,6 +3646,135 @@ System:
             - given: 'the page of example 1'
               when: 'stop() is called'
               then: 'clock.clearInterval was called with 1, 2, 3 and 4, each once'
+            - given: 'a fresh happy-dom document with <div id="app">; the fake fetch of example 1; a fake clock'
+              when: 'start(doc, f, clock) and pending promises are flushed'
+              then: >
+                #app has class "dash" and its element children are exactly
+                four <section class="panel"> with ids health, events, summary,
+                clusters, in that order; the first element child of each is an
+                <h2 class="panel-title"> with text "Listener", "Events",
+                "Summary" and "Impl clusters"; select#kind-filter is inside
+                #events, before its [data-role="list"]; #events holds one
+                .feed-head whose seven children have the texts "kind", "time
+                UTC", "block", "label", "score", "origin" and "address"; #summary
+                holds one ul.legend with five li, their data-legend in order
+                created, seen, impl, fetched, unknown and each text equal to it
+              ref: 'phase 17: titles so nobody has to guess what a block is'
+            - given: 'the page of example 1; then a page whose fake fetch answers the events URL with {"events": [], "last_id": 0}'
+              when: 'pending promises are flushed'
+              then: >
+                #events [data-field="feed-meta"] has the text "8 events ·
+                newest 08:47:50 UTC" on the first page (the middle dot is
+                U+00B7) and "no events yet" on the second
+              ref: 'phase 17: did anything happen, and when'
+            - given: 'the page of example 1; console.error spied'
+              when: >
+                doc.title is read; then the fake fetch fails every call
+                (TypeError("Failed to fetch")), the 5000-ms intervals are fired
+                and promises are flushed; then the fake fetch is restored, the
+                5000-ms intervals are fired again and promises are flushed
+              then: >
+                "live · 26103569 · ethsc"; then "unreachable · ethsc"; then
+                "live · 26103569 · ethsc" again; console.error not called
+              ref: 'phase 17: the tab title tells the state when the page is behind another window'
+            - given: 'a fresh document; a fake fetch whose health answer is the health fixture with seconds_since_progress 400, the others the fixtures'
+              when: 'start and flush'
+              then: 'doc.title is "stalled · 26103569 · ethsc"; before the first health answer arrives (right after start, before any flush) it is "ethsc"'
+        - name: Style Page
+          description: >
+            dashboard/src/style.css (phase 17), imported by main.ts and bundled
+            by Vite into dist/assets/*.css: the look of the page. Plain CSS, no
+            preprocessor, no external resource (no @import, no url(), no web
+            font). It styles the elements main.ts and the renderers already
+            make, by their ids, classes and data-* attributes; it adds no DOM.
+          behavior: >
+            A calm, dense dark theme for a page left open on a second monitor
+            all night, read at a glance from across the room: is the listener
+            alive (the health strip), did anything happen and what (the event
+            feed, the largest panel), and the context (summary, impl
+            clusters). Colours are custom properties on :root with exactly
+            these values (the dataviz reference palette, dark mode, validated
+            2026-10-02): --page #0d0d0d, --surface #1a1a19, --ink #ffffff,
+            --ink-2 #c3c2b7, --muted #898781, --grid #2c2c2a, --link #6ea8ec;
+            status --live #0ca30c, --behind #fab219, --stalled #d03b3b,
+            --unknown #898781; origins --o-created #3987e5, --o-seen #d95926,
+            --o-impl #199e70, --o-fetched #c98500, --o-unknown #6b6a65; kinds
+            --k-alert #ec835a, --k-upgrade #9085e9. Body text --ink-2 on
+            panels of --surface over a --page background, font system-ui,
+            numbers (time, block, score, counts, members) with
+            font-variant-numeric tabular-nums.
+            Layout (CSS grid on #app.dash): #health is a full-width strip on
+            top; below it #events on the left takes the larger column, and
+            #summary above #clusters on the right; the page never scrolls
+            sideways, also at 1024 px. Health strip: [data-field="status"] is
+            a pill whose background is the status colour of its data-status
+            (live, behind, stalled, unknown) with text that keeps 4.5:1 on
+            it, at least 24 px; progress at least 20 px; the fields carry
+            their labels as ::before text ("block", "at", "age"). Feed: every
+            row [data-id] and the .feed-head are grids with one shared column
+            template for ALERT rows (kind, time, block, label, score, origin,
+            address), so the columns line up under the head and cells never
+            overlap; UPGRADE rows may use their own template; a row with the
+            hidden attribute has no box (the grid display must not override
+            [hidden]); cells do not wrap (a long label is cut with an
+            ellipsis), so rows are at most 28 px high; the kind badge is coloured
+            by its kind, the origin badge carries its origin colour (its
+            background or its left border). Summary: the four counters carry
+            ::before labels ("addresses", "codes", "seeds", "proxies
+            resolved"); each [data-bar] is a horizontal bar at least 8 px
+            high whose segments are blocks as wide as their inline width,
+            filled with their origin colour, labelled above by ::before
+            ("all addresses", "last 300 blocks" from the bar's own position,
+            not as a flex item); the legend is one line of swatches in the
+            same colours. Fields and counters never touch: at least 12 px
+            between neighbours.
+            Clusters: the members column is right-aligned with at least 12 px
+            between it and the key. .unreachable is a visible band with
+            background --stalled and text #ffffff. Links use --link.
+          guardrails: [Frontend Isolation]
+          examples:
+            - given: 'the built page served with the four fixtures as the backend, in headless Chrome at 1400 x 900, 3 s after load'
+              when: 'the computed styles are read'
+              then: 'body background rgb(13, 13, 13); every section.panel background rgb(26, 26, 25); the text colour of each panel has at least 7:1 contrast on its background; the font family names system-ui; no stylesheet rule is an @import and no declaration holds url('
+              ref: 'phase 17: dark, calm, no external resource'
+            - given: 'the page of example 1, at 1400 x 900 and then at 1024 x 768'
+              when: 'the boxes of the four panels are read'
+              then: '#health is above the other three and at least 95% as wide as #app; at 1400 #events is at least 55% of the viewport wide, #summary and #clusters start right of it and #summary is above #clusters; at both sizes document.documentElement.scrollWidth <= innerWidth'
+              ref: 'phase 17: the feed is the heart of the page'
+            - given: 'the page of example 1 (health seconds_since_progress 24)'
+              when: '[data-field="status"] is read, then its data-status is set to "behind", "stalled" and "unknown" in turn'
+              then: 'font-size at least 24 px; background rgb(12, 163, 12), rgb(250, 178, 25), rgb(208, 59, 59), rgb(137, 135, 129); in each state the text colour has at least 4.5:1 contrast on that background; [data-field="progress"] font-size at least 20 px; the ::before content of progress, progress_at and age is "block", "at" and "age"; progress, progress_at, age and status are laid out left to right with at least 12 px between one field and the next'
+              ref: 'phase 15 §11 thresholds; readable from across the room'
+            - given: 'the page of example 1 (the 8 fixture events)'
+              when: 'the cell boxes of the ALERT rows and of .feed-head are read'
+              then: 'every cell of .feed-head starts within 1 px of the matching cell of the row of id 8; [data-field="time"] starts at the same x (within 1 px) in all 8 rows; in the row of id 8 each cell ends before the next starts; every row is at most 28 px high; time, block and score have tabular-nums'
+              ref: 'phase 16 screenshot: the columns ran into each other'
+            - given: 'the page of example 1'
+              when: 'select#kind-filter is set to "UPGRADE" and changed'
+              then: 'every ALERT row has a zero-height box (offsetHeight 0); back to "ALL" every row is at least 14 px high'
+              ref: 'the grid display must not defeat [hidden]'
+            - given: 'the page of example 1 (summary fixture)'
+              when: 'the bars are read'
+              then: >
+                each [data-bar] is at least 8 px high; each segment has the
+                background of its origin (seen rgb(217, 89, 38), unknown
+                rgb(107, 106, 101), impl rgb(25, 158, 112), created
+                rgb(57, 135, 229), fetched rgb(201, 133, 0)); a segment's width
+                is its percent of the bar width within 3 px; the ::before
+                content of the two bars is "all addresses" and "last 300
+                blocks"; each li[data-legend] shows a swatch of its origin
+                colour (::before background), without a list bullet, and the
+                legend is one line at most 24 px high; the four counters sit
+                left to right or in a grid with at least 12 px between
+                neighbours, each with its ::before label
+              ref: 'phase 16 screenshot: the bars were there but invisible'
+            - given: 'the page of example 1 (clusters fixture)'
+              when: 'the first table row is read'
+              then: 'the members cell is right-aligned with tabular-nums and its text starts at least 12 px right of the end of the key link; every a has colour rgb(110, 168, 236)'
+            - given: 'the page of example 1, then the backend answers 500 {"error": "down"} to every request'
+              when: '7 s later'
+              then: '#health .unreachable has a box at least 14 px high, background rgb(208, 59, 59) and colour rgb(255, 255, 255); #health [data-field="progress"] still shows 26103569'
+              ref: 'phase 16: a failed request is visible and keeps the last good data'
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
