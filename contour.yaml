@@ -590,6 +590,19 @@ System:
             the first open adds the column with no rewrite and
             implementations() stays well under 1 s.
             Phase 14 also changes add_seed: see Manage Watchlist.
+            Phase 15 (the dashboard): Store(path, readonly=False). A
+            writable open also creates the table events (see Record
+            Events) by CREATE TABLE IF NOT EXISTS in the schema script,
+            adds the column updated_at TEXT to a progress table that lacks
+            it (ALTER TABLE progress ADD COLUMN updated_at TEXT, once, last
+            column, old rows not rewritten -- see Track Progress), and
+            switches the file to PRAGMA journal_mode=WAL. WAL is persistent
+            in the file: a reader then never blocks the listener's writes
+            and the listener never blocks a reader. The pragma is the first
+            statement after connect; an already-WAL file is left as it is.
+            Store(path, readonly=True) is a different open: see Open Read
+            Only. The Store(path) signature with one positional argument is
+            unchanged for every existing caller.
           guardrails: [No Network In Core, Deterministic Output]
           steps:
             - uses: fingerprint
@@ -729,16 +742,55 @@ System:
                 NULL (nothing rewritten); the second open adds no column and
                 changes nothing
               ref: 'phase 14 migration; 20 counted with is_std_proxy over codes_26077729.json; on the live 01.10 copy: 210952 rows, 5092 of them standard proxies'
+            - given: 'a fresh temp db path'
+              when: 'Store(path) is opened and closed, then the file is opened with a plain sqlite3.connect and PRAGMA journal_mode is read; then Store(path) is opened and closed again and the pragma is read again'
+              then: >
+                "wal" both times; the table names of sqlite_master (type
+                "table") are exactly addresses, codes, events, ledger,
+                progress, seeds; progress has the columns key, block,
+                updated_at in that order; events has the columns id, kind,
+                block, at, address, seed_address, label, score, origin,
+                old_impl, new_impl in that order
+              ref: 'phase 15 schema'
+            - given: >
+                a phase-14 database: a file made with the phase-14 schema (the
+                five tables codes, addresses, progress (key, block), seeds,
+                ledger; no events table; journal mode delete) holding the 130
+                codes and the 206 addresses of codes_26077729.json and the
+                progress row ("progress", 26077729), written by plain INSERTs
+              when: 'Store(path) opens it, get_progress and progress_at are called, the db is closed, then opened again'
+              then: >
+                after the first open the file has the table events (empty),
+                progress has updated_at last, PRAGMA journal_mode is "wal";
+                get_progress() is 26077729 and progress_at() is None (the old
+                row is not rewritten); counts()["addresses"] is 206; the
+                second open adds nothing and changes nothing
+              ref: 'phase 15 migration; on the 01.10 night2 copy: 214132 addresses, progress 26099873'
         - name: Track Progress
           description: >
             get_progress() -> int or None, the last fully ingested block;
-            set_progress(block) stores it.
+            set_progress(block) stores it. Phase 15: set_progress also
+            writes updated_at, the UTC time of the call as text
+            "YYYY-MM-DDTHH:MM:SSZ" (to the second, datetime.now with
+            timezone.utc, format "%Y-%m-%dT%H:%M:%SZ"); progress_at() ->
+            str or None reads it back -- None on a fresh db, and None for a
+            progress row written before phase 15 until the next
+            set_progress. This is the listener's heartbeat: the dashboard
+            tells a live listener from a dead one by it.
           steps:
             - modifies: Code Database
           examples:
             - given: 'a fresh temp db'
               when: 'get_progress is called, then set_progress(26077729) and get_progress, then the db is reopened'
               then: 'None, then 26077729, and 26077729 after the reopen'
+            - given: 'a fresh temp db; t0 = the UTC time truncated to the second just before the call, t1 = the UTC time just after'
+              when: 'progress_at() is called, then set_progress(26077729), then progress_at() again, then the db is reopened and progress_at() is read'
+              then: >
+                None first; then a str of 20 characters matching
+                ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+                whose parsed time t satisfies t0 <= t <= t1; the same str
+                after the reopen; get_progress() is 26077729
+              ref: 'phase 15 heartbeat'
         - name: Manage Watchlist
           description: >
             add_seed(address, label) marks the stored code of address as a
@@ -829,7 +881,12 @@ System:
             gives. counts() -> dict with exactly the keys addresses,
             addresses_with_code, addresses_without_code, codes, blocks;
             ledger_days() -> list of {day, credits} over the whole ledger,
-            sorted by day ascending.
+            sorted by day ascending. Phase 15: origin_counts(since_block=None)
+            -> dict mapping each origin text found in addresses to the
+            number of rows carrying it, a NULL origin counted under
+            "unknown"; with since_block given only the rows whose block >=
+            since_block count. Every addresses row counts, with or without
+            code. One SELECT ... GROUP BY; an empty database gives {}.
           behavior: >
             counts()["blocks"] is the number of distinct block values in the
             addresses table, not their span. addresses_without_code counts
@@ -856,6 +913,168 @@ System:
             - given: 'an empty database'
               when: 'counts() is called'
               then: 'all five keys are 0'
+            - given: >
+                a fresh db, then put_address("0x00000000000000000000000000000000000000a1",
+                None, 100, "created"), put_address("0x00000000000000000000000000000000000000a2",
+                None, 200, "seen"), put_address("0x00000000000000000000000000000000000000a3",
+                None, 300) and put_address("0x00000000000000000000000000000000000000a4",
+                None, 300, "seen")
+              when: 'origin_counts() is called on the fresh db, then origin_counts(), origin_counts(since_block=200) and origin_counts(since_block=301) after the puts'
+              then: >
+                {} first; then {"created": 1, "seen": 2, "unknown": 1};
+                {"seen": 2, "unknown": 1}; {}
+              ref: 'phase 15: the dashboard summary counts origins in one GROUP BY'
+        - name: Record Events
+          description: >
+            The persistent record of the live stream (phase 15): every
+            ALERT and UPGRADE that follow_chain hands to its sinks, so the
+            dashboard can show them after the listener's stdout is gone.
+            add_events(events) writes a list of Event dicts in one
+            transaction; events(after_id=0, limit=100) -> list of Event,
+            newest first; event_counts() -> dict of counts per kind and per
+            seed.
+          behavior: >
+            Each element given to add_events is a dict with kind ("ALERT"
+            or "UPGRADE"), block (int) and at (str), plus the fields of its
+            kind: an ALERT carries address, seed_address, label, score,
+            origin (the alert dict of ingest as is); an UPGRADE carries
+            address, old_impl, new_impl. A key the element lacks is stored
+            NULL; extra keys are ignored. Addresses (address, seed_address,
+            old_impl, new_impl) are stored lowercase. The rows get
+            increasing ids in list order (INSERT without an id; id is
+            INTEGER PRIMARY KEY). The whole list is one transaction: a kind
+            other than ALERT or UPGRADE anywhere in it raises ValueError
+            and nothing of the list is written. add_events([]) writes
+            nothing and does not raise. events(after_id, limit) returns the
+            newest `limit` rows whose id > after_id, ordered by id
+            descending, each an Event with exactly the eleven keys; a row's
+            NULL reads back as None, score as a float. event_counts() gives
+            {"kinds": {"ALERT": a, "UPGRADE": u}, "seeds": [{"label",
+            "seed_address", "count"}, ...]}: kinds has both keys always
+            (0 when absent); seeds groups the ALERT rows by (seed_address,
+            label), sorted by count descending, then label, then
+            seed_address. Nothing in the store deletes or updates an event.
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - modifies: Code Database
+          examples:
+            - given: >
+                a fresh temp db and the two events
+                {"kind": "ALERT", "block": 26077729, "at": "2026-10-02T08:00:00Z",
+                "address": "0x1807090DD15A6F58E00FD769E32EBF20EE610385",
+                "seed_address": "0x34c6211621f2763c60eb007dc2ae91090a2d22f6",
+                "label": "BELLE honeypot", "score": 0.8666666666666667,
+                "origin": "seen"} and {"kind": "UPGRADE", "block": 26077729,
+                "at": "2026-10-02T08:00:00Z", "address":
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8", "old_impl":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "new_impl":
+                "0xe440cc08a71694c8229323803f59024e3144630e"}
+              when: 'add_events([alert, upgrade]) is called, then events()'
+              then: >
+                exactly two events, ids 2 then 1: {"id": 2, "kind": "UPGRADE",
+                "block": 26077729, "at": "2026-10-02T08:00:00Z", "address":
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8", "seed_address":
+                None, "label": None, "score": None, "origin": None, "old_impl":
+                "0x72b971717e088b59f26d4236be222adb6acd393b", "new_impl":
+                "0xe440cc08a71694c8229323803f59024e3144630e"} and {"id": 1,
+                "kind": "ALERT", "block": 26077729, "at": "2026-10-02T08:00:00Z",
+                "address": "0x1807090dd15a6f58e00fd769e32ebf20ee610385",
+                "seed_address": "0x34c6211621f2763c60eb007dc2ae91090a2d22f6",
+                "label": "BELLE honeypot", "score": 0.8666666666666667,
+                "origin": "seen", "old_impl": None, "new_impl": None}; the same
+                after the db is closed and reopened
+              ref: 'phase 15; the alert is the one follow_chain finds in Follow Chain example 5 (score 13/15)'
+            - given: 'a fresh temp db and five ALERT events with blocks 1, 2, 3, 4, 5 (the other fields as in example 1), added in one add_events call'
+              when: 'events(), events(limit=3), events(after_id=2), events(after_id=2, limit=2) and events(after_id=5) are called'
+              then: 'ids [5, 4, 3, 2, 1], [5, 4, 3], [5, 4, 3], [5, 4], []; the block of each event equals its id'
+              ref: 'phase 15: newest first, after_id is exclusive'
+            - given: 'a fresh temp db'
+              when: 'event_counts() is called, then add_events of three ALERT events -- seed_address 0x34c6211621f2763c60eb007dc2ae91090a2d22f6 label "BELLE honeypot" twice, seed_address 0x1111111111111111111111111111111111111111 label "impl copy seed" once -- and one UPGRADE event, then event_counts() again'
+              then: >
+                {"kinds": {"ALERT": 0, "UPGRADE": 0}, "seeds": []} first; then
+                {"kinds": {"ALERT": 3, "UPGRADE": 1}, "seeds": [{"label": "BELLE
+                honeypot", "seed_address": "0x34c6211621f2763c60eb007dc2ae91090a2d22f6",
+                "count": 2}, {"label": "impl copy seed", "seed_address":
+                "0x1111111111111111111111111111111111111111", "count": 1}]}
+              ref: 'phase 15: alerts per seed for the dashboard summary'
+            - given: 'a fresh temp db holding one event (example 1 alert)'
+              when: 'add_events is called with [a valid ALERT, {"kind": "BOGUS", "block": 1, "at": "2026-10-02T08:00:00Z"}]'
+              then: 'ValueError; events() still holds exactly the one earlier event'
+              ref: 'phase 15: one transaction per list'
+            - given: 'a fresh temp db'
+              when: 'add_events([]) is called'
+              then: 'no exception; events() is [] and event_counts()["kinds"] is {"ALERT": 0, "UPGRADE": 0}'
+        - name: Open Read Only
+          description: >
+            Store(path, readonly=True) (phase 15) opens an existing database
+            for reading only, through the sqlite URI
+            "file:" + path + "?mode=ro" (sqlite3.connect(..., uri=True); the
+            store does not import urllib -- No Network In Core -- so a path
+            holding "?", "#" or "%" is not supported read-only): it never
+            writes, never migrates, never changes the journal mode and
+            never runs the std_proxy fill. The dashboard opens one per
+            request.
+          behavior: >
+            Every write method -- put_code, put_address, set_implementation,
+            set_progress, add_seed, remove_seed, spend, add_events -- raises
+            ReadOnlyStoreError (ethsc.store.ReadOnlyStoreError, a subclass
+            of Exception) before touching the file. Every read method works
+            as on a writable open. A read-only open tolerates exactly the
+            three newest schema additions missing from an older file,
+            because it cannot add them: no events table -- events() gives
+            [], event_counts() gives {"kinds": {"ALERT": 0, "UPGRADE": 0},
+            "seeds": []}; no progress.updated_at -- progress_at() gives
+            None; no addresses.implementation -- implementation(address)
+            gives None and implementations() maps every standard-proxy
+            address to {"implementation": None, "code_id": None}. A file
+            older than phase 13 (no addresses.origin or codes.std_proxy) is
+            not supported read-only: a read may raise sqlite3 errors. A
+            path that does not exist raises sqlite3.OperationalError from
+            the constructor and creates no file. Opening a file read-only
+            leaves it byte-identical, and a non-WAL file gets no -wal or
+            -shm file next to it. (On a WAL file with no writer attached,
+            SQLite itself leaves an empty -wal and a -shm next to it after a
+            read-only read; that is SQLite's behaviour, not a write of the
+            database, and is allowed.)
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - reads: Code Database
+          examples:
+            - given: 'a store filled from codes_26077729.json at block 26077729 (block_store()), set_progress(26077729), closed'
+              when: 'Store(path, readonly=True) is opened; counts(), get_progress(), len(fingerprints()), origins() length, events() are read; then each of the eight write methods is called once with valid arguments'
+              then: >
+                counts() is addresses 206, addresses_with_code 147,
+                addresses_without_code 59, codes 130, blocks 1;
+                get_progress() 26077729; 130 fingerprints; 206 origins;
+                events() []; every write raises ReadOnlyStoreError; after
+                close, a writable Store(path) still gives counts()
+                addresses 206 and seeds() []
+              ref: 'phase 15'
+            - given: >
+                a phase-13 database made by plain INSERTs as in Store
+                example 15 (addresses without implementation, progress (key,
+                block) holding ("progress", 26077729), no events table,
+                journal mode delete) of the 206 addresses of
+                codes_26077729.json; the sha256 of the file and the listing
+                of its directory taken before
+              when: 'Store(path, readonly=True) is opened; get_progress, progress_at, events, event_counts, implementations, implementation("0x0000000000000000000000000000000000000001"), origins and counts are read; the store is closed'
+              then: >
+                get_progress() 26077729, progress_at() None, events() [],
+                event_counts() {"kinds": {"ALERT": 0, "UPGRADE": 0}, "seeds":
+                []}, implementations() 20 entries every one
+                {"implementation": None, "code_id": None},
+                implementation(...) None, origins() 206 entries all
+                "unknown", counts()["addresses"] 206; afterwards the sha256
+                of the file and the directory listing are unchanged (no
+                -wal, -shm or -journal file)
+              ref: 'phase 15; the 01.10 night2 base is a phase-13 file'
+            - given: 'a path in a fresh temp directory where no file exists'
+              when: 'Store(path, readonly=True) is called'
+              then: 'sqlite3.OperationalError; the directory is still empty'
+            - given: 'a writable Store W on a fresh temp db and a Store(path, readonly=True) R on the same file, both open'
+              when: 'W.add_events([the ALERT of Record Events example 1]) and W.set_progress(26077729) run, then R.events(), R.get_progress() and R.progress_at() are read'
+              then: 'R sees the event (one element, id 1), progress 26077729 and a non-None progress_at -- no "database is locked" either way'
+              ref: 'phase 15: WAL, the listener writes while the dashboard reads'
       dataObjects:
         - name: Code Database
           description: One SQLite file.
@@ -865,9 +1084,21 @@ System:
             code BLOB, std_proxy INTEGER); addresses(address TEXT PRIMARY KEY,
             code_id TEXT NULL, block INTEGER, origin TEXT, implementation
             TEXT), index addresses_code_id on
-            addresses(code_id); progress(key TEXT PRIMARY KEY, block INTEGER);
+            addresses(code_id); progress(key TEXT PRIMARY KEY, block INTEGER,
+            updated_at TEXT);
             seeds(address TEXT PRIMARY KEY, code_id TEXT, label TEXT);
-            ledger(day TEXT, method TEXT, credits INTEGER)
+            ledger(day TEXT, method TEXT, credits INTEGER);
+            events(id INTEGER PRIMARY KEY, kind TEXT, block INTEGER, at TEXT,
+            address TEXT, seed_address TEXT, label TEXT, score REAL, origin
+            TEXT, old_impl TEXT, new_impl TEXT). journal_mode WAL (phase 15).
+        - name: Event
+          description: >
+            One row of the events table as read back (phase 15): a dict with
+            exactly the keys id (int), kind ("ALERT" or "UPGRADE"), block
+            (int), at (str "YYYY-MM-DDTHH:MM:SSZ", UTC), address,
+            seed_address, label, score (float), origin, old_impl, new_impl;
+            an ALERT has old_impl and new_impl None, an UPGRADE has
+            seed_address, label, score and origin None.
     - name: cluster
       description: >
         Clusters and similarity search over the store: L0 identical code, L1
@@ -1861,6 +2092,29 @@ System:
             01.10 copy over 5 blocks after its progress: 29 known-proxy
             touches per block on average (6..38), under the 50 at which the
             re-read would have become a flag, so there is no flag.
+            Phase 15 (events). follow_chain records the live stream in the
+            store: every ingest_block call gets sinks of follow_chain's own
+            that keep, in the order received, what ingest_block delivers
+            and forward it unchanged to on_alerts / on_upgrades when those
+            are given (None still means nobody is told). After each
+            ingest_block call -- on its normal return, the incomplete
+            block of a cap or budget stop included, and on the
+            KeyboardInterrupt path too (try/finally, the interrupt then
+            propagates) -- when the block delivered anything, follow_chain
+            calls store.add_events once, in the calling thread, with the
+            block's ALERTs first and then its UPGRADEs, each in the order
+            delivered: an ALERT is the alert dict plus kind "ALERT"; an
+            UPGRADE is {kind "UPGRADE", address, old_impl = old, new_impl =
+            new}; every event of the block carries block = that block's
+            number and the same at, the UTC time of the write as
+            "%Y-%m-%dT%H:%M:%SZ". The events of a complete block are written
+            before its set_progress. So every ALERT and UPGRADE line the CLI
+            prints has exactly one event, and an event exists only for a
+            line handed to the sinks -- --alert-on filters stdout only, the
+            events hold the unfiltered list. The summary, its keys, the
+            stats, the ledger and the printed lines are unchanged.
+            recheck and seed add never write events: they do not go
+            through follow_chain.
           guardrails: [Budget Respected, No Network In Core]
           steps:
             - calls: Ingest Block
@@ -1961,6 +2215,52 @@ System:
               when: 'follow_chain is called'
               then: 'blocks 1, progress 26077729, spent 17560 (a raising read is not charged), implementations() 20 entries all None, upgrades []'
               ref: 'Tolerant Parser: a node that refuses the slot leaves the proxy as in phase 9'
+            - given: >
+                a store holding code_belle.hex at
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 (block 1) seeded
+                "BELLE honeypot", progress 26077728; FakeRpc(codes={
+                "0x1807090dd15a6f58e00fd769e32ebf20ee610385": text of
+                code_belle_copy_1807090d.hex,
+                "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc": text of
+                code_weth9.hex}, receipts=[{"to": "0x1807090dd15a6f58e00fd769e32ebf20ee610385"},
+                {"to": "0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc"}]) (head
+                "0x18dea21"); t0 and t1 the UTC time (to the second) before and
+                after the call
+              when: 'follow_chain is called with an on_alerts collecting into a list'
+              then: >
+                blocks 1, stopped None, progress 26077729; on_alerts called
+                once with [{"address": "0x1807090dd15a6f58e00fd769e32ebf20ee610385",
+                "seed_address": "0x34c6211621f2763c60eb007dc2ae91090a2d22f6",
+                "label": "BELLE honeypot", "score": 0.8666666666666667, "origin":
+                "seen"}]; store.events() is exactly one Event: id 1, kind
+                "ALERT", block 26077729, those five fields, old_impl None,
+                new_impl None, and an at matching
+                ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ with
+                t0 <= at <= t1; progress_at() is not None
+              ref: 'phase 15; the alert of example 5, measured on HEAD 2026-10-02'
+            - given: 'the store and FakeRpc of the example above (made afresh)'
+              when: 'follow_chain is called with max_calls_per_block 1 and with on_alerts None'
+              then: >
+                stopped "cap", progress 26077728 (the block is incomplete);
+                store.events() is exactly the one ALERT event of the example
+                above (block 26077729) -- the alert of an incomplete block is
+                recorded as it was delivered, even with no on_alerts given
+              ref: 'phase 15: printed and recorded match one to one'
+            - given: 'the store of example 14 (made afresh) and InterruptAfter(the FakeRpc of example 14, 3) -- eth_blockNumber, eth_getBlockReceipts and the eth_getCode of 0x1807… are answered, the eth_getCode of 0xb4e1… raises KeyboardInterrupt'
+              when: 'follow_chain is called with an on_alerts collecting into a list'
+              then: >
+                KeyboardInterrupt propagates; on_alerts received the one alert
+                of example 14; store.events() is exactly that one ALERT event
+                with block 26077729; progress 26077728
+              ref: 'phase 15: the block a Ctrl-C interrupts keeps its printed alerts'
+            - given: 'the fake rpc of the first example (receipts_26077729.json, codes_26077729.json, head "0x18dea21"), progress 26077728, prices {}, and a fake rpc with head "0x18dea22" answering the same receipts for both blocks on a second fresh store'
+              when: 'follow_chain is called on each'
+              then: >
+                blocks 1 then blocks 2; store.events() is [] and
+                event_counts()["kinds"] is {"ALERT": 0, "UPGRADE": 0} both
+                times (no seed, no upgrade: nothing delivered, nothing
+                written); progress_at() is not None both times
+              ref: 'phase 15: an empty block writes no event'
     - name: cli
       description: python -m ethsc with subcommands over one SQLite db.
       functions:
@@ -1978,7 +2278,9 @@ System:
             seed remove <addr>, seed list,
             recheck [--min 0.8] [--origin {created,seen,fetched,impl,unknown}],
             report [--out PREFIX],
-            risk [--flag {selfdestruct,mutable_delegatecall}].
+            risk [--flag {selfdestruct,mutable_delegatecall}],
+            dashboard [--host 127.0.0.1] [--port 8080] [--static DIR]
+            (phase 15).
             Global --db PATH (default ethsc.sqlite) before the subcommand.
             Without rpc, builds RpcClient(infura_url()), but only on the way
             into a subcommand that talks to the chain -- listen and
@@ -2179,6 +2481,30 @@ System:
             proxy's own code: exit 0, the phase-9 behaviour, nothing on
             stderr. The number and order of rpc calls is part of the
             contract (examples 44-49).
+            Dashboard (phase 15). listen and backfill go through
+            follow_chain, which records every ALERT and UPGRADE it hands to
+            the sinks as an event (see Follow Chain); the printed lines are
+            unchanged and --alert-on filters stdout only, never the events.
+            recheck and seed add write no events. `dashboard [--host H]
+            [--port P] [--static DIR]` (defaults 127.0.0.1, 8080,
+            "dashboard/dist") serves the dashboard of the --db file: it
+            never opens a writable Store -- main branches to it before the
+            Store(args.db) every other subcommand opens, so an old database
+            is neither migrated nor switched to WAL by it. A --db path that
+            is not an existing file: exit 2, one stderr line naming the
+            path, no file created. Otherwise it calls
+            ethsc.dashboard.make_server(db, host, port, static) -- through
+            the module attribute, so a test patches
+            ethsc.dashboard.make_server -- positionally; an OSError from it
+            (a busy port, a host it cannot bind): exit 2, one stderr line
+            (str of the error), no traceback. On success it writes exactly
+            one stderr line "serving http://<host>:<port>/" with the host
+            and port of server.server_address, then server.serve_forever();
+            KeyboardInterrupt (Ctrl-C) calls server.server_close() and exits
+            0 with no further output. stdout stays empty. A non-integer
+            --port is an argparse usage error (exit 2, one stderr line).
+            Binding beyond localhost needs an explicit --host; access from
+            another machine is an ssh tunnel, not this command's business.
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -2186,6 +2512,7 @@ System:
             - uses: cluster
             - uses: store
             - uses: evm
+            - uses: dashboard
           examples:
             - given: 'a fake rpc over receipts_26077729.json and codes_26077729.json'
               when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake)'
@@ -2589,6 +2916,309 @@ System:
                 "0x069c4c579671f8c120b1327a73217d01ea2ec5ea\t1.0000\t-" then
                 "0x72b971717e088b59f26d4236be222adb6acd393b\t1.0000\t-"
               ref: 'phase 14; risk_flags of both fixtures are all False, so <flags> is "-"'
+            - given: 'the db and FakeRpc of example 48, made afresh'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--alert-on", "created"], rpc=fake), then Store(db).events()'
+              then: >
+                exit 0, empty stdout (--alert-on created hides both lines);
+                events() is exactly two ALERT events, newest first: id 2
+                {address "0x72b971717e088b59f26d4236be222adb6acd393b",
+                seed_address "0x1111111111111111111111111111111111111111",
+                label "impl copy seed", score 1.0, origin "impl"} and id 1
+                {address "0x0c0105334a50db16b51b2911c9956539753a2cf8", the same
+                seed_address, label and score, origin "seen"}, both block
+                26077729, both the same at, old_impl and new_impl None
+              ref: 'phase 15: the events hold the unfiltered list, in the order of the plain run of example 48'
+            - given: 'the first db of example 48 after its plain run (two events), and the FakeRpc of example 49'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--alert-on", "created"], rpc=fake), then Store(db).events()'
+              then: >
+                exit 0, stdout exactly the UPGRADE line of example 49;
+                events() is three events, ids 3, 2, 1; id 3 is {kind
+                "UPGRADE", block 26077729, address
+                "0x0c0105334a50db16b51b2911c9956539753a2cf8", old_impl
+                "0x72b971717e088b59f26d4236be222adb6acd393b", new_impl
+                "0xe440cc08a71694c8229323803f59024e3144630e", seed_address
+                None, label None, score None, origin None}
+              ref: 'phase 15: one event per printed UPGRADE line'
+            - given: >
+                a db holding code_belle.hex at
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 (block 1) and
+                code_belle_copy_1807090d.hex at
+                0x1807090dd15a6f58e00fd769e32ebf20ee610385 (block 2), stored by
+                put_code and put_address, no seed
+              when: 'main(["--db", db, "seed", "add", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6", "--label", "BELLE honeypot"]), then main(["--db", db, "recheck"])'
+              then: >
+                exit 0 both times, each prints the ALERT line of
+                0x1807090dd15a6f58e00fd769e32ebf20ee610385 against the seed;
+                Store(db).events() is [] and event_counts() is {"kinds":
+                {"ALERT": 0, "UPGRADE": 0}, "seeds": []}
+              ref: 'phase 15: recheck and seed add are not the live stream'
+            - given: 'a path inside a fresh empty temp directory, no file there'
+              when: 'main(["--db", path, "dashboard", "--port", "0"])'
+              then: 'exit 2; exactly one stderr line, containing the path; empty stdout; the directory is still empty'
+              ref: 'phase 15: the dashboard never creates a database'
+            - given: >
+                a phase-13 database file (as in Open Read Only example 2:
+                journal mode delete, no events table, no implementation column)
+                with its sha256 and directory listing taken; a stub server
+                object with server_address ("127.0.0.1", 8080) whose
+                serve_forever raises KeyboardInterrupt and whose server_close
+                records its calls; ethsc.dashboard.make_server patched to
+                return it and record its arguments
+              when: 'main(["--db", db, "dashboard"]), then main(["--db", db, "dashboard", "--host", "127.0.0.1", "--port", "9000", "--static", "/tmp/x"])'
+              then: >
+                exit 0 both times; empty stdout; stderr exactly one line
+                "serving http://127.0.0.1:8080/" each time; make_server
+                called with the positional arguments (db, "127.0.0.1", 8080,
+                "dashboard/dist") and then (db, "127.0.0.1", 9000, "/tmp/x");
+                server_close called once per run; the sha256 and the directory
+                listing of the db are unchanged (no migration, no WAL, no
+                -wal file)
+              ref: 'phase 15: blocks until Ctrl-C, exit 0, no traceback'
+            - given: 'a db made by block_store() and closed; a TCP socket bound to ("127.0.0.1", 0) and listening, its port P'
+              when: 'main(["--db", db, "dashboard", "--port", str(P)]) with the real make_server, then main(["--db", db, "dashboard", "--port", "x"])'
+              then: 'exit 2 both times; exactly one stderr line each, none of them containing "Traceback"; empty stdout'
+              ref: 'phase 15: a busy port is a usage-level failure'
+    - name: dashboard
+      description: >
+        The live dashboard backend (phase 15): ethsc/dashboard.py, a
+        standard-library HTTP server (http.server.ThreadingHTTPServer) on
+        localhost that answers JSON about the store a running listener
+        fills, and serves the static frontend built in dashboard/dist (a
+        TypeScript phase of its own, out of scope here: this group fixes
+        the JSON it is built against). Read-only: it opens
+        Store(db, readonly=True) per request and never writes.
+      functions:
+        - name: Answer Request
+          description: >
+            respond(db_path, target, static_dir=None, now=None, cache=None)
+            -> (status int, content_type str, body bytes): the whole HTTP
+            behaviour for one GET, without a socket, so every endpoint is
+            testable offline. target is the request target as the server
+            receives it (path plus an optional "?query"). now is an aware
+            UTC datetime or None (None: datetime.now(timezone.utc)). cache
+            is the dict holding the clusters cache, None meaning the module's
+            own dict.
+          behavior: >
+            JSON answers have content_type "application/json;
+            charset=utf-8" and body json.dumps(obj, sort_keys=True) encoded
+            UTF-8. A Store(db_path, readonly=True) is opened for an /api/
+            request and closed before respond returns (try/finally): short
+            transactions, the listener never waits on the dashboard. Times
+            are text "%Y-%m-%dT%H:%M:%SZ" in UTC.
+            GET /api/health -> {"progress": get_progress(), "progress_at":
+            progress_at(), "seconds_since_progress": whole seconds from
+            progress_at to now (int, floor) or None when progress_at is
+            None, "now": now as text}.
+            GET /api/events?after=<id>&limit=<n> -> {"events":
+            store.events(after, limit), "last_id": the largest id in events,
+            or after when events is empty}; after defaults to 0 and is a
+            decimal integer >= 0; limit defaults to 100 and is a decimal
+            integer 1..500.
+            GET /api/summary -> {"addresses": counts()["addresses"],
+            "codes": counts()["codes"], "seeds": len(seeds()), "origins":
+            {"created", "seen", "impl", "fetched", "unknown"} from
+            origin_counts() (each of the five keys always present, 0 when
+            absent; another text is not reported), "implementations_resolved":
+            the number of implementations() values whose implementation is
+            not None, "alerts_by_seed": event_counts()["seeds"], "recent":
+            {"blocks": 300, "by_origin": the same five keys from
+            origin_counts(since_block=progress - 299)}} -- recent covers the
+            addresses of the last 300 blocks up to progress (block >=
+            progress - 299); with progress None every by_origin value is 0.
+            GET /api/clusters?level=<L0|L1|proxy|eip7702|impl>&n=<k> ->
+            {"level": level, "n": n, "clusters": the first n Cluster rows of
+            that level in build_clusters order, each the build_clusters dict
+            unchanged}; level is required; n defaults to 20 and is a decimal
+            integer 1..100. build_clusters(store) runs at most once per 60 s
+            per db_path: the cache maps db_path to (time.monotonic() at the
+            build, the full list) and an entry younger than 60 s is reused
+            for every level and n. The clock is read as time.monotonic()
+            through the time module (import time), so a test patching
+            time.monotonic controls the cache age.
+            GET / -> the file index.html of static_dir, "text/html;
+            charset=utf-8"; GET /assets/<rel> -> the file static_dir/assets/<rel>,
+            content_type from mimetypes.guess_type (application/octet-stream
+            when None). When static_dir is None or not a directory, GET /
+            answers 200 with one built-in "text/html; charset=utf-8" page
+            that names the four endpoints /api/health, /api/events,
+            /api/summary and /api/clusters, and /assets/* is 404. The path
+            is percent-decoded before it is resolved; a path whose resolved
+            real path is not inside static_dir (.., an encoded .., a
+            symlink out) is 404, and so is a missing file.
+            Errors: an unknown path (anything else, "/api/health/" and
+            "/favicon.ico" included) -> 404 {"error": "not found"}; a bad
+            query value -> 400 {"error": <one line naming the parameter>};
+            any exception while answering (a missing db file, a db older
+            than phase 13, anything) -> 500 {"error": <one line>}; a body
+            never holds a traceback. Unknown query parameters are ignored. A
+            db without the events table answers [] and zeros, not 500 (Open
+            Read Only).
+          guardrails: [No Network In Core, Deterministic Output]
+          steps:
+            - reads: Code Database
+            - uses: store
+            - uses: cluster
+          examples:
+            - given: >
+                a db made by block_store(), then set_progress(26077729), closed;
+                p = its progress_at(), and now = the datetime of p plus 7 s
+              when: 'respond(db, "/api/health", now=now) and respond(db, "/api/health?x=1", now=now)'
+              then: >
+                status 200, content_type "application/json; charset=utf-8",
+                body json.dumps({"now": <now as text>, "progress": 26077729,
+                "progress_at": p, "seconds_since_progress": 7},
+                sort_keys=True).encode("utf-8"), both times
+              ref: 'phase 15 heartbeat'
+            - given: 'a fresh db (Store(path) opened and closed, nothing written)'
+              when: 'respond(db, "/api/health", now=<2026-10-02T08:00:00Z>), respond(db, "/api/events") and respond(db, "/api/summary")'
+              then: >
+                200 each; health {"now": "2026-10-02T08:00:00Z", "progress":
+                None, "progress_at": None, "seconds_since_progress": None};
+                events {"events": [], "last_id": 0}; summary {"addresses": 0,
+                "codes": 0, "seeds": 0, "origins": five keys all 0,
+                "implementations_resolved": 0, "alerts_by_seed": [], "recent":
+                {"blocks": 300, "by_origin": five keys all 0}}
+            - given: 'a db made by block_store() plus five ALERT events with blocks 1..5 added by add_events (Record Events example 2), closed'
+              when: 'respond on "/api/events", "/api/events?after=2&limit=2", "/api/events?after=5" and "/api/events?limit=500"'
+              then: >
+                200 each; ids [5, 4, 3, 2, 1] with last_id 5; ids [5, 4] with
+                last_id 5; events [] with last_id 5; ids [5, 4, 3, 2, 1] with
+                last_id 5; each event a dict with exactly the eleven Event keys
+              ref: 'phase 15 polling: the next call passes after=last_id'
+            - given: 'the db of the example above'
+              when: >
+                respond on "/api/events?limit=0", "/api/events?limit=501",
+                "/api/events?limit=x", "/api/events?after=-1",
+                "/api/events?after=1.5", "/api/clusters",
+                "/api/clusters?level=L9", "/api/clusters?level=L0&n=0" and
+                "/api/clusters?level=L0&n=101"
+              then: 'status 400 each, content_type "application/json; charset=utf-8", body a JSON object with exactly the key "error", a non-empty str without "Traceback"'
+            - given: >
+                a db made by block_store(), add_events of the three ALERT and
+                one UPGRADE events of Record Events example 3,
+                set_progress(26077729), closed
+              when: 'respond(db, "/api/summary")'
+              then: >
+                200, body {"addresses": 206, "codes": 130, "seeds": 0,
+                "origins": {"created": 0, "fetched": 0, "impl": 0, "seen": 0,
+                "unknown": 206}, "implementations_resolved": 0,
+                "alerts_by_seed": [{"count": 2, "label": "BELLE honeypot",
+                "seed_address": "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"},
+                {"count": 1, "label": "impl copy seed", "seed_address":
+                "0x1111111111111111111111111111111111111111"}], "recent":
+                {"blocks": 300, "by_origin": {"created": 0, "fetched": 0,
+                "impl": 0, "seen": 0, "unknown": 206}}}
+              ref: 'counted over codes_26077729.json; block_store writes no origin'
+            - given: >
+                a fresh db with put_address("0x00000000000000000000000000000000000000a1",
+                None, 100, "created"), put_address("0x00000000000000000000000000000000000000a2",
+                None, 26077430, "seen"), put_address("0x00000000000000000000000000000000000000a3",
+                None, 26077429, "seen"), put_address("0x00000000000000000000000000000000000000a4",
+                None, 26077729) and set_progress(26077729), closed
+              when: 'respond(db, "/api/summary")'
+              then: >
+                addresses 4, codes 0; origins {"created": 1, "fetched": 0,
+                "impl": 0, "seen": 2, "unknown": 1}; recent by_origin
+                {"created": 0, "fetched": 0, "impl": 0, "seen": 1, "unknown": 1}
+              ref: 'phase 15: 26077729 - 299 = 26077430 is the first block of the window'
+            - given: 'a db made by block_store(), closed'
+              when: 'respond(db, "/api/clusters?level=L0", cache={}), respond(db, "/api/clusters?level=L1&n=1", cache={}) and respond(db, "/api/clusters?level=impl", cache={})'
+              then: >
+                200 each; {"level": "L0", "n": 20, "clusters": the 7 L0 rows of
+                build_clusters(block_store()) in order, the first with key
+                "8b5db55fa9ab3b9527508d4abe0b39eb588bf310270c8e04b3f38214e8ba63b4"
+                and 4 members}; {"level": "L1", "n": 1, "clusters": one row,
+                key "29ec9639b8fa8f759c993d77fe43ccfb471dd596d23b3b098965ebb64e56235f",
+                8 members}; {"level": "impl", "n": 20, "clusters": []}
+              ref: 'measured with build_clusters over block_store() 2026-10-02: 7 L0, 2 L1, 2 proxy, 4 eip7702, 0 impl'
+            - given: 'a db made by block_store(), closed, and one dict c used as the cache; time.monotonic patched to return T, then T + 30, then T + 61'
+              when: >
+                respond(db, "/api/clusters?level=L0", cache=c) at T; then a
+                writable Store stores code_belle.hex at
+                0x00000000000000000000000000000000000000b1 and
+                0x00000000000000000000000000000000000000b2 (block 26077729) and
+                closes; respond again with cache=c at T + 30, at T + 61, and
+                with cache={}
+              then: '7 L0 rows at T and at T + 30 (the cached list); 8 at T + 61 and with a fresh cache, one of them with key "8571d00b598627ac40e1ae7bc4d0cb3fd5a77a0d663763fdfc1cd9127b63cb4d" and the two members'
+              ref: 'phase 15: the 60-s cache; code_id of code_belle.hex measured 2026-10-02'
+            - given: 'the phase-13 database of Open Read Only example 2, its sha256 and directory listing taken'
+              when: 'respond on "/api/health", "/api/events", "/api/summary" and "/api/clusters?level=impl" (cache={})'
+              then: >
+                200 each; health progress 26077729 and progress_at None and
+                seconds_since_progress None; events [] with last_id 0; summary
+                addresses 206, codes 130, implementations_resolved 0,
+                alerts_by_seed [], origins unknown 206; clusters []; the sha256
+                and the listing are unchanged afterwards
+              ref: 'phase 15 acceptance 4 offline: the night2 base is a phase-13 file'
+            - given: 'static_dir a path that does not exist, and static_dir None'
+              when: 'respond(db, "/", static_dir=...) and respond(db, "/assets/app.js", static_dir=...) for each'
+              then: '"/" is 200 with content_type "text/html; charset=utf-8" and a body containing "/api/health", "/api/events", "/api/summary" and "/api/clusters"; "/assets/app.js" is 404 with a JSON {"error"} body'
+              ref: 'phase 15: the backend runs before the frontend exists'
+            - given: >
+                a temp directory P holding secret.txt ("top secret") and the
+                directory P/dist holding index.html ("<html>ok</html>") and
+                assets/app.js ("console.log(1)"); static_dir P/dist
+              when: >
+                respond on "/", "/assets/app.js", "/assets/missing.js",
+                "/assets/../../secret.txt", "/assets/%2e%2e/%2e%2e/secret.txt",
+                "/assets/..%2f..%2fsecret.txt" and "/../secret.txt"
+              then: >
+                "/" 200 "text/html; charset=utf-8" body b"<html>ok</html>";
+                "/assets/app.js" 200 with content_type
+                mimetypes.guess_type("app.js")[0] and body b"console.log(1)";
+                every other one 404, no body containing "top secret"
+              ref: 'phase 15: no path escapes the static directory'
+            - given: 'a db made by block_store(), closed; and a path in an empty temp directory where no db exists'
+              when: 'respond(db, "/api/nope"), respond(db, "/api/health/"), respond(db, "/favicon.ico"); then respond(missing, "/api/health")'
+              then: '404 {"error": "not found"} three times; then 500 with a JSON object holding exactly the key "error" (a str without "Traceback"), and the temp directory is still empty'
+        - name: Serve Dashboard
+          description: >
+            make_server(db_path, host="127.0.0.1", port=8080,
+            static_dir=None) -> a bound http.server.ThreadingHTTPServer
+            (daemon_threads True) whose handler answers every GET through
+            respond(db_path, self.path, static_dir) and writes status,
+            Content-Type, Content-Length and the body. Not started:
+            the caller calls serve_forever.
+          behavior: >
+            Only GET is served: any other method (POST, PUT, DELETE, HEAD
+            included) gets 405 with a JSON {"error"} body. The handler
+            writes no per-request log line (log_message is silenced), so
+            stderr stays clean under a 1-second poller. A port that cannot
+            be bound raises OSError from make_server (the CLI turns it into
+            exit 2). The module imports http.server and nothing else from
+            the network family; it never opens an outbound connection.
+          guardrails: [Deterministic Output]
+          steps:
+            - calls: Answer Request
+          examples:
+            - given: 'a db made by block_store() with set_progress(26077729), closed; server = make_server(db, "127.0.0.1", 0, None) running serve_forever in a thread; sys.stderr captured'
+              when: 'a raw socket connected to ("127.0.0.1", server.server_address[1]) sends "GET /api/health HTTP/1.0\r\n\r\n"; a second one sends "POST /api/health HTTP/1.0\r\nContent-Length: 0\r\n\r\n"; then server.shutdown() and server.server_close()'
+              then: >
+                the first reply starts with "HTTP/1.0 200", has a
+                Content-Type header "application/json; charset=utf-8" and a
+                JSON body with progress 26077729; the second starts with
+                "HTTP/1.0 405" and has a JSON body with the key "error";
+                nothing was written to stderr; the server is a
+                ThreadingHTTPServer with daemon_threads True
+              ref: 'phase 15; a raw socket, because the acceptance blocks getaddrinfo'
+            - given: 'a TCP socket bound to ("127.0.0.1", 0) and listening, its port P'
+              when: 'make_server(db, "127.0.0.1", P, None)'
+              then: 'OSError'
+      dataObjects:
+        - name: Dashboard JSON
+          description: >
+            The JSON contract the frontend phase is built against, recorded
+            live as tests/fixtures/dashboard_*.json (health, events, summary,
+            clusters_impl) after the phase-15 listen acceptance.
+          schema: >
+            health {progress int|null, progress_at str|null,
+            seconds_since_progress int|null, now str}; events {events
+            [Event], last_id int}; summary {addresses int, codes int, seeds
+            int, origins {created, seen, impl, fetched, unknown: int},
+            implementations_resolved int, alerts_by_seed [{label str,
+            seed_address str, count int}], recent {blocks 300, by_origin
+            {the five origin keys: int}}}; clusters {level str, n int,
+            clusters [Cluster]}; every error {error str}.
     - name: report
       description: >
         One offline report over the whole database: a self-contained HTML
@@ -2871,7 +3501,9 @@ Requirement:
       on stderr.
   - name: Offline Tests
     description: >
-      No test opens a network connection. All chain data comes from
+      No test opens a network connection beyond the loopback interface:
+      since phase 15 the dashboard tests may bind 127.0.0.1 and connect
+      to it with a raw socket (never getaddrinfo, never a remote host). All chain data comes from
       tests/fixtures/*, verbatim Infura responses fetched 2026-09-28 (block
       26077729 and named addresses); see tests/fixtures/README.md.
   - name: Real Fixtures
@@ -2883,7 +3515,10 @@ Guardrail:
   - name: No Network In Core
     description: >
       Only ethsc/rpc.py imports urllib, http or socket. Every other module
-      gets a transport, a fetcher or an rpc object injected.
+      gets a transport, a fetcher or an rpc object injected. One
+      exception, added 2026-10-02 (phase 15): ethsc/dashboard.py imports
+      http.server to serve on a local port; it never opens an outbound
+      connection and imports neither urllib nor http.client.
   - name: Secret Hygiene
     description: >
       The Infura key is read only from the environment or .env and never
