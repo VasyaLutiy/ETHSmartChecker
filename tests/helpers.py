@@ -9,10 +9,12 @@ tests never open the network.
 
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 import time
 
+from ethsc.fingerprint import fingerprint
 from ethsc.store import Store
 
 _FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -280,3 +282,92 @@ class _FakeResponse(object):
 
     def read(self):
         return self._body
+
+
+def legacy_db(phase):
+    """A phase-13 or phase-14 schema sqlite file, built without Store.
+
+    legacy_db(phase) -- phase is 13 or 14. Creates a brand-new
+    tempfile.mkdtemp() directory and in it one sqlite file written
+    with plain sqlite3 (never ethsc.store.Store, never PRAGMA
+    journal_mode: the file stays in the default rollback journal mode
+    "delete"), with the schema of that phase and no events table:
+    codes (code_id, size, skeleton_hash, selectors, proxy_kind,
+    proxy_target, code, std_proxy), addresses (address, code_id,
+    block, origin -- plus implementation for phase 14), the index
+    addresses_code_id, progress (key, block) with no updated_at
+    column, seeds and ledger. Filled from block_codes(): all 206
+    addresses lowercased at block 26077729, origin NULL (and
+    implementation NULL); an address whose eth_getCode result is "0x"
+    gets code_id NULL, every other code once in codes with its columns
+    from ethsc.fingerprint.fingerprint (selectors as JSON text,
+    std_proxy 1 or 0). Then the row ("progress", 26077729). Over the
+    fixture: 130 codes (17 with std_proxy 1) and 206 addresses, 147
+    with code. The connection is committed and closed before the path
+    is returned; the caller owns the directory.
+    """
+    if phase not in (13, 14):
+        raise ValueError("legacy_db: phase must be 13 or 14")
+    directory = tempfile.mkdtemp(prefix="ethsc-legacy-")
+    path = os.path.join(directory, "ethsc.sqlite")
+    connection = sqlite3.connect(path)
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "CREATE TABLE codes (code_id TEXT PRIMARY KEY, size INTEGER,"
+            " skeleton_hash TEXT, selectors TEXT, proxy_kind TEXT,"
+            " proxy_target TEXT, code BLOB, std_proxy INTEGER)")
+        address_columns = ("address TEXT PRIMARY KEY, code_id TEXT,"
+                           " block INTEGER, origin TEXT")
+        if phase == 14:
+            address_columns += ", implementation TEXT"
+        cursor.execute("CREATE TABLE addresses (%s)" % address_columns)
+        cursor.execute(
+            "CREATE INDEX addresses_code_id ON addresses(code_id)")
+        cursor.execute(
+            "CREATE TABLE progress (key TEXT PRIMARY KEY, block INTEGER)")
+        cursor.execute(
+            "CREATE TABLE seeds (address TEXT PRIMARY KEY, code_id TEXT,"
+            " label TEXT)")
+        cursor.execute(
+            "CREATE TABLE ledger (day TEXT, method TEXT, credits INTEGER)")
+        block = 26077729
+        seen = set()
+        for address, text in sorted(block_codes().items()):
+            address = address.lower()
+            if text == "0x":
+                if phase == 14:
+                    cursor.execute(
+                        "INSERT INTO addresses VALUES (?, NULL, ?, NULL,"
+                        " NULL)", (address, block))
+                else:
+                    cursor.execute(
+                        "INSERT INTO addresses VALUES (?, NULL, ?, NULL)",
+                        (address, block))
+                continue
+            code = bytes.fromhex(text[2:])
+            fp = fingerprint(code)
+            if fp["code_id"] not in seen:
+                seen.add(fp["code_id"])
+                cursor.execute(
+                    "INSERT INTO codes VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (fp["code_id"], fp["size"], fp["skeleton_hash"],
+                     json.dumps(fp["selectors"]),
+                     fp["proxy"]["kind"] if fp["proxy"] is not None else None,
+                     fp["proxy"]["target"] if fp["proxy"] is not None
+                     else None,
+                     code, 1 if fp["std_proxy"] else 0))
+            if phase == 14:
+                cursor.execute(
+                    "INSERT INTO addresses VALUES (?, ?, ?, NULL, NULL)",
+                    (address, fp["code_id"], block))
+            else:
+                cursor.execute(
+                    "INSERT INTO addresses VALUES (?, ?, ?, NULL)",
+                    (address, fp["code_id"], block))
+        cursor.execute("INSERT INTO progress VALUES (?, ?)",
+                       ("progress", block))
+        connection.commit()
+    finally:
+        connection.close()
+    return path
