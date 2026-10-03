@@ -37,6 +37,7 @@ newline). Decode with `bytes.fromhex(text.strip()[2:])`.
 | `dashboard_events.json` | – | `/api/events` after the 10-min listen on a copy of smoke/20261001-night2: 8 ALERT events, newest first (no UPGRADE occurred; its shape is the Contour dataObject Event) |
 | `dashboard_summary.json` | – | `/api/summary` on the same copy after the listen (217009 addresses, 454 implementations resolved) |
 | `dashboard_clusters_impl.json` | – | `/api/clusters?level=impl` on the same copy, n 20 |
+| `calibration_labels.json` | round-2 corpus | phase 18 Calibration Labels: 95 positive pairs in 11 same-role groups, 8 hard negative pairs, 2 strict addresses (UniswapV2-fork pairs); curated 2026-10-03 from `livetests/eth-seed-candidates-2.md`; addresses only, no bytecode |
 
 The BELLE copies were found by computing the CREATE addresses of the deployer's
 nonces 0..76 and fetching their code. Only five have code.

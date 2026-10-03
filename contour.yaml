@@ -414,6 +414,68 @@ System:
               when: 'score_fingerprints(fingerprint(a), fingerprint(b)) and similarity(a, b) are called for all 400 ordered pairs (a, b), a == b included'
               then: 'the two floats are equal (==) on all 400 pairs'
               ref: 'on the live 30.09 base: 15018 recheck pairs, 0 mismatches (measured 30.09); 361 pairs of 19 fixtures until phase 14'
+        - name: Code Similarity
+          description: >
+            Phase 18. code_similarity(code_a: bytes, code_b: bytes) -> float
+            in [0, 1]: how alike two codes are as code, not as an interface --
+            the Jaccard index of their opcode 5-gram sets.
+            opcode_shingles(code: bytes) -> frozenset: the set of 5-tuples of
+            consecutive opcodes (ints, as disassemble gives them, PUSH
+            arguments dropped) of the body strip_metadata(code) returns.
+            The module also defines the two alert constants of phase 18:
+            ALERT_MIN = 0.75, the production alert threshold on the
+            Similarity Score (the default min_score of Match Watchlist and
+            Recheck Watchlist, of recheck --min and of listen/backfill
+            --min), and CODE_MIN = 0.6, the code_similarity a strict seed
+            demands on top of it.
+          behavior: >
+            opcode_shingles: a body of fewer than 5 opcodes gives the empty
+            frozenset; never raises on empty or garbage bytes (a truncated
+            PUSH is tolerated as disassemble tolerates it). code_similarity:
+            0.0 when either shingle set is empty, otherwise
+            float(len(a & b)) / float(len(a | b)) of the two sets, never
+            rounded; symmetric; code_similarity(x, x) is 1.0 for any x with
+            a non-empty set. It applies none of the three rules of the
+            Similarity Score: two EIP-1167 clones of different targets are
+            1.0 here (their 45 bytes are the same code) and 0.0 there, which
+            is why code_similarity is only ever a second gate behind the
+            Similarity Score, never a score of its own. similarity() and
+            score_fingerprints() do not change and never call it. What it
+            separates (measured 2026-10-03 on the round-2 corpus): forks
+            that differ only in immutables or constants keep their opcode
+            stream -- the two univ3 pool fixtures, different code_id, are
+            1.0 -- while codes that share an interface but not their code
+            fall far below CODE_MIN (BELLE against WETH9 0.16; on the
+            night2 base 84 UniswapV2 pairs share the Nimbus pair's 27
+            selectors at 1.0 with code similarity under 0.6).
+          guardrails: [Tolerant Parser]
+          steps:
+            - uses: evm
+          examples:
+            - given: 'code_belle.hex and code_belle_copy_1807090d.hex'
+              when: 'code_similarity is called, both orders'
+              then: '920/929 (0.9903121636167922) both times; len(opcode_shingles) is 924 and 925'
+              ref: 'the copy swaps one function (Similarity Score example 3); measured 2026-10-03'
+            - given: 'code_univ3_usdc_weth_005.hex and code_univ3_pool_e0554a47.hex (different code_id, equal skeleton_hash); code_launchtoken_40676634.hex and code_launchtoken_4e67db19.hex'
+              when: 'code_similarity is called on each pair'
+              then: '1.0 (7352/7352) and 1.0 (768/768)'
+              ref: 'immutables-only difference: Build Skeleton example 1'
+            - given: 'code_belle.hex and code_weth9.hex; code_weth9.hex and code_usdt.hex; code_proxy_seed_0c010533.hex and code_proxy_046eee2c.hex'
+              when: 'code_similarity is called on each pair'
+              then: '209/1291 (0.16189000774593337); 430/1311 (0.32799389778794813); 197/1221 (0.16134316134316135)'
+              ref: 'measured 2026-10-03'
+            - given: 'code_clone_270df012.hex and code_clone_2ca7b61b.hex (EIP-1167, different targets)'
+              when: 'code_similarity and similarity are called'
+              then: '1.0 (20/20) and 0.0'
+              ref: 'code_similarity applies no proxy rule; Similarity Score example 4'
+            - given: 'b"" against code_weth9.hex; b"\x60\x00\x60\x00" (2 opcodes) against itself; b"\x60\x00" * 5 (5 opcodes); b"\xfe\xff\x7f"'
+              when: 'code_similarity and opcode_shingles are called'
+              then: 'code_similarity 0.0, 0.0; opcode_shingles sizes 0, 0, 1 and 0 (the truncated PUSH32 of the last ends the stream); no exception'
+              ref: 'Tolerant Parser'
+            - given: 'the module ethsc.fingerprint'
+              when: 'ALERT_MIN and CODE_MIN are read'
+              then: '0.75 and 0.6'
+              ref: 'phase 18 calibration: recall 0.895 at 0.75 with every hard negative below, on the round-2 corpus'
         - name: Similarity Score
           description: >
             similarity(code_a: bytes, code_b: bytes) -> float in [0, 1]: a
@@ -824,6 +886,27 @@ System:
             the address the operator gave with the implementation's
             code_id. add_seed reads the implementation at the time of the
             call; a later set_implementation does not move the seed.
+            Strict seeds (phase 18): the seeds table gains the column
+            strict INTEGER, added on a writable open by the PRAGMA
+            table_info -> ALTER TABLE seeds ADD COLUMN strict INTEGER ->
+            commit pattern, with no UPDATE of old rows (NULL reads as
+            loose). set_seed_strict(address, strict: bool) -> bool sets the
+            flag of the seed of address (any case) to 1 or 0, commits and
+            returns True; for an address that is not a seed it returns False
+            and writes nothing (no row is created). strict_seeds() -> list
+            of the lowercase addresses of the seeds whose flag is 1, sorted
+            ascending. seeds() does not change: still exactly the three keys
+            address, label, code_id. add_seed of an address that is already
+            a seed keeps its strict flag (it updates code_id and label in
+            place); remove_seed deletes the row, flag included, so a later
+            add_seed starts loose. A read-only store raises
+            ReadOnlyStoreError from set_seed_strict; strict_seeds on a
+            read-only store opened on a file whose seeds table has no strict
+            column returns [] (the fourth tolerated addition, like events,
+            updated_at and implementation). Strictness is the operator's
+            decision, never computed by the store: a seed whose selectors
+            are a common interface (a UniswapV2 pair, a plain ERC-20) is
+            marked strict by hand after seed audit shows it.
           steps:
             - modifies: Code Database
           examples:
@@ -864,6 +947,25 @@ System:
                 (the implementation's), 0x72b9…393b "impl-seed" with the same
                 148d598b…cbf28
               ref: 'phase 14: a seed on a proxy seeds through its implementation; code_ids from fingerprint() of the two fixtures'
+            - given: 'a db holding code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6, seeded "BELLE honeypot"'
+              when: >
+                strict_seeds(); set_seed_strict("0x34C6211621F2763C60EB007DC2AE91090A2D22F6", True);
+                strict_seeds(); seeds(); add_seed(address, "BELLE again"); strict_seeds();
+                set_seed_strict(address, False); strict_seeds()
+              then: >
+                [], True, ["0x34c6211621f2763c60eb007dc2ae91090a2d22f6"], one
+                entry with exactly the keys address, label, code_id, then
+                ["0x34c6211621f2763c60eb007dc2ae91090a2d22f6"] again (the re-add
+                keeps the flag, the label is now "BELLE again"), True, []
+              ref: 'phase 18'
+            - given: 'that db with the seed strict, and the address 0x1807090dd15a6f58e00fd769e32ebf20ee610385 stored with code_belle_copy_1807090d.hex but not seeded'
+              when: 'set_seed_strict on 0x1807… (True), set_seed_strict on 0x1111111111111111111111111111111111111111 (True), then remove_seed(0x34c6…) and add_seed(0x34c6…, "BELLE")'
+              then: 'False, False, the seeds row count still 1 after the two calls; after remove and add, strict_seeds() is []'
+              ref: 'phase 18: no row is created; remove_seed takes the flag with it'
+            - given: 'a file made by legacy_db(14) (seeds table without strict), opened with Store(path, readonly=True) and then with Store(path)'
+              when: 'strict_seeds() on the read-only store, set_seed_strict(any address, True) on it; then strict_seeds() on the writable store and PRAGMA table_info(seeds)'
+              then: '[]; ReadOnlyStoreError; [] and the column list ends with strict'
+              ref: 'phase 18 migration, no UPDATE'
         - name: Budget Ledger
           description: >
             spend(day, method, credits) adds credits to the ledger of a UTC
@@ -1266,6 +1368,45 @@ System:
                 for 0x0c01…2cf8 (the unresolved sibling scores 0.0 and is
                 absent) and [] for 0x069c…5ea
               ref: 'phase 14; a proxy without a resolved implementation keeps phase 9'
+        - name: Interface Hits
+          description: >
+            Phase 18. interface_hits(store, code_id, min_score=ALERT_MIN,
+            code_min=CODE_MIN) -> int: how many stored codes share the
+            interface of code_id without sharing its code -- the number of
+            code_ids of store.fingerprints(), other than code_id itself,
+            whose score_fingerprints against code_id's fingerprint is >=
+            min_score and whose code_similarity with code_id's code is <
+            code_min. It is the evidence seed audit prints for the operator's
+            strict decision; nothing applies it automatically.
+          behavior: >
+            0 when code_id has no element in store.fingerprints() (an
+            unknown code_id). Reads the store through fingerprints() and
+            code_by_id() only; code_by_id is called for code_id itself and
+            for the code_ids that reach min_score, never for the others.
+            Stored fingerprints as they are: no implementation fan-out. Never
+            raises. Why it is not a rule (measured 2026-10-03 on the night2
+            base): the Compound cToken seeds collect 9-15 such hits -- live
+            Compound forks of other versions, exactly what they are seeded
+            for -- and a UniswapV2-fork seed collects 84 (every pair); a
+            count cannot tell a popular family from a common interface, and
+            it grows with the base.
+          guardrails: [Deterministic Output, No Network In Core]
+          steps:
+            - uses: store
+            - uses: fingerprint
+          examples:
+            - given: >
+                block_store() plus code_belle.hex at 0x34c6211621f2763c60eb007dc2ae91090a2d22f6
+                and the four code_belle_copy_*.hex at their addresses (block 1);
+                B the code_id 8571d00b598627ac40e1ae7bc4d0cb3fd5a77a0d663763fdfc1cd9127b63cb4d
+                of code_belle.hex, D the code_id ee3b081294ee0f2f1804d8aa0204848d1d0f58efe81fae42998e81f1170c9ef9
+                of 0xb53c071bdb35d21aa1216b084f79c372d71053d5
+              when: 'interface_hits(store, B) at min_score 0.5, 0.7, the default and 0.8; interface_hits(store, D) at the same four'
+              then: 'B: 8, 1, 0, 0; D: 23, 4, 4, 2'
+              ref: 'measured 2026-10-03; the copies count nowhere (code similarity 0.99)'
+            - given: 'that store'
+              when: 'interface_hits(store, "00" * 32), and interface_hits(store, B) with code_min=1.0'
+              then: '0; and 4 at the default min_score (the four copies, 0.8667, now below code_min 1.0)'
         - name: Match Watchlist
           description: >
             match_watchlist(store, code, min_score=0.8) -> list of Alert
@@ -1288,6 +1429,15 @@ System:
             Watchlist), and Ingest Block hands it the implementation's
             bytes on behalf of a proxy, so a proxy's own bytes still score
             0.0 against everything.
+            Phase 18: the default min_score is ALERT_MIN (0.75). A strict
+            seed (its address in store.strict_seeds(), read once per call)
+            alerts only when, besides score >= min_score, code_similarity of
+            the given code and the seed's code (store.code_by_id of the
+            seed's code_id) is >= CODE_MIN; the alert still carries the
+            Similarity Score, not the code similarity. code_by_id is called
+            only for a strict seed that reached min_score -- a store with no
+            strict seed is read exactly as before (no code_by_id). A strict
+            seed whose code_by_id is None alerts on nothing.
           guardrails: [Deterministic Output, Tolerant Parser]
           steps:
             - uses: store
@@ -1312,6 +1462,13 @@ System:
                 "label": "proxy-seed", "score": 1.0} for the implementation
                 bytes; [] for the proxy bytes
               ref: 'phase 14: the seed carries the implementation code_id; a proxy''s own bytes still score 0.0'
+            - given: 'a store with seed BELLE (0x34c6211621f2763c60eb007dc2ae91090a2d22f6, "BELLE honeypot"), loose; S the code of 0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce from codes_26077729.json'
+              when: 'match_watchlist(store, S), match_watchlist(store, S, min_score=0.7); then set_seed_strict(BELLE, True) and match_watchlist(store, S, min_score=0.7), match_watchlist(store, bytes of code_belle_copy_1807090d.hex)'
+              then: >
+                [] (11/15 = 0.7333 is below the default 0.75); one alert, score
+                0.7333333333333333; [] (code similarity 0.2314 < 0.6); one alert,
+                score 0.8666666666666667 (code similarity 0.9903)
+              ref: 'phase 18: a strict seed demands the code too'
         - name: Recheck Watchlist
           description: >
             recheck_watchlist(store, min_score=0.8, seed_addresses=None) ->
@@ -1369,6 +1526,14 @@ System:
             nothing known give []. Reads the store through seeds(),
             fingerprints(), addresses_of() and origins() only (phase 11: no
             code_by_id).
+            Phase 18: the default min_score is ALERT_MIN (0.75), and a strict
+            seed (store.strict_seeds(), read once per call) keeps a (code_id,
+            seed) pair only when code_similarity of the two codes
+            (store.code_by_id of the effective code_id and of the seed's
+            code_id) is >= CODE_MIN, as in Match Watchlist; the alerts carry
+            the Similarity Score. code_by_id is read only for pairs of a
+            strict seed that reached min_score, so with no strict seed the
+            reads above stay exactly as listed (example 6 holds).
           guardrails: [Deterministic Output, No Network In Core]
           steps:
             - uses: store
@@ -1468,6 +1633,16 @@ System:
                 seed 0x72b971717e088b59f26d4236be222adb6acd393b, score 1.0 (the
                 unresolved sibling is absent); [] for the second
               ref: 'phase 14; phase 9 stands for a proxy without a resolved implementation'
+            - given: 'the store of Interface Hits example 1 with add_seed(0x34c6211621f2763c60eb007dc2ae91090a2d22f6, "BELLE honeypot"), loose'
+              when: 'recheck_watchlist(store), recheck_watchlist(store, min_score=0.7); then set_seed_strict(0x34c6…, True) and recheck_watchlist(store, min_score=0.7)'
+              then: >
+                the 4 copy alerts (0x1807090dd15a6f58e00fd769e32ebf20ee610385,
+                0x2141be5f2afa674c94167ab167a478a56cb539f5,
+                0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a,
+                0x6411bed82614b91ef655d82486e0bd3a13d2eb8c, each 0.8666666666666667);
+                those 4 plus 0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce with
+                0.7333333333333333, fifth in address order; the 4 copy alerts only
+              ref: 'phase 18: the copies share the code (0.9903), the token only the interface (0.2314)'
       dataObjects:
         - name: Cluster
           description: One group of addresses.
@@ -1489,6 +1664,150 @@ System:
             score: float
             address: 'str -- added by Ingest Block, returned by Recheck Watchlist'
             origin: '"created" | "seen" | "fetched" | "impl" | "unknown" -- set by Ingest Block (created, seen, impl) and Recheck Watchlist (any, from store.origins())'
+    - name: calibrate
+      description: >
+        Phase 18. The eval harness of the alert rule: given labelled address
+        pairs and a store, how many same-family pairs alert, how many
+        must-not pairs alert, and how many unlabelled codes of the store
+        would alert, threshold by threshold. Pure orchestration over the
+        Store's public methods, cluster and fingerprint; no I/O of its own,
+        no network.
+      functions:
+        - name: Evaluate Calibration
+          description: >
+            evaluate(store, labels, thresholds=DEFAULT_GRID,
+            code_min=CODE_MIN) -> {"rows": [...], "missing": [...],
+            "benign_total": int}. labels is a Calibration Labels dict.
+            DEFAULT_GRID = (0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0), a
+            module constant of ethsc.calibrate. One row per threshold, in
+            the order given: {"threshold", "recall", "negatives", "benign",
+            "interface_only"}.
+          behavior: >
+            Every address is lowercased first. The labelled addresses are
+            the addresses of every pair of positives and negatives;
+            missing is the sorted list of those whose store.code_of is None
+            (unknown or stored without code), and a pair with a missing side
+            is skipped. The code_id of a labelled address is the code_id of
+            fingerprint(store.code_of(address)) -- its own bytes, no
+            implementation fan-out. An address is strict iff it is in
+            labels["strict"]. The alert rule with s as the seed and c as the
+            candidate, at threshold t, is exactly the production rule of
+            Match Watchlist: score_fingerprints(fp of s, fp of c) >= t, and,
+            when s is strict, code_similarity(code of s, code of c) >=
+            code_min. recall: each kept positive pair is checked in both
+            directions (a as seed and b, then b as seed and a); recall is the
+            passing directed checks over all directed checks, a float, 0.0
+            when there is none. negatives: the number of passing directed
+            checks over the kept negative pairs (both directions; 0 is the
+            target). benign: the benign codes are the code_ids of
+            store.fingerprints() that are not the code_id of a labelled
+            address with code; benign_total is their number; benign is the
+            number of benign codes that pass the rule for at least one
+            labelled address with code as the seed; interface_only is the
+            number of benign codes that pass for at least one such seed that
+            is not strict while their code_similarity with it is below
+            code_min (they alert on the interface alone). Fingerprint scores
+            are computed at most once per (labelled code_id, stored code_id)
+            pair and opcode shingles at most once per code_id in one call,
+            whatever the number of thresholds: on the night2 base (19 804
+            codes, 46 labelled addresses) one call is seconds, not minutes.
+            Reads the store through fingerprints(), code_of() and
+            code_by_id() only; writes nothing; never raises on labels of the
+            schema. ethsc.calibrate imports from ethsc.fingerprint, never from
+            ethsc.cluster: the rule is restated here, and the examples of
+            Match Watchlist and of this function pin the two to the same
+            answers.
+          guardrails: [Deterministic Output, No Network In Core]
+          steps:
+            - uses: store
+            - uses: fingerprint
+          examples:
+            - given: >
+                the store of Interface Hits example 1 (block_store() plus BELLE at
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 and its four copies),
+                and labels {"positives": [[0x34c6…, 0x1807090dd15a6f58e00fd769e32ebf20ee610385],
+                [0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc, 0x22052a1a0f5a3d2839d71c458f177e68b0e73963],
+                [0x34c6…, 0x9999999999999999999999999999999999999999]],
+                "negatives": [[0x34c6…, 0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce]],
+                "strict": [0x34c6…]}
+              when: 'evaluate(store, labels, (0.7, 0.75, 0.8, 0.9))'
+              then: >
+                rows (threshold, recall, negatives, benign, interface_only):
+                (0.7, 1.0, 1, 6, 5), (0.75, 1.0, 0, 6, 2), (0.8, 1.0, 0, 4, 0),
+                (0.9, 0.5, 0, 3, 0); missing ["0x9999999999999999999999999999999999999999"];
+                benign_total 131
+              ref: 'reference model of 2026-10-03; at 0.7 the token 0x95ad… alerts on BELLE (0.7333) only as the seed, BELLE being strict; at 0.9 the copy pair (0.8667) fails both ways'
+            - given: 'the same store and labels with "strict": [], and then with "strict": ["0x34C6211621F2763C60EB007DC2AE91090A2D22F6"]'
+              when: 'evaluate(store, labels, (0.7,))'
+              then: 'the row (0.7, 1.0, 2, 6, 5); then (0.7, 1.0, 1, 6, 5) -- strict entries are lowercased too'
+            - given: 'the same store and labels'
+              when: 'evaluate(store, labels) with the default thresholds'
+              then: >
+                7 rows, thresholds 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0 in that
+                order: (1.0, 1, 19, 18), (1.0, 1, 9, 8), (1.0, 1, 6, 5),
+                (1.0, 0, 6, 2), (1.0, 0, 4, 0), (0.5, 0, 3, 0), (0.5, 0, 3, 0)
+                as (recall, negatives, benign, interface_only)
+            - given: 'the same store; labels {} and then {"positives": [[0x34c6…, 0x9999999999999999999999999999999999999999]]}'
+              when: 'evaluate(store, {}, (0.5, 1.0)) and evaluate(store, the second, (0.75,))'
+              then: >
+                rows (0.5, 0.0, 0, 0, 0) and (1.0, 0.0, 0, 0, 0), missing [],
+                benign_total 135; then the row (0.75, 0.0, 0, 4, 0) -- BELLE
+                still seeds the benign count (its four copies), the skipped
+                pair gives no directed check -- missing
+                ["0x9999999999999999999999999999999999999999"], benign_total 134
+              ref: 'Tolerant Parser on labels of the schema'
+        - name: Load Labels
+          description: >
+            load_labels(path) -> Calibration Labels dict with exactly the keys
+            positives, negatives and strict, every address lowercased; and
+            parse_grid(text) -> tuple of floats, for calibrate --labels and
+            --grid. Both raise ValueError with a one-line message on bad
+            input and nothing else.
+          behavior: >
+            load_labels: a file that cannot be read (OSError), text that is
+            not JSON, a JSON value that is not an object, a positives or
+            negatives value that is not a list of two-element lists of
+            address strings matching ^0x[0-9a-fA-F]{40}$, or a strict value
+            that is not a list of such strings, all raise ValueError whose
+            str is one line naming the path or the key. Absent keys become
+            []; unknown keys are ignored. parse_grid: the text split on ","
+            and stripped, each part float() and inside [0, 1]; an empty
+            text, an empty part, a non-float or an out-of-range value raise
+            ValueError; the order of the text is kept, duplicates too.
+          guardrails: [Tolerant Parser]
+          examples:
+            - given: 'a file holding {"positives": [["0xAB000000000000000000000000000000000000CD", "0x0000000000000000000000000000000000000001"]], "note": "x"}'
+              when: 'load_labels(path)'
+              then: '{"positives": [["0xab000000000000000000000000000000000000cd", "0x0000000000000000000000000000000000000001"]], "negatives": [], "strict": []}'
+            - given: 'a path that does not exist; a file holding "[]"; a file holding "{"; a file holding {"negatives": [["0x12", "0x0000000000000000000000000000000000000001"]]}; a file holding {"strict": "0x0000000000000000000000000000000000000001"}; a file holding {"positives": [["0x0000000000000000000000000000000000000001"]]}'
+              when: 'load_labels on each'
+              then: 'ValueError each time, its str a single line'
+            - given: 'the texts "0.7,0.75, 0.8", "1,0", "", "0.5,", "0.5,abc", "1.5", "-0.1"'
+              when: 'parse_grid on each'
+              then: '(0.7, 0.75, 0.8); (1.0, 0.0); then ValueError for each of the other five'
+            - given: 'tests/fixtures/calibration_labels.json'
+              when: 'load_labels(path)'
+              then: '95 positive pairs, 8 negative pairs, strict ["0xa0ff0e694275023f4986dc3ca12a6eb5d6056c62", "0xc0a6b8c534fad86df8fa1abb17084a70f86eddc1"]'
+              ref: 'the round-2 corpus, curated 2026-10-03'
+      dataObjects:
+        - name: Calibration Labels
+          description: >
+            The ground truth of a calibration, a JSON object. Every key is
+            optional (absent means []); addresses in any case.
+            tests/fixtures/calibration_labels.json is the round-2 corpus
+            (livetests/eth-seed-candidates-2.md, curated 2026-10-03): 95
+            positive pairs inside 11 same-role groups (Compound cToken,
+            CEther, Unitroller, Yearn yToken, Conic omnipool, Multichain
+            Anyswap router, Peapods pod, Popsicle Sorbetto vault, bZx
+            iToken, UniswapV2-fork pair, HeavensGate/QuantumWN staking), 8
+            hard negative pairs (5 OlympusDAO-fork staking pairs, 3 approval-
+            drain routers) and 2 strict addresses (the two UniswapV2-fork
+            pairs). The corpus bytecode is not in the fixture: the addresses
+            are loaded into a base by seed add --fetch then seed remove.
+          schema:
+            positives: 'list of [address, address] -- same family, must alert'
+            negatives: 'list of [address, address] -- different code, must not alert'
+            strict: 'list of address -- treated as strict seeds'
     - name: rpc
       description: >
         The only network module: a minimal JSON-RPC client over an injected
@@ -1658,7 +1977,8 @@ System:
             fetched, contracts, eoas, failed, deferred, complete, alerts,
             upgrades}.
             get_code(address, block) -> hex string is injected. watch is the
-            min_score passed to match_watchlist; None means 0.8. on_alerts is
+            min_score passed to match_watchlist; None means match_watchlist's
+            own default, ALERT_MIN (0.8 until phase 17, 0.75 since phase 18). on_alerts is
             an optional sink for the alerts of this block, called before the
             call returns or raises. Phase 14: get_storage(address, slot,
             block) -> hex word is injected too (None: no slot is read);
@@ -1849,7 +2169,7 @@ System:
                 the code of 0xb53c071bdb35d21aa1216b084f79c372d71053d5 from
                 codes_26077729.json, seeded "deployed in 26077729", and a fake
                 get_code serving codes_26077729.json
-              when: 'ingest_block(26077729, receipts_26077729.json, …) is called with an on_alerts collecting into a list'
+              when: 'ingest_block(26077729, receipts_26077729.json, …, watch=0.8) is called with an on_alerts collecting into a list (watch pinned since phase 18: at the default 0.75 two more tokens match, see Follow Chain)'
               then: >
                 alerts is exactly [{address 0xb53c071bdb35d21aa1216b084f79c372d71053d5,
                 seed_address 0x1111111111111111111111111111111111111111, label
@@ -2016,13 +2336,15 @@ System:
             follow_chain(rpc, store, start=None, stop=None,
             max_calls_per_block=None, daily_budget=None, day=None,
             prices=None, on_alerts=None, workers=None, code_tag=None,
-            on_upgrades=None)
+            on_upgrades=None, watch=None)
             -> summary {blocks, stopped,
             progress, alerts, day, upgrades}. day is a "%Y-%m-%d" string pinning every
             block of the pass, or a callable of no arguments returning one;
             day=None means today's UTC date, resolved afresh before each
             block. prices=None means {}. on_alerts is the per-block alert
-            sink passed down to ingest_block. Polls
+            sink passed down to ingest_block. watch (phase 18) is passed to
+            every ingest_block call of the pass as its watch, unchanged; None
+            leaves ingest_block's default. Polls
             eth_blockNumber, then for each block after progress (or from
             start) up to the head (or stop): eth_getBlockReceipts,
             ingest_block with get_code over eth_getCode.
@@ -2261,6 +2583,20 @@ System:
                 times (no seed, no upgrade: nothing delivered, nothing
                 written); progress_at() is not None both times
               ref: 'phase 15: an empty block writes no event'
+            - given: >
+                the store of Ingest Block example 12 (0x1111111111111111111111111111111111111111
+                holding the code of 0xb53c071bdb35d21aa1216b084f79c372d71053d5,
+                seeded "deployed in 26077729") with progress 26077728, and the
+                fake rpc of the first example
+              when: 'follow_chain(rpc, store, prices={}, watch=0.8), and on a second such store follow_chain(rpc, store, prices={})'
+              then: >
+                summary alerts of the first: the 3 alerts of Ingest Block
+                example 12; of the second: 5 alerts in address order --
+                0x514910771af9ca656af840dff83e8264ecf986ca 0.75 "seen",
+                0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce 0.75 "seen", then
+                the same 3 (0xb53c… 1.0 "created", 0xc02aaa39… 9/11 "seen",
+                0xff74317e… 1.0 "seen")
+              ref: 'phase 18: watch reaches ingest_block; two ERC-20 tokens share 9/12 of the seed''s selectors'
     - name: cli
       description: python -m ethsc with subcommands over one SQLite db.
       functions:
@@ -2269,14 +2605,16 @@ System:
             main(argv=None, rpc=None, sleep=None) -> exit code. Subcommands:
             listen [--daily-budget C] [--max-calls-per-block K]
             [--interval S] [--source {infura,publicnode}] [--workers K]
-            [--alert-on {created,seen,all}],
+            [--alert-on {created,seen,all}] [--min M],
             backfill --from N --to M [--daily-budget C]
             [--max-calls-per-block K] [--source {infura,publicnode}]
-            [--workers K] [--alert-on {created,seen,all}], clusters top
+            [--workers K] [--alert-on {created,seen,all}] [--min M], clusters top
             [--n K], cluster <addr>,
             similar <addr> [--min 0.8], seed add <addr> --label L [--fetch],
-            seed remove <addr>, seed list,
-            recheck [--min 0.8] [--origin {created,seen,fetched,impl,unknown}],
+            seed remove <addr>, seed list, seed strict <addr> {on,off},
+            seed audit (phase 18),
+            recheck [--min 0.75] [--origin {created,seen,fetched,impl,unknown}],
+            calibrate --labels FILE [--grid LIST] (phase 18),
             report [--out PREFIX],
             risk [--flag {selfdestruct,mutable_delegatecall}],
             dashboard [--host 127.0.0.1] [--port 8080] [--static DIR]
@@ -2335,12 +2673,13 @@ System:
             retry backoff), while the ALERT lines are being written, while
             the stop line is being written, and between a pass and the
             pause. recheck prints the alerts of recheck_watchlist(store,
-            min_score=--min, 0.8 by default) over the whole database, one
+            min_score=--min, ALERT_MIN = 0.75 by default since phase 18) over the whole database, one
             ALERT line each, in the order that function returns them, and
             exits 0 -- also with no seeds, no alerts or an empty database,
             where stdout stays empty. seed add, after a successful add_seed,
             prints the ALERT lines of recheck_watchlist(store,
-            seed_addresses=[the new address]) at the fixed threshold 0.8:
+            seed_addresses=[the new address]) at the default threshold
+            ALERT_MIN (0.8 until phase 17, 0.75 since phase 18):
             the copies of the new seed already in the database, which no
             listen or backfill will ever report again; its exit code stays
             0, and a seed add that fails still exits 2 with an empty
@@ -2505,6 +2844,36 @@ System:
             --port is an argparse usage error (exit 2, one stderr line).
             Binding beyond localhost needs an explicit --host; access from
             another machine is an ssh tunnel, not this command's business.
+            Calibration (phase 18). listen and backfill take --min M (a
+            float, default ALERT_MIN = 0.75) and pass it to follow_chain as
+            watch; an M that is not a float or lies outside [0, 1] is a usage
+            error: exit 2, one stderr line, empty stdout, no rpc call. similar
+            keeps --min 0.8: it is a search, not an alert. seed strict <addr>
+            {on,off} calls store.set_seed_strict(address, mode == "on"): exit
+            0 with empty stdout and stderr when it returns True; "not a seed:
+            <address>" on stderr and exit 2 when it returns False; a bad
+            address or mode is exit 2 (one stderr line). seed audit prints,
+            for every seed of store.seeds() in address order, the record
+            "<address>\t<label>\t<interface_hits>\t<strict|loose>", where
+            interface_hits is interface_hits(store, the seed's code_id) at
+            its defaults and the last field is "strict" when the address is
+            in store.strict_seeds(); it writes nothing and exits 0 (empty
+            stdout with no seeds). seed list does not change. seed add sets
+            no strict flag: strictness is only ever the operator's seed
+            strict. calibrate reads --labels with load_labels and --grid
+            with parse_grid (both of ethsc.calibrate; a ValueError is exit 2
+            with its str as the one stderr line, before any store read) and
+            prints evaluate(store, labels, thresholds), one record per row
+            in grid order:
+            "<threshold>\t<recall>\t<negatives>\t<benign>\t<interface_only>\t<benign_total>",
+            threshold and recall "%.4f", the counts plain integers; --grid is
+            a comma-separated list of floats in [0, 1] (default the
+            DEFAULT_GRID of ethsc.calibrate). When missing is not empty, one
+            stderr line "missing: <addresses comma-joined>" follows; exit 0.
+            Bad labels or a bad --grid (Load Labels) are exit 2 with one
+            stderr line and empty stdout. calibrate makes no
+            rpc call and writes no row (seeds, codes, addresses, events keep
+            their counts).
           requirements: [Offline Tests]
           guardrails: [Secret Hygiene, Deterministic Output]
           steps:
@@ -2716,7 +3085,7 @@ System:
                 codes_26077729.json (put_address with block 1, no origin),
                 seeded "deployed in 26077729", and FakeRpc() over block
                 26077729 (receipts_26077729.json, codes_26077729.json)
-              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake)'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729", "--min", "0.8"], rpc=fake)'
               then: >
                 exit 0, stderr empty, stdout exactly the three lines
                 "ALERT\t0xb53c071bdb35d21aa1216b084f79c372d71053d5\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t1.0000\tcreated",
@@ -2726,7 +3095,7 @@ System:
                 "seen", 0x1111… "unknown"
               ref: 'phase 13; the deploy of block 26077729 and a byte-identical contract that was only seen'
             - given: 'the setup of the example above, made three times in three fresh dbs'
-              when: 'the same backfill with --alert-on created, with --alert-on seen, and with --alert-on all'
+              when: 'the same backfill (--min 0.8) with --alert-on created, with --alert-on seen, and with --alert-on all'
               then: >
                 exit 0 each time, stderr empty; stdout is the created line
                 only, the two seen lines only (0xc02aaa39… then 0xff74317e…),
@@ -2738,8 +3107,8 @@ System:
                 (head 0x18dea21), and a sleep that raises KeyboardInterrupt
               when: 'main(["--db", db, "listen", "--source", "publicnode", "--alert-on", "created"], rpc=fake, sleep=fake_sleep)'
               then: 'exit 0, stderr empty, stdout exactly the one created line of the example above, progress 26077729'
-            - given: 'the db after the plain backfill of the example above'
-              when: 'recheck, then recheck --origin created, --origin seen, --origin fetched, --origin unknown'
+            - given: 'the db after the plain backfill (--min 0.8) of the example above'
+              when: 'recheck --min 0.8, then recheck --min 0.8 with --origin created, --origin seen, --origin fetched, --origin unknown'
               then: >
                 exit 0 every time, stderr empty; recheck prints the same three
                 lines as that backfill, byte for byte; --origin created the
@@ -2978,6 +3347,65 @@ System:
               when: 'main(["--db", db, "dashboard", "--port", str(P)]) with the real make_server, then main(["--db", db, "dashboard", "--port", "x"])'
               then: 'exit 2 both times; exactly one stderr line each, none of them containing "Traceback"; empty stdout'
               ref: 'phase 15: a busy port is a usage-level failure'
+            - given: 'the deploy-seed setup of example 36 (0x1111111111111111111111111111111111111111 holding the code of 0xb53c071bdb35d21aa1216b084f79c372d71053d5, seeded "deployed in 26077729") in a fresh db, FakeRpc() over block 26077729'
+              when: 'main(["--db", db, "backfill", "--from", "26077729", "--to", "26077729"], rpc=fake) -- no --min -- then main(["--db", db, "recheck"])'
+              then: >
+                exit 0 both times, stderr empty, stdout both times exactly the five lines
+                "ALERT\t0x514910771af9ca656af840dff83e8264ecf986ca\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t0.7500\tseen",
+                "ALERT\t0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce\t0x1111111111111111111111111111111111111111\tdeployed in 26077729\t0.7500\tseen",
+                then the three lines of example 36
+              ref: 'phase 18: the default threshold is ALERT_MIN 0.75; LINK and SHIB share 9/12 of the seed''s selectors'
+            - given: 'a fresh db and FakeRpc(fail=AssertionError("no rpc"))'
+              when: 'main with backfill --from 26077729 --to 26077729 --min 1.5; listen --min -0.1; backfill --from 26077729 --to 26077729 --min x'
+              then: 'exit 2 each time, stdout empty, stderr exactly one line, the fake records no call'
+              ref: 'phase 18: --min lies in [0, 1]'
+            - given: >
+                a db made by block_store() plus code_belle.hex at
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 and the four
+                code_belle_copy_*.hex at their addresses (put_address, block 1,
+                no origin), add_seed(0x34c6…, "BELLE honeypot"), closed
+              when: >
+                seed audit; seed strict 0x34C6211621F2763C60EB007DC2AE91090A2D22F6 on;
+                seed audit; seed list; recheck --min 0.7; seed strict
+                0x34c6211621f2763c60eb007dc2ae91090a2d22f6 off; recheck --min 0.7
+              then: >
+                exit 0 every time, stderr always empty; seed audit prints
+                "0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0\tloose";
+                seed strict prints nothing; seed audit then prints
+                "0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0\tstrict";
+                seed list prints "0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot"
+                (unchanged); the strict recheck prints the four lines
+                "ALERT\t<copy>\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0.8667\tunknown"
+                for 0x1807090dd15a6f58e00fd769e32ebf20ee610385,
+                0x2141be5f2afa674c94167ab167a478a56cb539f5,
+                0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a,
+                0x6411bed82614b91ef655d82486e0bd3a13d2eb8c in that order; seed
+                strict off prints nothing; the loose recheck prints those four
+                and then "ALERT\t0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce\t0x34c6211621f2763c60eb007dc2ae91090a2d22f6\tBELLE honeypot\t0.7333\tunknown"
+              ref: 'phase 18; Recheck Watchlist example 12'
+            - given: 'the db of the example above'
+              when: 'seed strict 0x1807090dd15a6f58e00fd769e32ebf20ee610385 on; seed strict 0x12 on; seed strict 0x34c6211621f2763c60eb007dc2ae91090a2d22f6 maybe'
+              then: >
+                exit 2 each time with an empty stdout and exactly one stderr
+                line, the first being "not a seed: 0x1807090dd15a6f58e00fd769e32ebf20ee610385";
+                store.strict_seeds() is [] afterwards
+            - given: 'the db of the example above (BELLE loose) and a labels file holding the labels of Evaluate Calibration example 1 (strict BELLE); FakeRpc(fail=AssertionError("no rpc"))'
+              when: 'main(["--db", db, "calibrate", "--labels", path, "--grid", "0.7,0.75,0.8,0.9"], rpc=fake), then main(["--db", db, "calibrate", "--labels", path], rpc=fake)'
+              then: >
+                exit 0 both times; stdout of the first exactly
+                "0.7000\t1.0000\t1\t6\t5\t131", "0.7500\t1.0000\t0\t6\t2\t131",
+                "0.8000\t1.0000\t0\t4\t0\t131", "0.9000\t0.5000\t0\t3\t0\t131"
+                (4 lines); of the second 7 lines, the first
+                "0.5000\t1.0000\t1\t19\t18\t131" and the last
+                "1.0000\t0.5000\t0\t3\t0\t131"; stderr exactly the one line
+                "missing: 0x9999999999999999999999999999999999999999" both times;
+                the fake records no call; seeds, codes and addresses row counts
+                and strict_seeds() are unchanged
+              ref: 'phase 18; Evaluate Calibration examples 1 and 3'
+            - given: 'that db, FakeRpc(fail=AssertionError("no rpc")); a path that does not exist; a file holding "[]"; the good labels file of the example above'
+              when: 'calibrate --labels <missing path>; calibrate --labels <the "[]" file>; calibrate --labels <good> --grid "0.5,abc"; calibrate --labels <good> --grid 1.5'
+              then: 'exit 2 each time, stdout empty, stderr exactly one line, the fake records no call'
+              ref: 'phase 18; Load Labels example 2'
     - name: dashboard
       description: >
         The live dashboard backend (phase 15): ethsc/dashboard.py, a
