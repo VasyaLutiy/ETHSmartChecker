@@ -898,6 +898,7 @@
       ],
       "depends_on": [
         "fingerprint",
+        "store",
         "helpers-p18"
       ],
       "variants": 2,
