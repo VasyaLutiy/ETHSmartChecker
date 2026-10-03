@@ -1,0 +1,75 @@
+{
+  "deck_id": "20261003-160820-48a82ec2",
+  "completed_at": "2026-10-03T16:14:26.435",
+  "branch": "morph/20261003-160820-48a82ec2",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-76cbfb345c144917837279564333b1fb"
+  ],
+  "outcomes": {
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cli_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "ff081f8b972337690375a3e498c8b967515433f8",
+      "diffstat": [
+        {
+          "path": "tests/test_cli_examples_p18.py",
+          "insertions": 292,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791040102-Cq2y584JAGd5gbHdvzga",
+      "input_tokens": 107245,
+      "output_tokens": 16866,
+      "cost": 0.01471185,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 107245,
+    "output_tokens": 16866,
+    "cost": 0.01471185,
+    "requests": 1,
+    "requests_with_usage": 1
+  },
+  "orchestrator_usage": {}
+}
