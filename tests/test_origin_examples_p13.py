@@ -341,7 +341,7 @@ class IngestBlockOriginExamples(unittest.TestCase):
         sink_calls = []
         get_code = lambda address, block: codes[address]
         stats = ingest_block(_BLOCK, block_receipts(), get_code, store,
-                             on_alerts=sink_calls.append)
+                             watch=0.8, on_alerts=sink_calls.append)
 
         self.assertEqual(len(sink_calls), 1,
                          msg="example 12: on_alerts called once")
@@ -675,7 +675,7 @@ class CommandLineOriginExamples(unittest.TestCase):
         fake = FakeRpc(head=_HEAD)
         code, out, err = _run(
             ["--db", db, "backfill", "--from", str(_BLOCK), "--to",
-             str(_BLOCK)], rpc=fake)
+             str(_BLOCK), "--min", "0.8"], rpc=fake)
         self.assertEqual(code, 0, msg="example 36: exit code, stderr %r" % err)
         self.assertEqual(err, "", msg="example 36: stderr not empty")
         self.assertEqual(out, _ALL_LINES,
@@ -717,7 +717,7 @@ class CommandLineOriginExamples(unittest.TestCase):
             fake = FakeRpc(head=_HEAD)
             code, out, err = _run(
                 ["--db", db, "backfill", "--from", str(_BLOCK), "--to",
-                 str(_BLOCK), "--alert-on", alert_on], rpc=fake)
+                 str(_BLOCK), "--alert-on", alert_on, "--min", "0.8"], rpc=fake)
             self.assertEqual(
                 code, 0, msg="example 37 (%s): exit code, stderr %r"
                 % (alert_on, err))
@@ -784,7 +784,7 @@ class CommandLineOriginExamples(unittest.TestCase):
         fake = FakeRpc(head=_HEAD)
         backfill_code, backfill_out, backfill_err = _run(
             ["--db", db, "backfill", "--from", str(_BLOCK), "--to",
-             str(_BLOCK)], rpc=fake)
+             str(_BLOCK), "--min", "0.8"], rpc=fake)
         self.assertEqual(backfill_code, 0,
                          msg="example 39: backfill exit code")
         self.assertEqual(backfill_out, _ALL_LINES,
@@ -797,7 +797,7 @@ class CommandLineOriginExamples(unittest.TestCase):
             (["--origin", "fetched"], ""),
             (["--origin", "unknown"], ""),
         ):
-            code, out, err = _run(["--db", db, "recheck"] + extra_args)
+            code, out, err = _run(["--db", db, "recheck", "--min", "0.8"] + extra_args)
             self.assertEqual(
                 code, 0, msg="example 39 %r: exit code" % extra_args)
             self.assertEqual(
