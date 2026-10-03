@@ -17,7 +17,11 @@ in the events table (add_events / events / event_counts), stamps
 set_progress with the UTC time read back by progress_at, aggregates
 origins through origin_counts, and Store(path, readonly=True) opens
 an existing file for reading only, raising ReadOnlyStoreError from
-every write method and never migrating the file.
+every write method and never migrating the file. Phase 18: the seeds
+table gains the column strict INTEGER (a writable open adds it, no
+UPDATE of old rows -- NULL reads as loose); set_seed_strict sets the
+flag of a stored seed, strict_seeds lists the strict ones, and
+add_seed keeps an existing seed's strict flag when it re-adds.
 """
 
 import json
@@ -100,7 +104,7 @@ class Store(object):
         if readonly:
             self._conn = sqlite3.connect(
                 "file:" + path + "?mode=ro", uri=True)
-            # Tolerate exactly the three newest additions missing from an
+            # Tolerate exactly the four newest additions missing from an
             # older file: a read cannot add them, so the readers ask these
             # flags instead of writing. Detected once, at open.
             self._ro_no_events = not self._has_table("events")
@@ -108,6 +112,9 @@ class Store(object):
                 "updated_at" not in self._columns("progress"))
             self._ro_no_impl = (
                 "implementation" not in self._columns("addresses"))
+            self._ro_no_strict = (
+                self._has_table("seeds")
+                and "strict" not in self._columns("seeds"))
             return
         self._conn = sqlite3.connect(path)
         # WAL first, before anything else touches the file: a reader then
@@ -145,6 +152,14 @@ class Store(object):
             # NULL until the next set_progress stamps it.
             self._conn.execute(
                 "ALTER TABLE progress ADD COLUMN updated_at TEXT")
+            self._conn.commit()
+        seed_columns = [row[1] for row in self._conn.execute(
+            "PRAGMA table_info(seeds)").fetchall()]
+        if "strict" not in seed_columns:
+            # Phase 18: no UPDATE of old rows -- a seed stored before
+            # phase 18 keeps NULL, which reads as loose.
+            self._conn.execute(
+                "ALTER TABLE seeds ADD COLUMN strict INTEGER")
             self._conn.commit()
         self._fill_std_proxy()
         self._conn.commit()
@@ -461,6 +476,9 @@ class Store(object):
         proxy's address. Otherwise the address's own code_id, as
         before. Read at the time of the call; a later set_implementation
         does not move the seed.
+
+        Phase 18: re-adding a seed updates code_id and label in place
+        and keeps the seed's strict flag (NULL and 0 included).
         """
         self._guard_write()
         address = address.lower()
@@ -474,8 +492,9 @@ class Store(object):
         if impl_entry is not None and impl_entry["code_id"] is not None:
             code_id = impl_entry["code_id"]
         self._conn.execute(
-            "INSERT OR REPLACE INTO seeds (address, code_id, label)"
-            " VALUES (?, ?, ?)",
+            "INSERT INTO seeds (address, code_id, label) VALUES (?, ?, ?)"
+            " ON CONFLICT(address) DO UPDATE SET"
+            " code_id = excluded.code_id, label = excluded.label",
             (address, code_id, label),
         )
         self._conn.commit()
@@ -490,6 +509,36 @@ class Store(object):
             for row in rows
         ]
 
+    def set_seed_strict(self, address: str, strict: bool) -> bool:
+        """Set (or clear) the strict flag of the seed of address.
+
+        Strictness is the operator's decision, never computed here.
+        UPDATE seeds SET strict = 1 or 0 WHERE address = ?, committed;
+        True when a row was changed, False for an address that is not a
+        seed (nothing is written, no row is created). The address may
+        come in any case. Raises ReadOnlyStoreError on a read-only open.
+        """
+        self._guard_write()
+        cursor = self._conn.execute(
+            "UPDATE seeds SET strict = ? WHERE address = ?",
+            (1 if strict else 0, address.lower()),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def strict_seeds(self) -> List[str]:
+        """The lowercase addresses of the seeds whose flag is 1, sorted.
+
+        [] on a read-only store opened on a file whose seeds table has
+        no strict column (it cannot be added by a read).
+        """
+        if self._readonly and self._ro_no_strict:
+            return []
+        rows = self._conn.execute(
+            "SELECT address FROM seeds WHERE strict = 1 ORDER BY address"
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def remove_seed(self, address: str) -> bool:
         """Delete the seed of address; True iff a row was deleted.
 
@@ -497,7 +546,8 @@ class Store(object):
         db does not know or one that is stored but not a seed: both
         give False and change nothing. The codes and addresses rows of
         that address stay as they were, so the address can be seeded
-        again with add_seed and no rpc call.
+        again with add_seed and no rpc call. The strict flag goes with
+        the row, so a later add_seed starts loose.
         """
         self._guard_write()
         address = address.lower()

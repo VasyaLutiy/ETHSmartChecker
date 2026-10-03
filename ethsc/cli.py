@@ -1,18 +1,19 @@
 """Command line interface of ETHSmartChecker.
 
 python -m ethsc with subcommands over one SQLite db: listen, backfill,
-clusters top, cluster, similar, seed add, seed list, recheck, risk,
-report, dashboard. Output is plain text, one record per line, tab-separated, fully
-ordered; every float is printed "%.4f". ALERT lines are printed from the
-on_alerts sink of follow_chain as each block ends and flushed at once,
-so an alert reaches the log before the next block is fetched and
-survives a pass that never returns. The summary alerts are not printed a
-second time: each alert appears exactly once. recheck prints the alerts
-of recheck_watchlist over the whole database -- including the copies
-already stored when the seed was added, which no listen or backfill will
-ever report -- and seed add, after a successful add_seed, prints the
-alerts for the new seed alone. Neither makes an rpc call: both print
-through the same _print_alerts sink.
+clusters top, cluster, similar, seed add, seed list, seed strict, seed
+audit, recheck, risk, calibrate, report, dashboard. Output is plain
+text, one record per line, tab-separated, fully ordered; every float is
+printed "%.4f". ALERT lines are printed from the on_alerts sink of
+follow_chain as each block ends and flushed at once, so an alert
+reaches the log before the next block is fetched and survives a pass
+that never returns. The summary alerts are not printed a second time:
+each alert appears exactly once. recheck prints the alerts of
+recheck_watchlist over the whole database -- including the copies
+already stored when the seed was added, which no listen or backfill
+will ever report -- and seed add, after a successful add_seed, prints
+the alerts for the new seed alone. Neither makes an rpc call: both
+print through the same _print_alerts sink.
 
 The <flags> field is the risk_flags of an address's code, the True names
 joined by "," in the fixed order selfdestruct then mutable_delegatecall,
@@ -91,6 +92,28 @@ Dashboard (phase 15). dashboard --db PATH [--host H] [--port P]
 [--static DIR] serves the store of that file read-only on localhost
 through ethsc.dashboard: it never opens a writable Store, so the
 database is neither migrated nor switched to WAL by it.
+
+Calibration (phase 18). listen and backfill take --min M (a float,
+default ALERT_MIN = 0.75) and pass it to follow_chain as watch; an M
+that is not a float or lies outside [0, 1] is a usage error: exit 2,
+one stderr line, empty stdout, no rpc call -- the value is validated
+before any client is built. similar keeps --min 0.8: it is a search,
+not an alert. recheck --min defaults to ALERT_MIN, and the seed add
+preview runs recheck_watchlist at its own default. seed strict <addr>
+{on,off} sets the seed's strict flag through
+store.set_seed_strict(address, mode == "on"): exit 0 with empty stdout
+and stderr when it returns True; "not a seed: <address lowercase>" on
+stderr and exit 2 when it returns False; a bad address or mode is exit
+2. seed audit prints, for every seed of store.seeds() in address order,
+"<address>\t<label>\t<interface_hits>\t<strict|loose>" and writes
+nothing. calibrate reads --labels with load_labels and --grid with
+parse_grid (a ValueError is exit 2 with its str as the one stderr line,
+before any store read) and prints evaluate(store, labels, thresholds),
+one record per row in grid order:
+"<threshold>\t<recall>\t<negatives>\t<benign>\t<interface_only>\t<benign_total>",
+threshold and recall "%.4f", the counts plain integers; when missing is
+not empty, one stderr line "missing: <addresses comma-joined>" follows;
+exit 0. calibrate makes no rpc call and writes no row.
 """
 
 import argparse
@@ -100,9 +123,16 @@ import sys
 import time
 
 from ethsc import dashboard
-from ethsc.cluster import build_clusters, find_similar, recheck_watchlist
+from ethsc.calibrate import evaluate, load_labels, parse_grid
+from ethsc.cluster import (
+    build_clusters,
+    find_similar,
+    interface_hits,
+    recheck_watchlist,
+)
 from ethsc.config import PRICES, PUBLICNODE_URL
 from ethsc.evm import is_std_proxy, risk_flags
+from ethsc.fingerprint import ALERT_MIN
 from ethsc.ingest import fetch_implementation, follow_chain
 from ethsc.report import ChartsUnavailable, build_report
 from ethsc.rpc import RpcClient, RpcError, infura_url
@@ -225,7 +255,7 @@ def _print_upgrades(upgrades):
 
 def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             max_calls=None, prices=PRICES, code_tag=None, workers=None,
-            alert_on="all"):
+            alert_on="all", watch=None):
     """One follow_chain call with the CLI's error and exit-code policy.
 
     Returns the exit code, or None when the pass was interrupted by
@@ -234,7 +264,9 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
     the on_alerts sink as the block ends, filtered by --alert-on
     (phase 13). The stop line reports the ledger of summary["day"], the
     day the pass last charged, not the day it started on. prices,
-    code_tag and workers come from the --source resolution in main.
+    code_tag and workers come from the --source resolution in main;
+    watch is the --min of listen/backfill (phase 18), handed to every
+    ingest_block call of the pass.
     """
     try:
         summary = follow_chain(
@@ -249,6 +281,7 @@ def _follow(rpc, store, start=None, stop=None, daily_budget=None,
             workers=workers,
             on_alerts=_alert_on_sink(alert_on),
             on_upgrades=_print_upgrades,
+            watch=watch,
         )
     except KeyboardInterrupt:
         return None
@@ -285,6 +318,7 @@ def _run_backfill(args, rpc, store, prices, code_tag, workers):
             code_tag=code_tag,
             workers=workers,
             alert_on=args.alert_on,
+            watch=args.min,
         )
     except KeyboardInterrupt:
         # Ctrl-C in the gap between the pass and the return.
@@ -304,6 +338,7 @@ def _run_listen(args, rpc, store, sleep, prices, code_tag, workers):
                 code_tag=code_tag,
                 workers=workers,
                 alert_on=args.alert_on,
+                watch=args.min,
             )
             if code is None:
                 # Ctrl-C inside the pass: a clean stop, no pause, no loop.
@@ -473,6 +508,41 @@ def _run_seed_list(args, store):
     return 0
 
 
+def _run_seed_strict(args, store):
+    """seed strict <addr> {on,off}: set or clear the seed's strict flag.
+
+    Phase 18: strictness is the operator's decision, never computed.
+    A mode other than on/off is a usage error; an address that is not
+    a seed gives "not a seed: <address lowercase>" on stderr, exit 2.
+    """
+    _check_address(args.address)
+    if args.mode not in ("on", "off"):
+        raise _UsageError("mode must be on or off")
+    if store.set_seed_strict(args.address, args.mode == "on"):
+        return 0
+    sys.stderr.write("not a seed: %s\n" % args.address.lower())
+    return 2
+
+
+def _run_seed_audit(args, store):
+    """seed audit: one "<address>\t<label>\t<hits>\t<strict|loose>" per seed.
+
+    Phase 18: the evidence for the operator's strict decision --
+    interface_hits at its defaults, and the current strict flag. It
+    writes nothing and exits 0 (empty stdout with no seeds).
+    """
+    strict = set(store.strict_seeds())
+    for seed in store.seeds():
+        hits = interface_hits(store, seed["code_id"])
+        sys.stdout.write(
+            "%s\t%s\t%d\t%s\n"
+            % (seed["address"], seed["label"], hits,
+               "strict" if seed["address"] in strict else "loose")
+        )
+    sys.stdout.flush()
+    return 0
+
+
 def _run_recheck(args, store):
     """recheck, filtered by --origin (phase 13): without it, every alert."""
     alerts = recheck_watchlist(store, min_score=args.min)
@@ -495,6 +565,38 @@ def _run_report(args, store):
         sys.stderr.write("%s\n" % err)
         return 2
     sys.stdout.write("%s\n%s\n" % (html_path, json_path))
+    sys.stdout.flush()
+    return 0
+
+
+def _run_calibrate(args, store):
+    """calibrate: evaluate the alert rule over the labelled pairs.
+
+    Phase 18. --labels is read with load_labels and --grid with
+    parse_grid before the store is opened (a ValueError there is exit
+    2 in main); evaluate runs over the store and one record is printed
+    per row in grid order, threshold and recall "%.4f", the counts
+    plain integers, benign_total last. A non-empty missing list adds
+    one stderr line "missing: <addresses comma-joined>". No rpc call,
+    no row written.
+    """
+    try:
+        labels = load_labels(args.labels)
+        thresholds = parse_grid(args.grid)
+    except ValueError as err:
+        sys.stderr.write("%s\n" % err)
+        return 2
+    result = evaluate(store, labels, thresholds)
+    for row in result["rows"]:
+        sys.stdout.write(
+            "%.4f\t%.4f\t%d\t%d\t%d\t%d\n"
+            % (row["threshold"], row["recall"], row["negatives"],
+               row["benign"], row["interface_only"],
+               result["benign_total"])
+        )
+    if result["missing"]:
+        sys.stderr.write(
+            "missing: %s\n" % ",".join(result["missing"]))
     sys.stdout.flush()
     return 0
 
@@ -547,6 +649,7 @@ def _build_parser():
     backfill.add_argument("--workers", type=int, default=None)
     backfill.add_argument("--alert-on", choices=["created", "seen", "all"],
                           default="all")
+    backfill.add_argument("--min", type=float, default=ALERT_MIN)
 
     listen = sub.add_parser("listen")
     listen.add_argument("--daily-budget", type=int, default=None)
@@ -557,6 +660,7 @@ def _build_parser():
     listen.add_argument("--workers", type=int, default=None)
     listen.add_argument("--alert-on", choices=["created", "seen", "all"],
                         default="all")
+    listen.add_argument("--min", type=float, default=ALERT_MIN)
 
     clusters = sub.add_parser("clusters")
     clusters_sub = clusters.add_subparsers(dest="subcommand")
@@ -586,14 +690,25 @@ def _build_parser():
     seed_remove = seed_sub.add_parser("remove")
     seed_remove.add_argument("address")
     seed_sub.add_parser("list")
+    seed_strict = seed_sub.add_parser("strict")
+    seed_strict.add_argument("address")
+    seed_strict.add_argument("mode")
+    seed_sub.add_parser("audit")
 
     recheck = sub.add_parser("recheck")
-    recheck.add_argument("--min", type=float, default=0.8)
+    recheck.add_argument("--min", type=float, default=ALERT_MIN)
     recheck.add_argument(
         "--origin",
         choices=["created", "seen", "fetched", "impl", "unknown"],
         default=None,
     )
+
+    calibrate = sub.add_parser("calibrate")
+    calibrate.add_argument("--labels", required=True)
+    calibrate.add_argument("--grid", default=",".join(
+        str(value) for value in
+        __import__("ethsc.calibrate", fromlist=["DEFAULT_GRID"]
+                   ).DEFAULT_GRID))
 
     report = sub.add_parser("report")
     report.add_argument("--out", default="ethsc-report")
@@ -626,6 +741,13 @@ def _resolve_source(args):
     return PRICES, None, (workers or 1)
 
 
+def _check_min(value):
+    """Validate a --min alert threshold: a float inside [0, 1]."""
+    if not isinstance(value, float) or value < 0.0 or value > 1.0:
+        raise _UsageError("--min must be a float in [0, 1]")
+    return value
+
+
 def main(argv=None, rpc=None, sleep=None) -> int:
     """Run one CLI invocation; returns the exit code, never raises."""
     if argv is None:
@@ -648,11 +770,11 @@ def main(argv=None, rpc=None, sleep=None) -> int:
     if args.command == "dashboard":
         return _run_dashboard(args)
 
-    # The rpc client is built only on the paths that talk to the chain;
-    # every other subcommand runs without a key and never calls
-    # infura_url().
+    # The --min threshold is validated before any rpc client is built:
+    # a bad value is a usage error with no rpc call at all.
     if args.command in ("listen", "backfill"):
         try:
+            _check_min(args.min)
             prices, code_tag, workers = _resolve_source(args)
         except _UsageError as err:
             sys.stderr.write("%s\n" % err)
@@ -687,9 +809,15 @@ def main(argv=None, rpc=None, sleep=None) -> int:
                 return _run_seed_remove(args, store)
             if args.subcommand == "list":
                 return _run_seed_list(args, store)
+            if args.subcommand == "strict":
+                return _run_seed_strict(args, store)
+            if args.subcommand == "audit":
+                return _run_seed_audit(args, store)
             raise _UsageError("missing seed subcommand")
         if args.command == "recheck":
             return _run_recheck(args, store)
+        if args.command == "calibrate":
+            return _run_calibrate(args, store)
         if args.command == "report":
             return _run_report(args, store)
         raise _UsageError("missing command")

@@ -357,4 +357,88 @@ hits and misses against §9.
 
 ## 11. Actual
 
-(after the run)
+**Three runs**, all on glm (z-ai/glm-5.3-flash), route sync.
+
+**Run 1** `20261003-145156-8deeb70a` was stopped by the orchestrator after ~18 min. It is a
+**criterion fault**. Morph kills an acceptance at a fixed 300 s (`cards/acceptance.py:352`),
+and the serial suite had grown to 300–340 s. fingerprint passed its probe and 449 tests
+twice, and both times it was rolled back on time ("exit None"). The fix (commit e3212aa):
+the full-suite step runs as 9 parallel shards by file, and the separate module step was
+dropped for ingest and cli. The cli acceptance on a dry tree went from 218 s to 108 s. The
+lesson is in the morph-orchestrator skill. Run 1 left only its deck commit, and its bill is
+not reported.
+
+**Run 2** `20261003-152037-d9a9e51a` ran 15:20–16:04, **44 min** over 4 generations.
+**12 of 13 accepted, 1 failed (cli-judge), 0 skipped.** 28 requests, **$0.262**.
+
+| gen | card | result |
+|---|---|---|
+| 1 | ingest | v2; v1's own smoke test asserted 0 != 1 |
+| 1 | store | v2; v1's smoke test passed a Store where a path was expected |
+| 1 | fingerprint | retry 1; v1 forgot `import os` in its smoke file, v2's smoke test expected a non-empty shingle set |
+| 1 | helpers-p18 | retry 1; the first answer read a `Store.path` that does not exist |
+| 2 | fingerprint-judge, store-judge | 1st attempt |
+| 2 | calibrate | retry 1, v2; v1's own smoke labels failed its own `load_labels`; v2 counted `interface_only` differently from the Contour (2 instead of 5 at 0.7; the probe printed it per example) |
+| 2 | cluster | retry 1; v1 returned its test file twice (rejected unread), v2's own smoke test was wrong |
+| 3 | cli | v1, 1st attempt |
+| 3 | calibrate-judge, cluster-judge, ingest-judge | 1st attempt |
+| 4 | cli-judge | **failed** after 2 retries, all faults in the judge's own tests: (1) `getvalue()` on a str; (2) expected lines joined without "\n"; (3) it upper-cased the whole address, so `0X…` was refused as an invalid address (correct by the contract) |
+
+**Run 3** `20261003-160820-48a82ec2` (6 min, $0.0147) ran cli-judge alone, branched off run
+2. Its instruction gained two sentences: capture through `redirect_stdout` into
+`io.StringIO`, and write an upper-case address as `'0x' + hex.upper()`. **Accepted on the
+1st attempt.**
+
+- Totals: **13 of 13 cards accepted**, executors **$0.277** (runs 2 and 3). Every red attempt
+  of runs 2 and 3 was a fault in the executor's code or in its own test file. **0 criterion
+  faults after the timeout fix.** Before the gate, the probes were dry-run red per example
+  against HEAD, and green on a throwaway reference implementation (448/448 full suite on it).
+- Product +687/−33 lines:
+
+  | file | lines |
+  |---|---|
+  | `calibrate.py` | 291, new |
+  | `cli.py` | +166 |
+  | `cluster.py` | +119 |
+  | `store.py` | +60 |
+  | `fingerprint.py` | +44 |
+  | `ingest.py` | +7 |
+  | `tests/helpers.py` | +66 |
+
+  Tests: 6 smoke files +530, 6 judges +951. **505 tests** (448 + 57), all green, no deselect.
+- Recon:
+  - The scout ran 13.9 min, $0.0187, `spent` reads 3 / calls 21 / rounds 7, `stop_reason`
+    "character budget". Its seed was a hand-written list of 5 modules plus a ripple question.
+  - Of the 7 existing files the deck changed, **the scout named 5** (the five ethsc modules;
+    it cannot name the new `calibrate.py`).
+  - **One role moved:** `tests/helpers.py`, context for the scout, is a target here
+    (`helpers-p18`).
+  - It **missed the ripple and said so explicitly**: "no test file must change for the
+    threshold". The ripple spike by execution found 4 red in
+    `tests/test_origin_examples_p13.py`, fixed by the 5-line data edit (commit 39d95fd).
+  - `deck check` caught one missing edge (calibrate reads `store.py`), fixed before the run.
+
+**Live acceptance (§3.3)**, branch code, copy of `smoke/20261001-night2/ethsc.sqlite`. The 46
+corpus addresses were loaded by `seed add --fetch` + `seed remove` (46 of 46, public node).
+
+| step | result |
+|---|---|
+| 1. `calibrate` | rows equal to the reference model: 0.7 → 0.9263/2/23/13, **0.75 → 0.8947 / 0 / 21 / 12**, 0.8 → 0.8526/0/18/11; `missing` empty; **4.7 s** on 19 804 codes |
+| 2. `seed audit` + Nimbus | Nimbus `0xc0a6…ddc1` interface_hits **82**, every other seed ≤ 1; Nimbus alerts in `recheck` **3 181 → 1** after `seed strict on`; the whole recheck 428 lines after it |
+| 3. throughput | `match_watchlist` on the same 1 000 night2 codes: branch/master **0.73 and 0.99** (two orders of measurement; 108.7/148.7 ms, then 156.4/157.4 ms per code); required ≤ 1.2 |
+
+- The absolute cost is ~110–160 ms per new code, against a budget of ~30 ms (47 codes per
+  1.5 s block). It comes from phase 11: `match_watchlist` reads every `store.fingerprints()`
+  per call. This phase does not worsen it. It is the next bottleneck of the listener (gate
+  gap 2, out of scope here).
+- Predictions (§9):
+  - 13 cards, each ≤ 3 attempts — **missed**: cli-judge used 3 and failed in run 2, then 1 in
+    run 3.
+  - A regeneration on calibrate or cli — **hit** (calibrate).
+  - Tests 483..567 — **hit** (505).
+  - 0.75 row 0.89..0.90 recall with 0 negatives — **hit** (0.8947).
+  - Nimbus strict cuts ≥ 90% — **hit** (99.97%).
+  - `match_watchlist` 5..30 ms per code — **missed** (108–157 ms, the phase-11 cost above).
+- Deployment (§7, the operator's): redeploy; keep `listen --min 0.8` in the unit until
+  `seed audit` has been read; `seed strict` the generic-interface seeds (Nimbus-like
+  interface_hits in the tens); then drop the flag.

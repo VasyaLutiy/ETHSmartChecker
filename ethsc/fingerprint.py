@@ -7,7 +7,7 @@ exception.
 """
 
 import hashlib
-from typing import Optional
+from typing import FrozenSet, Optional, Tuple
 
 from ethsc.evm import (
     build_skeleton,
@@ -17,6 +17,14 @@ from ethsc.evm import (
     is_std_proxy,
     strip_metadata,
 )
+
+# The alert thresholds of phase 18: ALERT_MIN is the production alert
+# threshold on the Similarity Score (the default min_score of Match
+# Watchlist and Recheck Watchlist, of recheck --min and of
+# listen/backfill --min); CODE_MIN is the code_similarity a strict seed
+# demands on top of it.
+ALERT_MIN = 0.75
+CODE_MIN = 0.6
 
 
 def fingerprint(code: bytes) -> Optional[dict]:
@@ -81,6 +89,40 @@ def _opcode_trigrams(code: bytes) -> set:
     for i in range(len(ops) - 2):
         grams.add((ops[i], ops[i + 1], ops[i + 2]))
     return grams
+
+
+def opcode_shingles(code: bytes) -> FrozenSet[Tuple[int, ...]]:
+    """The set of 5-tuples of consecutive opcodes of the stripped body.
+
+    The op ints of disassemble over the body strip_metadata(code) gives,
+    PUSH arguments dropped. A body of fewer than 5 opcodes gives the
+    empty frozenset; a truncated PUSH is tolerated as disassemble
+    tolerates it. Never raises on empty or garbage bytes.
+    """
+    body, _ = strip_metadata(code)
+    ops = [op for _, op, _ in disassemble(body)]
+    grams = set()
+    for i in range(len(ops) - 4):
+        grams.add((ops[i], ops[i + 1], ops[i + 2], ops[i + 3], ops[i + 4]))
+    return frozenset(grams)
+
+
+def code_similarity(code_a: bytes, code_b: bytes) -> float:
+    """Jaccard index in [0, 1] of the opcode 5-gram sets of two codes.
+
+    How alike two codes are as code, not as an interface. 0.0 when
+    either shingle set is empty, otherwise the Jaccard index of the two
+    sets, the float of the division, never rounded. Symmetric;
+    code_similarity(x, x) is 1.0 for any x with a non-empty set. It
+    applies none of the three rules of the Similarity Score and is only
+    ever a second gate behind it, never a score of its own: similarity()
+    and score_fingerprints() do not call it.
+    """
+    sh_a = opcode_shingles(code_a)
+    sh_b = opcode_shingles(code_b)
+    if not sh_a or not sh_b:
+        return 0.0
+    return float(len(sh_a & sh_b)) / float(len(sh_a | sh_b))
 
 
 def similarity(code_a: bytes, code_b: bytes) -> float:

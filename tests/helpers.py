@@ -371,3 +371,69 @@ def legacy_db(phase):
     finally:
         connection.close()
     return path
+
+
+# The BELLE seed and its four same-deployer copies of phase 18:
+# (fixture file, address), the copy addresses of the deployer's
+# nonces 0, 1, 5 and 13.
+_BELLE_ENTRIES = [
+    ("code_belle.hex", "0x34c6211621f2763c60eb007dc2ae91090a2d22f6"),
+    ("code_belle_copy_1807090d.hex",
+     "0x1807090dd15a6f58e00fd769e32ebf20ee610385"),
+    ("code_belle_copy_2141be5f.hex",
+     "0x2141be5f2afa674c94167ab167a478a56cb539f5"),
+    ("code_belle_copy_46cadea5.hex",
+     "0x46cadea509dc3d3c96a11fb61ab8b222f5238f0a"),
+    ("code_belle_copy_6411bed8.hex",
+     "0x6411bed82614b91ef655d82486e0bd3a13d2eb8c"),
+]
+
+
+def belle_block_db():
+    """A closed sqlite path: block_store()'s base plus the BELLE family.
+
+    Returns the path (str) of ethsc.sqlite inside a brand-new
+    tempfile.mkdtemp() directory. The file is written through
+    ethsc.store.Store exactly as block_store() fills its store (every
+    entry of block_codes() at block 26077729: put_address(address,
+    None, 26077729) for a "0x" answer, else put_code then
+    put_address), plus the five fixtures of _BELLE_ENTRIES --
+    code_belle.hex and the four code_belle_copy_*.hex -- each stored
+    with put_address(address, code_id, 1) and no origin. That is 211
+    addresses and 135 codes. No seed, no progress, nothing else: the
+    store is committed and closed before the path is returned; the
+    caller owns the directory. Phase 18: the calibration and the
+    strict-seed examples build on it.
+    """
+    directory = tempfile.mkdtemp(prefix="ethsc-test-")
+    path = os.path.join(directory, "ethsc.sqlite")
+    store = Store(path)
+    block = 26077729
+    for address, text in sorted(block_codes().items()):
+        if text == "0x":
+            store.put_address(address, None, block)
+        else:
+            code_id = store.put_code(bytes.fromhex(text[2:]))
+            store.put_address(address, code_id, block)
+    for name, address in _BELLE_ENTRIES:
+        code_id = store.put_code(load_hex(name))
+        store.put_address(address, code_id, 1)
+    store.close()
+    return path
+
+
+def write_labels(obj):
+    """A labels.json file in a brand-new temporary directory.
+
+    write_labels(obj) -- creates a fresh tempfile.mkdtemp()
+    directory, json.dump(obj) into labels.json inside it and returns
+    the path (str). The caller owns the directory. Phase 18: the
+    calibrate examples and tests feed Calibration Labels through it
+    (every such file a test writes goes into its own mkdtemp
+    directory).
+    """
+    directory = tempfile.mkdtemp(prefix="ethsc-labels-")
+    path = os.path.join(directory, "labels.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(obj, handle)
+    return path
