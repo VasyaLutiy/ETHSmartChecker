@@ -1,0 +1,935 @@
+{
+  "deck_id": "20261003-152037-d9a9e51a",
+  "completed_at": "2026-10-03T16:04:22.084",
+  "branch": "morph/20261003-152037-d9a9e51a",
+  "backend_label": "glm",
+  "generations": [
+    [
+      "fingerprint",
+      "helpers-p18",
+      "ingest",
+      "store"
+    ],
+    [
+      "calibrate",
+      "cluster",
+      "fingerprint-judge",
+      "store-judge"
+    ],
+    [
+      "calibrate-judge",
+      "cli",
+      "cluster-judge",
+      "ingest-judge"
+    ],
+    [
+      "cli-judge"
+    ]
+  ],
+  "batch_ids": [
+    "local-b79aa4b83fb645ef9e066e5be77c4133",
+    "local-8080546f2c8f4b94bb77060dc4111dd2",
+    "local-8b77fcd79c664df39c737c6bf46e2cf0",
+    "local-17b14c2beabc494c873c56d227d0f694",
+    "local-d1a5762cf3c2402b9496a12be5b76617",
+    "local-8d5e4d54d32346cc894b5850b5dddada",
+    "local-9665d4133ed949d8a8c12813f71c6640",
+    "local-c67af1bcd34d4876b2a69932b32dd42e"
+  ],
+  "outcomes": {
+    "ingest": {
+      "custom_id": "ingest",
+      "status": "written",
+      "paths": [
+        "./ethsc/ingest.py",
+        "./tests/test_ingest_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "c830dca55704381b89fefd5f41bff80d2c063f5a",
+      "diffstat": [
+        {
+          "path": "ethsc/ingest.py",
+          "insertions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "tests/test_ingest_p18.py",
+          "insertions": 54,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/ingest.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/ingest.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_ingest_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "store": {
+      "custom_id": "store",
+      "status": "written",
+      "paths": [
+        "./ethsc/store.py",
+        "./tests/test_store_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store.v2",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "d3c77723f492ed610a749748a10773d3b4001df4",
+      "diffstat": [
+        {
+          "path": "ethsc/store.py",
+          "insertions": 55,
+          "deletions": 5
+        },
+        {
+          "path": "tests/test_store_p18.py",
+          "insertions": 94,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/store.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/store.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_store_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "fingerprint": {
+      "custom_id": "fingerprint",
+      "status": "written",
+      "paths": [
+        "./ethsc/fingerprint.py",
+        "./tests/test_fingerprint_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "fingerprint.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nprobe OK\n.F...                                                                    [100%]\n=================================== FAILURES ===================================\n_______________________ test_opcode_shingles_happy_path ________________________\ntests/test_fingerprint_p18.py:25: in test_opcode_shingles_happy_path\n    assert opcode_shingles(body + b\"\")  # short real bytes still non-empty\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   AssertionError: assert frozenset()\nE    +  where frozenset() = opcode_shingles((b'```@R`' + b''))\n=========================== short test summary info ============================\nFAILED tests/test_fingerprint_p18.py::test_opcode_shingles_happy_path - Asser...\n1 failed, 4 passed in 0.04s\n",
+      "commit": "0d27ac06eec1f57991edbd6de65f485196da544a",
+      "diffstat": [
+        {
+          "path": "ethsc/fingerprint.py",
+          "insertions": 43,
+          "deletions": 1
+        },
+        {
+          "path": "tests/test_fingerprint_p18.py",
+          "insertions": 51,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/fingerprint.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_fingerprint_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_fingerprint_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "helpers-p18": {
+      "custom_id": "helpers-p18",
+      "status": "written",
+      "paths": [
+        "./tests/helpers.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "helpers-p18.r1",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nbelle_block_db: raised AttributeError(\"'Store' object has no attribute 'path'\")\n",
+      "commit": "13a1a420c582a68717cb334a1793405036f98868",
+      "diffstat": [
+        {
+          "path": "tests/helpers.py",
+          "insertions": 66,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/helpers.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/helpers.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "fingerprint-judge": {
+      "custom_id": "fingerprint-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_fingerprint_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "fingerprint-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "68f840c7e41eda77f13442ff8b866b05d6c28c9f",
+      "diffstat": [
+        {
+          "path": "tests/test_fingerprint_examples_p18.py",
+          "insertions": 103,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_fingerprint_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_fingerprint_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "store-judge": {
+      "custom_id": "store-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_store_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "store-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "38cb79308e4c594bbad7bf29085a55a633604c21",
+      "diffstat": [
+        {
+          "path": "tests/test_store_examples_p18.py",
+          "insertions": 101,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_store_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_store_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "calibrate": {
+      "custom_id": "calibrate",
+      "status": "written",
+      "paths": [
+        "./ethsc/calibrate.py",
+        "./tests/test_calibrate_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "calibrate.r1.v2",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nEvaluate Calibration 1: rows: got [(0.7, 1.0, 1, 6, 2), (0.75, 1.0, 0, 6, 2), (0.8, 1.0, 0, 4, 0), (0.9, 0.5, 0, 3, 0)], want [(0.7, 1.0, 1, 6, 5), (0.75, 1.0, 0, 6, 2), (0.8, 1.0, 0, 4, 0), (0.9, 0.5, 0, 3, 0)]\nEvaluate Calibration 2: strict []: got [(0.7, 1.0, 2, 6, 2)], want [(0.7, 1.0, 2, 6, 5)]\nEvaluate Calibration 2: strict upper case: got [(0.7, 1.0, 1, 6, 2)], want [(0.7, 1.0, 1, 6, 5)]\nEvaluate Calibration 3: default thresholds: got [(0.5, 1.0, 1, 19, 14), (0.6, 1.0, 1, 9, 5), (0.7, 1.0, 1, 6, 2), (0.75, 1.0, 0, 6, 2), (0.8, 1.0, 0, 4, 0), (0.9, 0.5, 0, 3, 0), (1.0, 0.5, 0, 3, 0)], want [(0.5, 1.0, 1, 19, 18), (0.6, 1.0, 1, 9, 8), (0.7, 1.0, 1, 6, 5), (0.75, 1.0, 0, 6, 2), (0.8, 1.0, 0, 4, 0), (0.9, 0.5, 0, 3, 0), (1.0, 0.5, 0, 3, 0)]\n",
+      "commit": "a4c188a24c7eb764642225f06e927a8810245f99",
+      "diffstat": [
+        {
+          "path": "ethsc/calibrate.py",
+          "insertions": 291,
+          "deletions": 0
+        },
+        {
+          "path": "tests/test_calibrate_p18.py",
+          "insertions": 100,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/calibrate.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/calibrate.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_calibrate_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_calibrate_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster": {
+      "custom_id": "cluster",
+      "status": "written",
+      "paths": [
+        "./ethsc/cluster.py",
+        "./tests/test_cluster_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 2,
+      "winning_variant": "cluster.r1.v1",
+      "acceptance_output": null,
+      "earlier_failures": "guard OK\nprobe OK\n...FF                                                                    [100%]\n=================================== FAILURES ===================================\n___________________________ test_recheck_strict_p18 ____________________________\ntests/test_cluster_p18.py:62: in test_recheck_strict_p18\n    assert len(cluster.recheck_watchlist(store, min_score=0.7)) == 4\nE   AssertionError: assert 5 == 4\nE    +  where 5 = len([{'address': '0x1807090dd15a6f58e00fd769e32ebf20ee610385', 'seed_address': '0x34c6211621f2763c60eb007dc2ae91090a2d22f6...d_address': '0x34c6211621f2763c60eb007dc2ae91090a2d22f6', 'label': 'BELLE honeypot', 'score': 0.7333333333333333, ...}])\nE    +    where [{'address': '0x1807090dd15a6f58e00fd769e32ebf20ee610385', 'seed_address': '0x34c6211621f2763c60eb007dc2ae91090a2d22f6...d_address': '0x34c6211621f2763c60eb007dc2ae91090a2d22f6', 'label': 'BELLE honeypot', 'score': 0.7333333333333333, ...}] = <function recheck_watchlist at 0x7dabcf12f9c0>(<ethsc.store.Store object at 0x7dabcf0f3530>, min_score=0.7)\nE    +      where <function recheck_watchlist at 0x7dabcf12f9c0> = cluster.recheck_watchlist\n______________________________ test_tolerant_p18 _______________________________\ntests/test_cluster_p18.py:81: in test_tolerant_p18\n    assert cluster.recheck_watchlist(store) == []\nE   AssertionError: assert [{'address': ...6666667, ...}] == []\nE     \nE     Left contains 4 more items, first extra item: {'address': '0x1807090dd15a6f58e00fd769e32ebf20ee610385', 'seed_address': '0x34c6211621f2763c60eb007dc2ae91090a2d22f6', 'label': 'BELLE', 'score': 0.8666666666666667, ...}\nE     Use -v to get more diff\n=========================== short test summary info ============================\nFAILED tests/test_cluster_p18.py::test_recheck_strict_p18 - AssertionError: a...\nFAILED tests/test_cluster_p18.py::test_tolerant_p18 - AssertionError: assert ...\n2 failed, 3 passed in 3.19s\n",
+      "commit": "c1391cb208593eb6b63140ae6224ecc6aaa12a2f",
+      "diffstat": [
+        {
+          "path": "ethsc/cluster.py",
+          "insertions": 113,
+          "deletions": 6
+        },
+        {
+          "path": "tests/test_cluster_p18.py",
+          "insertions": 79,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cluster.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cluster.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cluster_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "calibrate-judge": {
+      "custom_id": "calibrate-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_calibrate_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "calibrate-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "f73e086b725a80b33dd77c604ee4710ca77f0784",
+      "diffstat": [
+        {
+          "path": "tests/test_calibrate_examples_p18.py",
+          "insertions": 225,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_calibrate_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_calibrate_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli": {
+      "custom_id": "cli",
+      "status": "written",
+      "paths": [
+        "./ethsc/cli.py",
+        "./tests/test_cli_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cli.v1",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "79d3abd0be7d34b7af4f223c6531480274f0f15d",
+      "diffstat": [
+        {
+          "path": "ethsc/cli.py",
+          "insertions": 147,
+          "deletions": 19
+        },
+        {
+          "path": "tests/test_cli_p18.py",
+          "insertions": 152,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "ethsc/cli.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "ethsc/cli.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          },
+          {
+            "path": "tests/test_cli_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cluster-judge": {
+      "custom_id": "cluster-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_cluster_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "cluster-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "185fbc104a8c3b34e9b61672691ac940a897282d",
+      "diffstat": [
+        {
+          "path": "tests/test_cluster_examples_p18.py",
+          "insertions": 140,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cluster_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cluster_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "ingest-judge": {
+      "custom_id": "ingest-judge",
+      "status": "written",
+      "paths": [
+        "./tests/test_ingest_examples_p18.py"
+      ],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 1,
+      "winning_variant": "ingest-judge",
+      "acceptance_output": null,
+      "earlier_failures": null,
+      "commit": "33f009247b731cc3528176b94fba11e0d36ee8e7",
+      "diffstat": [
+        {
+          "path": "tests/test_ingest_examples_p18.py",
+          "insertions": 90,
+          "deletions": 0
+        }
+      ],
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_ingest_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_ingest_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    },
+    "cli-judge": {
+      "custom_id": "cli-judge",
+      "status": "failed",
+      "paths": [],
+      "reason": null,
+      "finish_reason": "stop",
+      "attempts": 3,
+      "winning_variant": null,
+      "acceptance_output": "guard OK\n..FF..                                                                   [100%]\n=================================== FAILURES ===================================\n_____ TestCommandLineExamplesP18.test_example_59_seed_audit_strict_recheck _____\ntests/test_cli_examples_p18.py:181: in test_example_59_seed_audit_strict_recheck\n    self.assertEqual(code, 0)\nE   AssertionError: 2 != 0\n________ TestCommandLineExamplesP18.test_example_60_seed_strict_errors _________\ntests/test_cli_examples_p18.py:224: in test_example_60_seed_strict_errors\n    self.assertEqual(err.getvalue(),\nE   AssertionError: 'invalid address: 0X1807090DD15A6F58E00FD769E32EBF20EE610385\\n' != 'not a seed: 0x1807090dd15a6f58e00fd769e32ebf20ee610385\\n'\nE   - invalid address: 0X1807090DD15A6F58E00FD769E32EBF20EE610385\nE   + not a seed: 0x1807090dd15a6f58e00fd769e32ebf20ee610385\n=========================== short test summary info ============================\nFAILED tests/test_cli_examples_p18.py::TestCommandLineExamplesP18::test_example_59_seed_audit_strict_recheck\nFAILED tests/test_cli_examples_p18.py::TestCommandLineExamplesP18::test_example_60_seed_strict_errors\n2 failed, 4 passed in 5.08s\n",
+      "earlier_failures": null,
+      "commit": null,
+      "diffstat": null,
+      "syntax_gate": {
+        "passed": true,
+        "checks": [
+          {
+            "path": "tests/test_cli_examples_p18.py",
+            "level": "parse",
+            "status": "passed",
+            "line": null,
+            "message": null
+          },
+          {
+            "path": "tests/test_cli_examples_p18.py",
+            "level": "import",
+            "status": "skipped",
+            "line": null,
+            "message": "off: MRPH_IMPORT_CHECK_PYTHON is not set"
+          }
+        ]
+      }
+    }
+  },
+  "usage": {
+    "helpers-p18": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037239-0Udwz5nJZlHZxDvcfiBs",
+      "input_tokens": 98571,
+      "output_tokens": 4152,
+      "cost": 0.01011699,
+      "finish_reason": "stop"
+    },
+    "fingerprint.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037239-LHz6zFNAtGcOStGRHEpW",
+      "input_tokens": 98166,
+      "output_tokens": 2061,
+      "cost": 0.00945324,
+      "finish_reason": "stop"
+    },
+    "fingerprint.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037239-cQoWgKZEYUz0tt0EXrAw",
+      "input_tokens": 98166,
+      "output_tokens": 2245,
+      "cost": 0.002683992,
+      "finish_reason": "stop"
+    },
+    "ingest.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037239-MMwK1n3vOmLlruP3OYkB",
+      "input_tokens": 101362,
+      "output_tokens": 9526,
+      "cost": 0.01198038,
+      "finish_reason": "stop"
+    },
+    "ingest.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037302-2z8kYkyMIKyAe07aqs2t",
+      "input_tokens": 101362,
+      "output_tokens": 10033,
+      "cost": 0.004838016,
+      "finish_reason": "stop"
+    },
+    "store.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037355-Jktp55Lh9A1Ju4bJ847M",
+      "input_tokens": 98917,
+      "output_tokens": 7515,
+      "cost": 0.004885542,
+      "finish_reason": "stop"
+    },
+    "store.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037352-HS85udx0sdDVVQUC6Chg",
+      "input_tokens": 98917,
+      "output_tokens": 7258,
+      "cost": 0.01107993,
+      "finish_reason": "stop"
+    },
+    "fingerprint.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037652-c2dzeCMbIbLU0QYZM9vG",
+      "input_tokens": 103340,
+      "output_tokens": 2462,
+      "cost": 0.002730912,
+      "finish_reason": "stop"
+    },
+    "fingerprint.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037652-TnIacXoh3hisy2UIbuAP",
+      "input_tokens": 103340,
+      "output_tokens": 2503,
+      "cost": 0.0100515,
+      "finish_reason": "stop"
+    },
+    "helpers-p18.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037652-t063uYunhPbGjSa4iQQk",
+      "input_tokens": 102622,
+      "output_tokens": 4167,
+      "cost": 0.01048608,
+      "finish_reason": "stop"
+    },
+    "cluster.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037881-m1gseDq43oLdu4PmXH2b",
+      "input_tokens": 111150,
+      "output_tokens": 6841,
+      "cost": 0.0120558,
+      "finish_reason": "stop"
+    },
+    "calibrate.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037881-HatuNxOz6fd9xU4YpiQ9",
+      "input_tokens": 111558,
+      "output_tokens": 6914,
+      "cost": 0.01211442,
+      "finish_reason": "stop"
+    },
+    "fingerprint-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037988-QAjUJn674Z1hSsH1QQ6s",
+      "input_tokens": 100561,
+      "output_tokens": 1424,
+      "cost": 0.00947769,
+      "finish_reason": "stop"
+    },
+    "cluster.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037881-smLbhlwAJasWoXxkovpY",
+      "input_tokens": 111150,
+      "output_tokens": 12388,
+      "cost": 0.0137199,
+      "finish_reason": "stop"
+    },
+    "store-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038013-m1PTfK2ZMaRGYysaNXOE",
+      "input_tokens": 103325,
+      "output_tokens": 1960,
+      "cost": 0.00988725,
+      "finish_reason": "stop"
+    },
+    "calibrate.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791037881-IQ9pbr3L83zBcGNWMa5c",
+      "input_tokens": 111558,
+      "output_tokens": 10492,
+      "cost": 0.01318782,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038299-vk52VIOCgdm467rTi8B4",
+      "input_tokens": 118474,
+      "output_tokens": 6875,
+      "cost": 0.004656552,
+      "finish_reason": "stop"
+    },
+    "cluster.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038299-G0XLny4g7NziO8B4Qlgy",
+      "input_tokens": 118474,
+      "output_tokens": 9664,
+      "cost": 0.01356186,
+      "finish_reason": "stop"
+    },
+    "calibrate.r1.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038299-pAc7Le9OiFgX2ZjmtkFA",
+      "input_tokens": 119224,
+      "output_tokens": 10287,
+      "cost": 0.005600196,
+      "finish_reason": "stop"
+    },
+    "calibrate.r1.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038299-uq7Bp8r4qRvdxgIZgUI4",
+      "input_tokens": 119224,
+      "output_tokens": 10503,
+      "cost": 0.01388106,
+      "finish_reason": "stop"
+    },
+    "cli.v1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038748-b2vOJzicI8FaB9dPL42p",
+      "input_tokens": 111238,
+      "output_tokens": 9910,
+      "cost": 0.01298442,
+      "finish_reason": "stop"
+    },
+    "calibrate-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038748-BNpix4K27qry0fViMNcq",
+      "input_tokens": 99571,
+      "output_tokens": 5068,
+      "cost": 0.01048179,
+      "finish_reason": "stop"
+    },
+    "cluster-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038748-MWBC3fIfIkK7fyyNob8Z",
+      "input_tokens": 108374,
+      "output_tokens": 2218,
+      "cost": 0.00452082,
+      "finish_reason": "stop"
+    },
+    "ingest-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038806-n6OKwxWj1N6KdwtsJyPp",
+      "input_tokens": 105380,
+      "output_tokens": 2459,
+      "cost": 0.003567948,
+      "finish_reason": "stop"
+    },
+    "cli.v2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791038748-DHSI1Mo7pN9VBu8WJJzg",
+      "input_tokens": 111238,
+      "output_tokens": 13149,
+      "cost": 0.01395612,
+      "finish_reason": "stop"
+    },
+    "cli-judge": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791039425-EA1StogCUbpOdc7UfLBP",
+      "input_tokens": 107162,
+      "output_tokens": 11744,
+      "cost": 0.01316778,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r1": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791039623-QS7CXC8d52bkdeKRuvz0",
+      "input_tokens": 111403,
+      "output_tokens": 5973,
+      "cost": 0.01181817,
+      "finish_reason": "stop"
+    },
+    "cli-judge.r2": {
+      "model": "z-ai/glm-5.3-flash",
+      "provider": "GMICloud",
+      "generation_id": "gen-1791039723-NMdBcnjIQsq8HqbIgf2S",
+      "input_tokens": 111018,
+      "output_tokens": 7727,
+      "cost": 0.005342424,
+      "finish_reason": "stop"
+    }
+  },
+  "usage_totals": {
+    "input_tokens": 2994845,
+    "output_tokens": 187518,
+    "cost": 0.262288602,
+    "requests": 28,
+    "requests_with_usage": 28
+  },
+  "orchestrator_usage": {}
+}
