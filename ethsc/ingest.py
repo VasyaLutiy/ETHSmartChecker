@@ -621,7 +621,7 @@ def _resolve_day(day):
 def follow_chain(rpc, store, start=None, stop=None,
                  max_calls_per_block=None, daily_budget=None, day=None,
                  prices=None, on_alerts=None, workers=None, code_tag=None,
-                 on_upgrades=None):
+                 on_upgrades=None, watch=None):
     """One pass from progress (or start) up to the head (or stop).
 
     Polls eth_blockNumber once, then for each block calls
@@ -644,7 +644,9 @@ def follow_chain(rpc, store, start=None, stop=None,
     spent(day) + price <= daily_budget, the max_calls arithmetic and the
     spends -- goes to that block's day. summary["day"] is the last day
     resolved. On_alerts is handed to every ingest_block call unchanged;
-    follow_chain itself never calls it.
+    follow_chain itself never calls it. watch is passed to every
+    ingest_block call of the pass as its watch, unchanged; None leaves
+    ingest_block's default.
 
     workers is handed to every ingest_block call unchanged. With workers
     K > 1 the get_code handed down does the rpc call only -- it must not
@@ -848,6 +850,7 @@ def follow_chain(rpc, store, start=None, stop=None,
         try:
             stats = ingest_block(block, receipts, get_code, store,
                                  max_calls=max_calls,
+                                 watch=watch,
                                  on_alerts=record_alerts,
                                  workers=workers, get_storage=get_storage,
                                  on_upgrades=record_upgrades)
