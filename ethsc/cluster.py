@@ -8,7 +8,10 @@ only through its public methods (fingerprints, code_of, addresses_of,
 seeds) and never imports sqlite3, urllib, http or socket. Since phase 11
 the three similarity searches score stored Fingerprint dicts with
 score_fingerprints: no stored code is loaded and similarity() over raw
-bytes is not called here.
+bytes is not called here -- with one exception since phase 18, the
+strict-seed gate of the watchlist: for a seed marked strict (and only
+for one), code_similarity is read over the two codes via code_by_id
+after a pair has already passed the Similarity Score threshold.
 
 Every list returned is fully ordered; the result does not depend on the
 order in which codes or addresses were inserted into the store. Origin
@@ -22,13 +25,23 @@ alike; match_watchlist itself does not change -- a seed added on a
 proxy already carries the implementation's code_id (Store.add_seed),
 and ingest hands match_watchlist the implementation's bytes on a
 proxy's behalf, so this module never has to decide which bytes a proxy
-means. No code_by_id and no similarity() call in any of the three
-searches -- the store is read through its public methods only.
+means. Phase 18: match_watchlist and recheck_watchlist alert at
+ALERT_MIN (0.75) by default, and a strict seed (store.strict_seeds(),
+read once per call) demands, on top of a passing score, code_similarity
+of the two codes >= CODE_MIN -- a store with no strict seed is read
+exactly as before, code_by_id never called. find_similar is a search,
+not an alert: it keeps 0.8 and no strict gate.
 """
 
 from typing import List, Optional, Tuple
 
-from ethsc.fingerprint import fingerprint, score_fingerprints
+from ethsc.fingerprint import (
+    ALERT_MIN,
+    CODE_MIN,
+    code_similarity,
+    fingerprint,
+    score_fingerprints,
+)
 
 # Sort rank of the cluster levels: L0 first, then L1, then proxy, then
 # eip7702, then impl last -- the implementation clusters are an
@@ -209,6 +222,9 @@ def find_similar(
     address ascending. An unknown address, or one without code, gives
     []. Scores are the floats from score_fingerprints, not rounded.
 
+    find_similar is a search, not an alert: its default min_score stays
+    0.8 and no strict gate applies to it (phase 18).
+
     Through the implementation (phase 14): a standard proxy -- as the
     query or as a stored address -- is scored by the fingerprint of
     its implementations() code_id instead of its own, when one is
@@ -256,7 +272,46 @@ def find_similar(
     return result
 
 
-def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
+def interface_hits(
+    store, code_id: str, min_score: float = ALERT_MIN,
+    code_min: float = CODE_MIN,
+) -> int:
+    """How many stored codes share an interface without sharing the code.
+
+    The number of code_ids of store.fingerprints(), other than code_id
+    itself, whose score_fingerprints against code_id's fingerprint is
+    >= min_score and whose code_similarity with code_id's code is
+    < code_min. It is the evidence seed audit prints for the
+    operator's strict decision; nothing applies it automatically.
+
+    0 when code_id has no element in store.fingerprints() (an unknown
+    code_id). code_by_id is called for code_id itself and for the
+    code_ids that reach min_score, never for the others. Stored
+    fingerprints as they are: no implementation fan-out. Never raises.
+    """
+    fps = {fp["code_id"]: fp for fp in store.fingerprints()}
+    own_fp = fps.get(code_id)
+    if own_fp is None:
+        return 0
+    own_code = store.code_by_id(code_id)
+    if own_code is None:
+        return 0
+    hits = 0
+    for other_id, fp in fps.items():
+        if other_id == code_id:
+            continue
+        score = score_fingerprints(own_fp, fp)
+        if score < min_score:
+            continue
+        other_code = store.code_by_id(other_id)
+        if other_code is None:
+            continue
+        if code_similarity(own_code, other_code) < code_min:
+            hits += 1
+    return hits
+
+
+def match_watchlist(store, code: bytes, min_score: float = ALERT_MIN) -> List[dict]:
     """Every seed whose code is similar enough to the new code.
 
     Returns Alert dicts with exactly the keys seed_address, label and
@@ -275,11 +330,24 @@ def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
     implementation's code_id (Store.add_seed), and ingest hands this
     function the implementation's bytes on a proxy's behalf -- a
     proxy's own bytes still score 0.0 against everything.
+
+    Phase 18: the default min_score is ALERT_MIN (0.75). A strict seed
+    (its address in store.strict_seeds(), read once per call) alerts
+    only when, besides score >= min_score, code_similarity of the given
+    code and the seed's code (store.code_by_id of the seed's code_id)
+    is >= CODE_MIN; the alert still carries the Similarity Score, not
+    the code similarity. code_by_id is called only for a strict seed
+    that reached min_score -- a store with no strict seed is read
+    exactly as before (no code_by_id). A strict seed whose code_by_id
+    is None alerts on nothing.
     """
     code_fp = fingerprint(code)
     fps = {}  # code_id -> stored Fingerprint dict
     for fp in store.fingerprints():
         fps[fp["code_id"]] = fp
+
+    strict = set(store.strict_seeds())
+    strict_code_cache = {}  # code_id -> code bytes or None
 
     result = []
     for seed in store.seeds():
@@ -287,6 +355,15 @@ def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
         if seed_fp is None:
             continue
         score = score_fingerprints(code_fp, seed_fp)
+        if score >= min_score and seed["address"] in strict:
+            if seed["code_id"] not in strict_code_cache:
+                strict_code_cache[seed["code_id"]] = \
+                    store.code_by_id(seed["code_id"])
+            seed_code = strict_code_cache[seed["code_id"]]
+            if seed_code is None:
+                continue
+            if code_similarity(code, seed_code) < CODE_MIN:
+                continue
         if score >= min_score:
             result.append(
                 {
@@ -300,7 +377,7 @@ def match_watchlist(store, code: bytes, min_score: float = 0.8) -> List[dict]:
 
 
 def recheck_watchlist(
-    store, min_score: float = 0.8, seed_addresses=None
+    store, min_score: float = ALERT_MIN, seed_addresses=None
 ) -> List[dict]:
     """Every stored address whose code matches a watchlist seed.
 
@@ -342,6 +419,16 @@ def recheck_watchlist(
     on insertion order, and two calls on the same store give equal
     lists. Reads the store through seeds(), fingerprints(),
     addresses_of(), origins() and implementations() only.
+
+    Phase 18: the default min_score is ALERT_MIN (0.75), and a strict
+    seed (store.strict_seeds(), read once per call) keeps a (code_id,
+    seed) pair only when code_similarity of the two codes
+    (store.code_by_id of the effective code_id and of the seed's
+    code_id) is >= CODE_MIN, as in match_watchlist; the alerts carry
+    the Similarity Score. code_by_id is read only for pairs of a strict
+    seed that reached min_score, so with no strict seed the reads stay
+    exactly as before; a None code on either side lets the pair alert
+    on nothing.
     """
     seeds = store.seeds()
     if seed_addresses is not None:
@@ -369,11 +456,21 @@ def recheck_watchlist(
         effective = _effective_code_id(proxy_address, impls, own_code_id)
         groups.setdefault(effective, []).append(proxy_address)
 
+    strict = set(store.strict_seeds())
+    strict_code_cache = {}  # code_id -> code bytes or None
+
     alerts = []
     for seed in seeds:
         seed_fp = fps.get(seed["code_id"])
         if seed_fp is None:
             continue
+        seed_is_strict = seed["address"] in strict
+        seed_code = None
+        if seed_is_strict:
+            if seed["code_id"] not in strict_code_cache:
+                strict_code_cache[seed["code_id"]] = \
+                    store.code_by_id(seed["code_id"])
+            seed_code = strict_code_cache[seed["code_id"]]
         for code_id, addresses in groups.items():
             fp = fps.get(code_id)
             if fp is None:
@@ -381,6 +478,16 @@ def recheck_watchlist(
             score = score_fingerprints(seed_fp, fp)
             if score < min_score:
                 continue
+            if seed_is_strict:
+                if seed_code is None:
+                    continue
+                if code_id not in strict_code_cache:
+                    strict_code_cache[code_id] = store.code_by_id(code_id)
+                cand_code = strict_code_cache[code_id]
+                if cand_code is None:
+                    continue
+                if code_similarity(seed_code, cand_code) < CODE_MIN:
+                    continue
             for addr in addresses:
                 if addr == seed["address"]:
                     continue
